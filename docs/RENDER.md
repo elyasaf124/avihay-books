@@ -51,11 +51,32 @@ git push origin main
 | משתנה | ערך |
 |--------|-----|
 | `DATABASE_URL` | הדבק את **מחרוזת החיבור המלאה** מ־Neon (כמו ב־`backend/.env` המקומי). |
-| `APP_API_KEY` | מחרוזת סודית ארוכה; **במובייל** יש להגדיר `EXPO_PUBLIC_API_KEY` **בדיוק לאותו ערך** (כותרת `x-api-key`). אם תשאיר ריק — אין אימות מפתח (פחות מומלץ בפרודקשן). |
+| `APP_API_KEY` | **נוצר אוטומטית** בפריסה מ־[`render.yaml`](../render.yaml) (`generateValue: true`). אחרי ה־Deploy: **Environment** → העתק את הערך של `APP_API_KEY` לאפליקציה — **`EXPO_PUBLIC_API_KEY` חייב להיות זהה** (כותרת `x-api-key`). |
+
+### מפתח לפיתוח מקומי
+
+למחשב שלך (לא Render), יצירת מפתח אקראי:
+
+```bash
+npm run generate-api-key
+```
+
+הדבק ב־`backend/.env` תחת `APP_API_KEY=` וב־`mobile/.env` תחת `EXPO_PUBLIC_API_KEY=` — **אותו ערך**.
 
 משתנים אחרים כבר מוגדרים ב־[`render.yaml`](../render.yaml) (`NODE_ENV`, `CORS_ORIGIN`, `LOG_LEVEL`, `RUN_SEED_ON_START`).
 
-**פריסה ראשונה עם נתוני דמו:**  
+---
+
+## משתנים אחרים (מתוך ה־Blueprint בלבד)
+
+אלו נטענים מהקובץ `render.yaml` ואינך חייב להזין אותם ידנית אלא אם עורך את הקובץ:
+
+`NODE_ENV`, `CORS_ORIGIN`, `LOG_LEVEL`, `RUN_SEED_ON_START`.
+
+---
+
+## פריסה ראשונה עם נתוני דמו
+
 אם המסד ב־Neon **ריק** ואתה רוצה `seed` אוטומטי בעליית הקונטיינר, הגדר זמנית:
 
 `RUN_SEED_ON_START=true`
@@ -77,7 +98,9 @@ git push origin main
 
 ## שלב 5 — בדיקה
 
-בלי מפתח:
+`/api/v1/health` מוגדר **לפני** אימות המפתח — אפשר לבדוק חיבור גם בלי `x-api-key`. שאר הנתיבים דורשים את הכותרת כש־`APP_API_KEY` מוגדר בשרת.
+
+בלי כותרת (מספיק לבדיקת זמינות):
 
 ```bash
 curl https://<שם-השירות>.onrender.com/api/v1/health

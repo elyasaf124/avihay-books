@@ -18,6 +18,7 @@
     "mobile:dev": "npm --workspace mobile run start",
     "compose:up": "docker compose up --build",
     "compose:down": "docker compose down",
+    "generate-api-key": "node scripts/generate-api-key.cjs",
     "shared:build": "npm --workspace shared run build",
     "typecheck": "npm --workspace shared run build && npm --workspace mobile run typecheck && npm --workspace backend run typecheck",
     "lint": "eslint . --ext .ts,.tsx",

@@ -63,6 +63,8 @@ npm run mobile:dev
 
 ראה את [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md): `Docker Compose`, מאגר מנוהל, והתאמת מפתח סביב `APP_API_KEY` / `EXPO_PUBLIC_API_KEY`.
 
+להרצה מקומית: מהשורש `npm run generate-api-key` — העתק ל־`backend/.env` (`APP_API_KEY`) ול־`mobile/.env` (`EXPO_PUBLIC_API_KEY`).
+
 מהיר מול שירותי ענן חינמיים: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — סעיף **6**, `Neon` + `Render` + `eas build`, או מדריך Render מפורט: [`docs/RENDER.md`](docs/RENDER.md).
 
 ```bash
