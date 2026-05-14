@@ -1,0 +1,37 @@
+{
+  "name": "@avihay-books/backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/backend/src/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/backend/src/index.js",
+    "build": "tsc -p tsconfig.json",
+    "db:migrate": "tsx ../database/runMigrations.ts",
+    "db:seed": "tsx ../seed/runSeed.ts",
+    "db:reset": "tsx ../database/runReset.ts && tsx ../database/runMigrations.ts && tsx ../seed/runSeed.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@avihay-books/shared": "0.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "node-cron": "^3.0.3",
+    "pg": "^8.12.0",
+    "pino": "^9.3.2",
+    "pino-pretty": "^11.2.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.10",
+    "@types/node-cron": "^3.0.11",
+    "@types/pg": "^8.11.6",
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}

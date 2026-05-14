@@ -1,0 +1,18 @@
+node_modules
+**/node_modules
+.git
+.expo
+.expo-shared
+**/.DS_Store
+**/Thumbs.db
+*.log
+coverage
+.idea
+.vscode
+dist
+**/dist
+*.tsbuildinfo
+
+# משאיר רק את `mobile/package.json` בהקשר הבילד (נדרש ל־npm workspaces)
+mobile/*
+!mobile/package.json

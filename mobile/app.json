@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "avihay-books",
+    "slug": "avihay-books",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "avihaybooks",
+    "userInterfaceStyle": "light",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "splash": {
+      "backgroundColor": "#fffadf"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.avihay.books"
+    },
+    "android": {
+      "package": "com.avihay.books"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": ["expo-router", "expo-font"],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "apiBaseUrl": "http://localhost:4000/api/v1",
+      "apiKey": null
+    }
+  }
+}

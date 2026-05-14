@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "paths": {
+      "@avihay-books/shared": ["../shared/src/index.ts"],
+      "@avihay-books/shared/*": ["../shared/src/*"]
+    },
+    "baseUrl": "."
+  },
+  "include": ["src/**/*", "../shared/src/**/*"]
+}

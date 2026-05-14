@@ -1,0 +1,9 @@
+node_modules
+dist
+build
+**/dist
+**/build
+**/.expo
+**/.expo-shared
+**/dist-web-test
+**/*.snap

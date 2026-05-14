@@ -1,0 +1,51 @@
+{
+  "name": "avihay-books",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bookstore inventory management app (Hebrew RTL). Monorepo with Express + Postgres backend, Expo React Native mobile, shared types, and seed/Excel data loaders.",
+  "workspaces": [
+    "backend",
+    "shared",
+    "mobile"
+  ],
+  "scripts": {
+    "postinstall": "npm run shared:build",
+    "db:migrate": "npm --workspace backend run db:migrate",
+    "db:seed": "npm --workspace backend run db:seed",
+    "db:reset": "npm --workspace backend run db:reset",
+    "backend:dev": "npm --workspace backend run dev",
+    "backend:build": "npm --workspace backend run build",
+    "mobile:dev": "npm --workspace mobile run start",
+    "compose:up": "docker compose up --build",
+    "compose:down": "docker compose down",
+    "shared:build": "npm --workspace shared run build",
+    "typecheck": "npm --workspace shared run build && npm --workspace mobile run typecheck && npm --workspace backend run typecheck",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "format": "prettier --write \"**/*.{ts,tsx,js,cjs,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,cjs,json,md}\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "expo-router": "~6.0.23",
+    "@typescript-eslint/eslint-plugin": "^8.59.3",
+    "@typescript-eslint/parser": "^8.59.3",
+    "eslint": "^8.57.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-native": "^5.0.0",
+    "prettier": "^3.8.3"
+  },
+  "overrides": {
+    "@types/react": "~19.1.10",
+    "@react-navigation/native": "^7.1.8",
+    "@react-navigation/bottom-tabs": "^7.4.0",
+    "@react-navigation/native-stack": "^7.3.16",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "react-native": "0.81.5"
+  }
+}

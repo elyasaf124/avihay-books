@@ -1,0 +1,39 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: book-store
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d book-store"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/book-store
+      PORT: "4000"
+      NODE_ENV: production
+      CORS_ORIGIN: "*"
+      LOG_LEVEL: info
+      # אופציונלי: הגדר בסביבת ה־host או בעזרת `deploy.env`
+      APP_API_KEY: ${APP_API_KEY:-}
+      # `true` — הרצת seed אוטומטית בהעלאה ראשונה (מתאים רק בסביבת ניסוי)
+      RUN_SEED_ON_START: ${RUN_SEED_ON_START:-false}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
