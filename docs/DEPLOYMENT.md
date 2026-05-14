@@ -79,6 +79,8 @@ npm run start --workspace=@avihay-books/backend
 
 ## 6. סט חינמי מומלץ: `Neon` + `Render` + `APK` ב־`EAS`
 
+מדריך צעד־אחר־צעד ל־`Render` בלבד: [`RENDER.md`](RENDER.md).
+
 ### `PostgreSQL` חינמי — `Neon`
 
 1. צור חשבון ב־[Neon](https://neon.tech) ופרויקט `Postgres` חדש.

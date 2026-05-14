@@ -28,9 +28,7 @@ render.yaml          `Blueprint` ל־`Render` (`Web` + מנה `Docker`)
 # 1. תלויות
 npm install
 
-# 2. הגדרת חיבור למסד הנתונים
-cp .env.example backend/.env
-#    ערוך את הסיסמה הנכונה ב־backend/.env
+# 2. הגדרת חיבור למסד: העתק מ־`.env.example` את בלוק "Backend פיתוח" ל־`backend/.env` (או `backend/.env.development`)
 
 # 3. מיגרציות + נתוני seed
 npm run db:migrate
@@ -39,17 +37,33 @@ npm run db:seed
 # 4. הפעלת ה־backend (פורט 4000)
 npm run backend:dev
 
-# 5. הפעלת ה־mobile
+# 5. הפעלת ה־mobile (אופציונלי: בלוק "Mobile פיתוח" מ־`.env.example` → `mobile/.env`)
 npm run mobile:dev
 ```
 
 לאיפוס מלא של ה־DB ולהרצה מחדש: `npm run db:reset`.
 
+## מצבי `development` ו־`production`
+
+### `backend` (`Node`)
+
+- הסקריפטים `dev` / `start` קובעים `NODE_ENV` בעזרת `cross-env` (`development` / `production`).
+- קבצי סביבה נטענים בסדר (כל קובץ קיים בתיקיית `backend/` דורס קודם):  
+  `.env` → `.env.<NODE_ENV>` → `.env.local` → `.env.<NODE_ENV>.local`  
+  (ראה [`backend/.env.example`](backend/.env.example), [`backend/.env.development.example`](backend/.env.development.example), [`backend/.env.production.example`](backend/.env.production.example)).
+- טעינת הסביבה ממומשת ב־[`backend/src/config/loadEnv.ts`](backend/src/config/loadEnv.ts); מיגרציות גם טוענים אותו דרך יבוא ראשון ב־`database/runMigrations.ts`.
+
+### `mobile` (`Expo`)
+
+- משתנה `EXPO_PUBLIC_APP_ENV`: `development` (ברירת מחדל ב־`expo start`), `preview` או `production` (בניית `EAS`).
+- הערך נשמר ב־`extra.appEnv` דרך [`mobile/app.config.js`](mobile/app.config.js) ונקבע ב־[`mobile/eas.json`](mobile/eas.json) לפרופילי `preview`/`production`.
+- דוגמאות: [`mobile/.env.development.example`](mobile/.env.development.example), [`mobile/.env.production.example`](mobile/.env.production.example).
+
 ## פריסת `PostgreSQL` ו־`backend` לשרת
 
 ראה את [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md): `Docker Compose`, מאגר מנוהל, והתאמת מפתח סביב `APP_API_KEY` / `EXPO_PUBLIC_API_KEY`.
 
-מהיר מול שירותי ענן חינמיים: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — סעיף **6**, `Neon` + `Render` + `eas build`.
+מהיר מול שירותי ענן חינמיים: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — סעיף **6**, `Neon` + `Render` + `eas build`, או מדריך Render מפורט: [`docs/RENDER.md`](docs/RENDER.md).
 
 ```bash
 docker compose up --build

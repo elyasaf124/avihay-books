@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../backend/src/config/loadEnv.js";
 import { postgresSslForUrl } from "@avihay-books/shared";
 import { Pool } from "pg";
 

@@ -1,6 +1,8 @@
-import "dotenv/config";
+import { loadBackendEnv } from "../config/loadEnv.js";
 import { postgresSslForUrl } from "@avihay-books/shared";
 import { Pool } from "pg";
+
+loadBackendEnv();
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {

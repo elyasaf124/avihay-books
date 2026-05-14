@@ -13,6 +13,7 @@
         "distribution": "internal"
       },
       "env": {
+        "EXPO_PUBLIC_APP_ENV": "preview",
         "EXPO_PUBLIC_API_BASE_URL": "https://YOUR_SERVER_DOMAIN/api/v1",
         "EXPO_PUBLIC_API_KEY": "CHANGE_ME",
         "EXPO_PUBLIC_EAS_PROJECT_ID": ""
@@ -28,6 +29,7 @@
         "distribution": "internal"
       },
       "env": {
+        "EXPO_PUBLIC_APP_ENV": "production",
         "EXPO_PUBLIC_API_BASE_URL": "https://YOUR_SERVER_DOMAIN/api/v1",
         "EXPO_PUBLIC_API_KEY": "CHANGE_ME",
         "EXPO_PUBLIC_EAS_PROJECT_ID": ""

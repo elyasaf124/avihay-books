@@ -1,7 +1,7 @@
+import "../backend/src/config/loadEnv.js";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import "dotenv/config";
 import { postgresSslForUrl } from "@avihay-books/shared";
 import { Pool } from "pg";
 
