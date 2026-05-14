@@ -12,9 +12,13 @@
 | חשבון ב־`Render` | [dashboard.render.com](https://dashboard.render.com) |
 | הריפו ב־`GitHub` | `Render` מתחבר לריפו ומושך קוד אוטומטית |
 | `DATABASE_URL` מ־Neon | כבר הופעל אצלך מקומית עם `db:migrate` / `db:seed` — **אותה מחרוזת** תועתק ל־`Render` |
-| קובץ [`render.yaml`](../render.yaml) | נמצא **בשורש** הפרויקט |
+| קובץ [`render.yaml`](../render.yaml) | בשורש הריפו — חייב לכלול `plan: free` לשירות חינמי (ברירת מחדל בלי זה: `starter` בתשלום) |
 
----
+### למה Render ביקש כרטיס אשראי?
+
+- אם ב־`render.yaml` **חסר** `plan: free`, שירות `Web` נוצר ברירת מחדל כ־**starter** (בתשלום) — ואז מופיע חלון אשראי.
+- לפי מפרט Render, **`plan: free` לא זמין לריפו private** (רק ל־public), אלא אם עברת לתוכנית בתשלום — אם הריפו סגור, ייתכן שתצטרך לפתוח אותו ל־`Public` או להוסיף כרטיס.
+
 
 ## שלב 1 — דחיפת הקוד ל־`GitHub`
 
