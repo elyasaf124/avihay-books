@@ -27,6 +27,16 @@ if (!I18nManager.isRTL) {
   }
 }
 
+/**
+ * `React Native Web` לא מסתמך על `I18nManager.forceRTL` — הוא קורא את כיוון המסמך
+ * מתוך `<html dir>`. בלי הקצאה מפורשת, מיכלי `flexDirection: "row"` נשארים `LTR`
+ * בעוד `textAlign: "right"` כן מיושר — פער שגורם לדפים להיראות לא־מיושרים בדפדפן.
+ */
+if (Platform.OS === "web" && typeof document !== "undefined") {
+  document.documentElement.setAttribute("dir", "rtl");
+  document.documentElement.setAttribute("lang", "he");
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {

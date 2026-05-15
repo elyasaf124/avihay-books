@@ -1,8 +1,16 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop, Text as SvgText } from "react-native-svg";
 import type { StoreMap as StoreMapData, StoreMapUnit } from "@avihay-books/shared";
 import { theme } from "../theme";
 import { he } from "../i18n/he";
+
+/**
+ * `dir="ltr"` כנכס `HTML` ב־`React Native Web` שומר על גיאוגרפיית החנות (ימין/שמאל
+ * פיזיים) גם כשהמסמך כולו `dir="rtl"`. בנייטיב הסגנון `direction: "ltr"` בשם הסגנון
+ * `ltrGeo` כבר מטפל באותו רעיון, ולכן הספרד הזה לא־עוקץ שם.
+ */
+const webDirLtr: Record<string, unknown> =
+  Platform.OS === "web" ? { dir: "ltr" } : {};
 
 interface Props {
   data: StoreMapData;
@@ -56,7 +64,7 @@ export function StoreMap({ data, onUnitPress }: Props): JSX.Element {
   const display = byPos.get("display");
 
   return (
-    <View style={styles.ltrGeo}>
+    <View style={styles.ltrGeo} {...webDirLtr}>
       <View style={styles.wrap}>
         <Svg width="100%" height="100%" viewBox={`0 0 ${VB_W} ${VB_H}`}>
         <Defs>
