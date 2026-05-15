@@ -13,7 +13,7 @@ export function useStoreMap() {
       return data;
     },
     staleTime: 30_000,
-    retry: 0,
+    retry: 2,
   });
 }
 

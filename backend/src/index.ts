@@ -9,6 +9,12 @@ import { startNotificationCrons } from "./services/notifications.js";
 
 const app = express();
 
+/** ראשון ברשימה — כל בקשה שמגיעה ל־Node תופיע בלוג (כולל לפני `helmet` / `cors`). */
+app.use((req, _res, next) => {
+  logger.info({ method: req.method, url: req.originalUrl }, "incoming http");
+  next();
+});
+
 app.use(helmet());
 app.use(
   cors({

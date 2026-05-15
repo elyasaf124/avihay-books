@@ -8,4 +8,5 @@ if [ "${RUN_SEED_ON_START:-false}" = "true" ]; then
   npm run db:seed
 fi
 echo "[entry] starting API…"
-exec npm run start --workspace=@avihay-books/backend
+cd /app/backend
+exec node dist/backend/src/index.js
