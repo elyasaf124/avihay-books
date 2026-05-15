@@ -15,6 +15,14 @@ function getExpoEnvMode() {
 // סדר `@expo/env`: `.env.<mode>.local` → `.env.local` → `.env.<mode>` → `.env` (ראו `getEnvFiles`)
 loadProjectEnv(path.join(__dirname), { mode: getExpoEnvMode(), silent: true });
 
+/** `??` לא מטפל במחרוזת ריקה; בקובץ נשאר מהמחיקה ב־`git` או אחרי `${VAR}` שלא הוחלף ב־EAS. */
+function firstNonBlank(...candidates) {
+  for (const c of candidates) {
+    if (typeof c === "string" && c.trim().length > 0) return c.trim();
+  }
+  return undefined;
+}
+
 /** קישור לפרויקט ב־EAS — נוצר ב־`expo.dev` (אי אפשר לכתוב לקובץ דינמי מ־`eas init`). */
 const EAS_LINKED_PROJECT_ID = "7bfd3dfc-eeb0-4d5b-bd7e-90913e89af22";
 
@@ -28,8 +36,10 @@ const easProjectId =
   normalizeUuid(process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "") ||
   normalizeUuid(process.env.EAS_PROJECT_ID ?? "") ||
   EAS_LINKED_PROJECT_ID;
-const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL ?? "http://localhost:4000/api/v1";
-const apiKey = process.env.EXPO_PUBLIC_API_KEY ?? null;
+const apiBaseUrl =
+  firstNonBlank(process.env.EXPO_PUBLIC_API_BASE_URL) ?? "http://localhost:4000/api/v1";
+const apiKeyRaw = firstNonBlank(process.env.EXPO_PUBLIC_API_KEY);
+const apiKey = apiKeyRaw ?? null;
 /* מחובר ל־EXPO_PUBLIC_APP_ENV או EAS; ברירת מחדל development */
 const appEnv = process.env.EXPO_PUBLIC_APP_ENV ?? "development";
 const hasEasProjectId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(

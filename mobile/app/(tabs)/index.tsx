@@ -7,6 +7,8 @@ import { StoreMap } from "../../src/components/StoreMap";
 import { SearchBar } from "../../src/components/SearchBar";
 import { BookDetailModal } from "../../src/components/BookDetailModal";
 import { useSearchBooks, useStoreMap } from "../../src/api/storeMap";
+import { classifyStoreMapFailure } from "../../src/api/apiDiagnostics";
+import { apiPublicBaseHost } from "../../src/api/client";
 import { useShortageList } from "../../src/api/shortage";
 import {
   deriveHomeStats,
@@ -32,6 +34,26 @@ export default function HomeScreen(): JSX.Element {
 
   // Prefer real `/store-map` data; fall back to the demo map when the API is unreachable.
   const isOffline = storeMapQuery.isError;
+  const failureKind = storeMapQuery.isError ? classifyStoreMapFailure(storeMapQuery.error) : null;
+  const offlineBannerText =
+    failureKind === "localhost"
+      ? he.home.offlineBannerLocalhost
+      : failureKind === "auth"
+        ? he.home.offlineBannerAuth
+        : he.home.offlineBanner;
+  const offlineBannerSub =
+    failureKind === "notFound"
+      ? he.home.offlineDetailNotFound
+      : failureKind === "server"
+        ? he.home.offlineDetailServer
+        : failureKind === "timeout"
+          ? he.home.offlineDetailTimeout
+          : failureKind === "network"
+            ? he.home.offlineDetailNetwork
+            : failureKind === "unknown"
+              ? he.home.offlineDetailUnknown
+              : null;
+  const offlineHostShown = apiPublicBaseHost();
   const storeMapData =
     storeMapQuery.data != null && !storeMapQuery.isError ? storeMapQuery.data : mockStoreMap;
   const baseStats = deriveHomeStats(storeMapQuery.data);
@@ -70,7 +92,17 @@ export default function HomeScreen(): JSX.Element {
     >
       {isOffline ? (
         <View style={styles.offlineBanner}>
-          <Text style={styles.offlineBannerText}>{he.home.offlineBanner}</Text>
+          <View style={styles.offlineBannerBody}>
+            <Text style={styles.offlineBannerText}>{offlineBannerText}</Text>
+            {offlineBannerSub ? (
+              <Text style={styles.offlineBannerSub}>{offlineBannerSub}</Text>
+            ) : null}
+            {offlineHostShown ? (
+              <Text style={styles.offlineBannerSub}>
+                {he.home.offlineHostLabel}: `{offlineHostShown}`
+              </Text>
+            ) : null}
+          </View>
           <Ionicons name="cloud-offline-outline" size={18} color={theme.colors.onErrorContainer} />
         </View>
       ) : null}
@@ -181,7 +213,7 @@ const styles = StyleSheet.create({
   },
   offlineBanner: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: theme.spacing.sm,
     backgroundColor: theme.colors.errorContainer,
     borderRadius: theme.radius.md,
@@ -190,10 +222,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.onErrorContainer,
   },
+  offlineBannerBody: { flex: 1, gap: theme.spacing.xs },
   offlineBannerText: {
     ...theme.typography.bodyMd,
     color: theme.colors.onErrorContainer,
-    flex: 1,
+    textAlign: "right",
+    writingDirection: "rtl",
+  },
+  offlineBannerSub: {
+    ...theme.typography.caption,
+    color: theme.colors.onErrorContainer,
+    opacity: 0.92,
     textAlign: "right",
     writingDirection: "rtl",
   },

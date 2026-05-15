@@ -32,6 +32,19 @@ export const he = {
     displayHint: "ספרים חדשים",
     displayShelfHint: "משטח תצוגה",
     offlineBanner: "השרת לא זמין — מציג נתוני דמה",
+    /** בריליז — עדיין `localhost` מהבילד: משתנה `EXPO_PUBLIC_API_BASE_URL` לא נכנס ל־EAS / לא ריעננתם בילד. */
+    offlineBannerLocalhost:
+      "האפליקציה פונה אל `localhost` — בטלפון אין שרת. הגדירו `EXPO_PUBLIC_API_BASE_URL` ב־EAS והתקינו בילד חדש.",
+    /** כשהשרת מחזיר 401 — בדרך כלל `x-api-key` לא תואם ל־`APP_API_KEY` או חסר בבילד. */
+    offlineBannerAuth: "הגישה נדחתה — בדקו ש־`EXPO_PUBLIC_API_KEY` בבילד תואם ל־`APP_API_KEY` בשרת",
+    offlineHostLabel: "מארח בבילד",
+    offlineDetailNotFound:
+      'נקודת קצה לא נמצאה (`404`). בדרך כלל ב־`URL` חסר הסיומת `/api/v1`.',
+    offlineDetailServer: "השרת החזיר שגיאה (`5xx`) — ראו לוגים ב־Render.",
+    offlineDetailTimeout:
+      "זמן קצוב — שירות חינמי לפעמים נרדם. נסו לרענן או להמתין רגע.",
+    offlineDetailNetwork: "אין תגובה מהרשת — אין חיבור, חסמה, או שרת כבוי.",
+    offlineDetailUnknown: "לא ניתן להתחבר — ללא פירוט מהמכשיר.",
     searchOfflineBanner: "חיפוש לא זמין כרגע — מציג תוצאות לדוגמה",
   },
 

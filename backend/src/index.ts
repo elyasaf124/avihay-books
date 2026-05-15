@@ -17,6 +17,12 @@ app.use(
 );
 app.use(express.json({ limit: "1mb" }));
 
+/** כדי לראות בלוג של Render האם בקשות מהמובייל מגיעות (אין כרגע `morgan`). */
+app.use((req, _res, next) => {
+  logger.info({ method: req.method, url: req.originalUrl }, "incoming http");
+  next();
+});
+
 app.use("/api/v1", apiRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
