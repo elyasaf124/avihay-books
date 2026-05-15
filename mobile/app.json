@@ -14,6 +14,8 @@
       "fallbackToCacheTimeout": 0
     },
     "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
       "backgroundColor": "#fffadf"
     },
     "ios": {
@@ -28,6 +30,14 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#fffadf",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200
+        }
+      ],
       "expo-font"
     ],
     "experiments": {
