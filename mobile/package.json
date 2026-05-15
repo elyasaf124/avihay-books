@@ -5,19 +5,22 @@
   "main": "expo-router/entry",
   "expo": {
     "install": {
-      "exclude": ["react-native-worklets"]
+      "exclude": [
+        "react-native-worklets"
+      ]
     }
   },
   "scripts": {
+    "postinstall": "npm run build --prefix ../shared",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "eas:build:android:preview": "eas build --profile preview --platform android",
-    "eas:build:android:production": "eas build --profile production --platform android",
-    "eas:build:ios:preview": "eas build --profile preview --platform ios",
-    "eas:build:ios:production": "eas build --profile production --platform ios"
+    "eas:build:android:development": "dotenv -e .env.development -- npx eas-cli@latest build --profile development --platform android",
+    "eas:build:android:production": "dotenv -e .env.production -- npx eas-cli@latest build --profile production --platform android",
+    "eas:build:ios:development": "dotenv -e .env.development -- npx eas-cli@latest build --profile development --platform ios",
+    "eas:build:ios:production": "dotenv -e .env.production -- npx eas-cli@latest build --profile production --platform ios"
   },
   "dependencies": {
     "@avihay-books/shared": "0.1.0",
@@ -58,6 +61,7 @@
   "devDependencies": {
     "@babel/core": "^7.20.0",
     "@types/react": "~19.1.10",
+    "dotenv-cli": "^8.0.0",
     "typescript": "~5.9.2"
   }
 }

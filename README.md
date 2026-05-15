@@ -55,15 +55,15 @@ npm run mobile:dev
 
 ### `mobile` (`Expo`)
 
-- משתנה `EXPO_PUBLIC_APP_ENV`: `development` (ברירת מחדל ב־`expo start`), `preview` או `production` (בניית `EAS`).
-- הערך נשמר ב־`extra.appEnv` דרך [`mobile/app.config.js`](mobile/app.config.js) ונקבע ב־[`mobile/eas.json`](mobile/eas.json) לפרופילי `preview`/`production`.
-- דוגמאות: [`mobile/.env.development.example`](mobile/.env.development.example), [`mobile/.env.production.example`](mobile/.env.production.example).
+- משתנה `EXPO_PUBLIC_APP_ENV`: `development` (ברירת מחדל ב־`expo start`) או `production` (אפליקציה מובנית מול שרת פרודקשן).
+- קבצים נפרדים: `mobile/.env.development` ו־`mobile/.env.production` (דוגמאות ב־`.env.*.example`; לא ב־Git). `app.config.js` קורא לפי `NODE_ENV` / `EAS_BUILD_PROFILE`.
+- פרופילי `EAS`: `development` (מול API פיתוח / בדיקות) ו־`production` (מול שרת באוויר) — ראה [`mobile/eas.json`](mobile/eas.json) ו־סקריפטי `eas:build:*` ב־[`mobile/package.json`](mobile/package.json).
 
 ## פריסת `PostgreSQL` ו־`backend` לשרת
 
 ראה את [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md): `Docker Compose`, מאגר מנוהל, והתאמת מפתח סביב `APP_API_KEY` / `EXPO_PUBLIC_API_KEY`.
 
-להרצה מקומית: מהשורש `npm run generate-api-key` — העתק ל־`backend/.env` (`APP_API_KEY`) ול־`mobile/.env` (`EXPO_PUBLIC_API_KEY`).
+להרצה מקומית: מהשורש `npm run generate-api-key` — העתק ל־`backend/.env` (`APP_API_KEY`) ול־`mobile/.env.development` (`EXPO_PUBLIC_API_KEY`).
 
 מהיר מול שירותי ענן חינמיים: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — סעיף **6**, `Neon` + `Render` + `eas build`, או מדריך Render מפורט: [`docs/RENDER.md`](docs/RENDER.md).
 
@@ -80,19 +80,19 @@ docker compose up --build
 ## הרצה על טלפון פיזי והתקנת `APK`
 
 1. התקן את **`Expo Go`** בחנות האפליקציות.
-2. צור `mobile/.env` על בסיס `mobile/.env.example` והגדר `EXPO_PUBLIC_API_BASE_URL` ל־`http://<IPv4_של_המחשב>:4000/api/v1` (אותה רשת Wi‑Fi כמו הטלפון; `ipconfig` ב־Windows).
+2. צור `mobile/.env.development` (העתק מ־`mobile/.env.development.example`) והגדר `EXPO_PUBLIC_API_BASE_URL` ל־`http://<IPv4_של_המחשב>:4000/api/v1` (אותה רשת Wi‑Fi כמו הטלפון; `ipconfig` ב־Windows).
 3. הרץ `npm run backend:dev` ואז `npm run mobile:dev`. סרוק את קוד ה־`QR` עם `Expo Go` (אנדרואיד) או עקוב אחרי הוראות `Expo` לאייפון.
 4. אם ה־`QR` או ה־`LAN` נחסמים, אפשר `npx expo start --tunnel` מתוך `mobile/` (נדרש חשבון `Expo`); עדיין חייבת להיות גישה מהטלפון ל־`API` בכתובת ה־`IP` (לא `localhost`).
 
-הקובץ `mobile/app.config.js` טוען אוטומטית את `mobile/.env` לפי מיקום הפרויקט, גם כשמריצים מהשורש עם `npm run mobile:dev`.
+הקובץ `mobile/app.config.js` טוען `mobile/.env*` לפי מצב (`development`/`production`) ולפי מיקום `mobile/`, גם כשמריצים מהשורש עם `npm run mobile:dev`.
 
 ### מסלול ב׳ — אפליקציה עצמאית (`EAS Build`)
 
 1. חשבון ב־[expo.dev](https://expo.dev/) והתקנת `eas-cli` (`npm i -g eas-cli` או `npx eas-cli`).
 2. בתיקיית `mobile`: `eas login`, ואז `eas init` (אם עדיין לא קושרים פרויקט) כדי לקבל `projectId` לשדה `EXPO_PUBLIC_EAS_PROJECT_ID` אם רוצים עדכוני `OTA`.
-3. ערוך את בלוק `env` ב־`mobile/eas.json` (או הגדר את אותם משתני `EXPO_PUBLIC_*` תחת Environment variables בפרויקט ב־`expo.dev`) כך ש־`EXPO_PUBLIC_API_BASE_URL` יצביע ל־`API` פרוס ונגיש מהטלפון.
-4. בניית `APK` אנדרואיד: `npm run eas:build:android:preview --workspace=@avihay-books/mobile` (או `production`). לאחר הבנייה הורד את ה־`APK` מהדשבורד של `Expo` והתקן על המכשיר.
-5. **אייפון:** `npm run eas:build:ios:preview --workspace=@avihay-books/mobile` — נדרש חשבון `Apple Developer` והפצה פנימית או `TestFlight` לפי הגדרות `Apple`.
+3. ערוך `mobile/.env.development` / `mobile/.env.production` (או הגדר את אותם משתני `EXPO_PUBLIC_*` תחת **Environment variables** בפרויקט ב־`expo.dev`) כך ש־`EXPO_PUBLIC_API_BASE_URL` יצביע ל־`API` המתאים (מקומי / פרוס).
+4. בניית `APK` אנדרואיד: `npm run eas:build:android:development --workspace=@avihay-books/mobile` או `eas:build:android:production` — הסקריפטים טוענים את קובץ ה־`env` המתאים לפני `eas build`. לאחר הבנייה הורד את ה־`APK` מהדשבורד של `Expo` והתקן על המכשיר.
+5. **אייפון:** `npm run eas:build:ios:development --workspace=@avihay-books/mobile` או `...:production` — נדרש חשבון `Apple Developer` והפצה פנימית או `TestFlight` לפי הגדרות `Apple`.
 
 ## בדיקות ידניות מהירות
 
