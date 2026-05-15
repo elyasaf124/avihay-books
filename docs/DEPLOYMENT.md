@@ -117,14 +117,13 @@ npm run start --workspace=@avihay-books/backend
 
 3. עדכן כתובת ה־`API` ובמידת הצורך מפתח (חייבים להתאים ל־`APP_API_KEY` בשרת), באחד מאלה:
 
-   - פרופיל `preview`/`production` בתוך [`mobile/eas.json`](../mobile/eas.json):  
-     `EXPO_PUBLIC_API_BASE_URL` =  
-     `https://<שם-שירות>.onrender.com/api/v1`
+   - קבצים `mobile/.env.development` / `mobile/.env.production` (ראה דוגמאות `.example`) — סקריפטי `npm run eas:build:*` בפרויקט טוענים את הקובץ המתאים לפני `eas build`, והערכים נכנסים ל־[`mobile/eas.json`](../mobile/eas.json) דרך `${EXPO_PUBLIC_*}`.
    - או משתני סביבה בפרויקט תחת `expo.dev` → **Environment variables** עם אותם שמות `EXPO_PUBLIC_*`.
 
 4. בנה `APK` (אנדרואיד):
    ```bash
-   npm run eas:build:android:preview --workspace=@avihay-books/mobile
+   npm run eas:build:android:development --workspace=@avihay-books/mobile
+   npm run eas:build:android:production --workspace=@avihay-books/mobile
    ```
    מתוך `mobile/` ברירת הקודם — אחרי ההתקנה הורד מהדשבורד את קובץ ה־`.apk` והתקן על המכשיר (הגדר הרשאה להתקנת אפליקציות שלא מחנות `Play`).
 

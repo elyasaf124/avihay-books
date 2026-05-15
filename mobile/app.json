@@ -26,9 +26,13 @@
     "web": {
       "bundler": "metro"
     },
-    "plugins": ["expo-router", "expo-font"],
+    "plugins": [
+      "expo-router",
+      "expo-font"
+    ],
     "experiments": {
-      "typedRoutes": false
+      "typedRoutes": false,
+      "autolinkingModuleResolution": true
     },
     "extra": {
       "apiBaseUrl": "http://localhost:4000/api/v1",

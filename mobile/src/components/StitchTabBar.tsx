@@ -1,7 +1,15 @@
 import type { BottomTabBarProps, BottomTabNavigationOptions } from "@react-navigation/bottom-tabs";
 import type { Route } from "@react-navigation/native";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { theme } from "../theme";
+
+/**
+ * נכס `dir` ל־`View` תקף ב־`React Native Web` בלבד; טיפוסי `@types/react-native`
+ * לא חושפים אותו, ולכן ההעברה נעשית דרך אובייקט מוטה־טיפוס שמועבר ב־`spread`.
+ * `dir="ltr"` שומר על סדר טאבים `LTR` גם כשהמסמך כולו `dir="rtl"` בדפדפן.
+ */
+const webDirLtr: Record<string, unknown> =
+  Platform.OS === "web" ? { dir: "ltr" } : {};
 
 /** סרגל טאבים בסגנון ייצוג `Stitch`: גלולה כחולה בפריט הפעיל, סדר ויזואלי `LTR` כמו תגית `dir=ltr` ב־HTML. */
 export function StitchTabBar({
@@ -18,7 +26,7 @@ export function StitchTabBar({
 
   return (
     <View style={[styles.shell, { paddingBottom: padBottom, paddingTop: 10 }]}>
-      <View style={styles.track} accessibilityRole="tablist">
+      <View style={styles.track} accessibilityRole="tablist" {...webDirLtr}>
         {visibleRoutes.map((route) => {
           const index = state.routes.findIndex((r) => r.key === route.key);
           const { options } = descriptors[route.key];

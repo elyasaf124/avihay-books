@@ -1,38 +1,41 @@
 {
   "cli": {
-    "version": ">= 10.0.0"
+    "version": ">= 18.0.0",
+    "appVersionSource": "local"
   },
   "build": {
-    "preview": {
-      "channel": "preview",
+    "development": {
+      "channel": "development",
       "distribution": "internal",
+      "environment": "development",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "resourceClass": "large"
       },
       "ios": {
         "distribution": "internal"
       },
       "env": {
-        "EXPO_PUBLIC_APP_ENV": "preview",
-        "EXPO_PUBLIC_API_BASE_URL": "https://YOUR_SERVER_DOMAIN/api/v1",
-        "EXPO_PUBLIC_API_KEY": "CHANGE_ME",
-        "EXPO_PUBLIC_EAS_PROJECT_ID": ""
+        "EXPO_PUBLIC_APP_ENV": "development",
+        "EXPO_PUBLIC_API_BASE_URL": "${EXPO_PUBLIC_API_BASE_URL}",
+        "EXPO_PUBLIC_API_KEY": "${EXPO_PUBLIC_API_KEY}"
       }
     },
     "production": {
       "channel": "production",
       "distribution": "internal",
+      "environment": "production",
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "resourceClass": "large"
       },
       "ios": {
         "distribution": "internal"
       },
       "env": {
         "EXPO_PUBLIC_APP_ENV": "production",
-        "EXPO_PUBLIC_API_BASE_URL": "https://YOUR_SERVER_DOMAIN/api/v1",
-        "EXPO_PUBLIC_API_KEY": "CHANGE_ME",
-        "EXPO_PUBLIC_EAS_PROJECT_ID": ""
+        "EXPO_PUBLIC_API_BASE_URL": "${EXPO_PUBLIC_API_BASE_URL}",
+        "EXPO_PUBLIC_API_KEY": "${EXPO_PUBLIC_API_KEY}"
       }
     }
   },
