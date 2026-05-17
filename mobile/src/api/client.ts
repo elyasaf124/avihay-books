@@ -13,12 +13,22 @@ function firstNonBlank(...candidates: (string | null | undefined)[]): string | u
 }
 
 const extra = Constants.expoConfig?.extra as ApiExtra;
+
+/** כתובת ידועה מראש — אם המשתנים לא נטענו בפרודקשן, נפנה לכאן */
+const PRODUCTION_API_URL = "https://avihay-books-api.onrender.com/api/v1";
+const PRODUCTION_API_KEY = "15b9cb452363ad4f6df728cad766018ddc788ca0ec8c4d0e2610030eb70356de";
+
 /** `??` לא מדלג על מחרוזת ריקה — אחרי EAS לפעמים נשאר `""` וה־`baseURL` נשבר בלי fallback ל־`extra`. קודם `extra` מה־manifest. */
-export const API_BASE_URL =
+const resolvedUrl =
   firstNonBlank(extra?.apiBaseUrl, process.env.EXPO_PUBLIC_API_BASE_URL) ??
   "http://localhost:4000/api/v1";
 
-const apiKey = firstNonBlank(extra?.apiKey ?? undefined, process.env.EXPO_PUBLIC_API_KEY);
+/** בפרודקשן — אם ה־URL נשאר `localhost` (סימן שהסביבה לא נטענה לבילד), נפנה ל־Render */
+const isLocalhost = resolvedUrl.includes("localhost") || resolvedUrl.includes("127.0.0.1");
+export const API_BASE_URL = !__DEV__ && isLocalhost ? PRODUCTION_API_URL : resolvedUrl;
+
+const resolvedKey = firstNonBlank(extra?.apiKey ?? undefined, process.env.EXPO_PUBLIC_API_KEY);
+const apiKey = resolvedKey ?? (!__DEV__ ? PRODUCTION_API_KEY : undefined);
 
 export const api = axios.create({
   baseURL: API_BASE_URL,

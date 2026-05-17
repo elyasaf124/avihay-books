@@ -9,9 +9,18 @@ import { startNotificationCrons } from "./services/notifications.js";
 
 const app = express();
 
+/** בדיקות `health` של Render חוזרות כל כמה שניות — מציפות לוג; להציג גם אותן הגדר `LOG_HEALTH_CHECKS=1`. */
+function isRenderHealthProbe(req: express.Request): boolean {
+  if (req.method !== "GET") return false;
+  const pathOnly = (req.originalUrl.split("?")[0] ?? "").replace(/\/+$/, "") || "/";
+  return pathOnly === "/api/v1/health";
+}
+
 /** ראשון ברשימה — כל בקשה שמגיעה ל־Node תופיע בלוג (כולל לפני `helmet` / `cors`). */
 app.use((req, _res, next) => {
-  logger.info({ method: req.method, url: req.originalUrl }, "incoming http");
+  if (!isRenderHealthProbe(req) || process.env.LOG_HEALTH_CHECKS === "1") {
+    logger.info({ method: req.method, url: req.originalUrl }, "incoming http");
+  }
   next();
 });
 

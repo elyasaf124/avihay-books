@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>מדריך להכנת נתוני החנות - Avihay Books</title>
+    <link href="https://fonts.googleapis.com/css2?family=Assistant:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Assistant', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 40px auto;
+            padding: 0 20px;
+            background-color: #f9f9f9;
+        }
+        .container {
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+            text-align: center;
+        }
+        h2 {
+            color: #2980b9;
+            margin-top: 30px;
+            border-right: 4px solid #3498db;
+            padding-right: 15px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: right;
+        }
+        th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+        }
+        .tip {
+            background-color: #e7f3fe;
+            border-right: 6px solid #2196F3;
+            margin: 20px 0;
+            padding: 15px;
+        }
+        .important {
+            background-color: #fff3cd;
+            border-right: 6px solid #ffc107;
+            margin: 20px 0;
+            padding: 15px;
+        }
+        footer {
+            margin-top: 50px;
+            text-align: center;
+            font-size: 0.9em;
+            color: #7f8c8d;
+        }
+        @media print {
+            body { background: white; margin: 0; padding: 0; }
+            .container { box-shadow: none; width: 100%; max-width: none; padding: 0; }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>מדריך להכנת נתוני החנות - Avihay Books</h1>
+        <p>שלום! כדי שנוכל להעלות את כל המידע האמיתי של החנות למערכת החדשה, נשמח אם תוכלו למלא את הטבלאות הבאות בקובץ אקסל (Excel).</p>
+        <p>הכנו עבורכם הסבר פשוט על כל גיליון (Tab) שצריך להיות בקובץ, עם דוגמאות ברורות.</p>
+
+        <h2>1. גיליון "ספקים" (Suppliers)</h2>
+        <p>כאן תרשמו את כל הוצאות הספרים או הספקים שאתם עובדים איתם.</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>שם הספק (חובה)</th>
+                    <th>אימייל להזמנות (חובה)</th>
+                    <th>צבע זיהוי (אופציונלי)</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>הוצאת מוסד הרב קוק</td>
+                    <td>orders@kook.co.il</td>
+                    <td>#FF5733</td>
+                </tr>
+                <tr>
+                    <td>הוצאת ארטסקול</td>
+                    <td>art@office.com</td>
+                    <td>#33FF57</td>
+                </tr>
+            </tbody>
+        </table>
+        <div class="tip">
+            <strong>טיפ:</strong> הצבע שיעזור לכם לזהות את הספרים של הספק במפת החנות. ניתן לרשום צבע (למשל "אדום", "כחול") או להשאיר ריק ואנחנו נבחר עבורכם.
+        </div>
+
+        <h2>2. גיליון "ספרים" (Books)</h2>
+        <p>רשימת המלאי הכוללת של החנות.</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>שם הספר (חובה)</th>
+                    <th>שם המחבר (חובה)</th>
+                    <th>שם הספק (חובה)</th>
+                    <th>מחיר לצרכן</th>
+                    <th>כמות במלאי</th>
+                    <th>נקודת הזמנה</th>
+                    <th>נושא/קטגוריה</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>אגדות הים</td>
+                    <td>אברהם כהן</td>
+                    <td>הוצאת מוסד הרב קוק</td>
+                    <td>89</td>
+                    <td>15</td>
+                    <td>3</td>
+                    <td>יהדות</td>
+                </tr>
+                <tr>
+                    <td>מסע לאיתקה</td>
+                    <td>ישראל ישראלי</td>
+                    <td>הוצאת ארטסקול</td>
+                    <td>120</td>
+                    <td>8</td>
+                    <td>2</td>
+                    <td>היסטוריה</td>
+                </tr>
+            </tbody>
+        </table>
+        <ul>
+            <li><strong>שם הספק:</strong> חייב להיות כתוב בדיוק כפי שכתבתם בגיליון הספקים.</li>
+            <li><strong>נקודת הזמנה:</strong> הכמות המינימלית שמתחתיה תרצו לקבל התראה שהספר עומד להיגמר.</li>
+        </ul>
+
+        <h2>3. גיליון "מיקומי ספרים" (Locations)</h2>
+        <p>כאן מחברים בין הספר למקום המדויק שלו בחנות. הדיוק כאן חשוב מאוד כדי שהמפה תהיה אמינה.</p>
+        <table>
+            <thead>
+                <tr>
+                    <th>שם הספר (חובה)</th>
+                    <th>שם הארון</th>
+                    <th>צד (רק לאי)</th>
+                    <th>מספר מדף</th>
+                    <th>תא במדף</th>
+                    <th>שם התא (כללי)</th>
+                    <th>מיקום בתוך התא</th>
+                    <th>כמות בתא הזה</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>אגדות הים</td>
+                    <td>ארון חזית</td>
+                    <td></td>
+                    <td>2</td>
+                    <td>1</td>
+                    <td>11</td>
+                    <td>1</td>
+                    <td>10</td>
+                </tr>
+                <tr>
+                    <td>מסע לאיתקה</td>
+                    <td>ארון שמאל</td>
+                    <td></td>
+                    <td>3</td>
+                    <td>2</td>
+                    <td>4</td>
+                    <td>1</td>
+                    <td>8</td>
+                </tr>
+                <tr>
+                    <td>כוכבים עפים</td>
+                    <td>ארון ימין</td>
+                    <td></td>
+                    <td>1</td>
+                    <td>3</td>
+                    <td>25</td>
+                    <td>1</td>
+                    <td>12</td>
+                </tr>
+                <tr>
+                    <td>מגדל הזיכרון</td>
+                    <td>האי</td>
+                    <td>צד ימין</td>
+                    <td>2</td>
+                    <td>1</td>
+                    <td>88</td>
+                    <td>1</td>
+                    <td>5</td>
+                </tr>
+                <tr>
+                    <td>ההר השני</td>
+                    <td>האי</td>
+                    <td>צד שמאל</td>
+                    <td>1</td>
+                    <td>4</td>
+                    <td>58</td>
+                    <td>2</td>
+                    <td>5</td>
+                </tr>
+            </tbody>
+        </table>
+        <ul>
+            <li><strong>שם הארון:</strong> חובה להשתמש באחד השמות: "ארון חזית", "ארון שמאל", "ארון ימין" או "האי".</li>
+            <li><strong>צד (רק עבור "האי"):</strong> רשמו "צד ימין" או "צד שמאל". בשאר הארונות השאירו ריק.</li>
+            <li><strong>מספר מדף:</strong> מספר המדף מלמעלה (1, 2, 3...).</li>
+            <li><strong>תא במדף:</strong> המיקום הסידורי של התא על המדף (1, 2, 3...).</li>
+            <li><strong>שם התא (כללי):</strong> המזהה הייחודי של התא (למשל: 11, 58, א5).</li>
+            <li><strong>מיקום בתוך התא:</strong> הסדר של הספר בתוך התא.</li>
+        </ul>
+
+        <div class="important">
+            <strong>💡 דגשים חשובים להצלחה:</strong>
+            <ol>
+                <li><strong>עקביות:</strong> אם רשמתם "הוצאת ירושלים" בגיליון ספקים, אל תרשמו "הוצאת י-ם" בגיליון ספרים.</li>
+                <li><strong>מספרים בלבד:</strong> בעמודות של מחיר וכמות, נא לרשום מספרים בלבד (בלי ש"ח או יחידות).</li>
+                <li><strong>דיוק:</strong> נא לא להשאיר תאים ריקים בעמודות שכתוב עליהן "(חובה)".</li>
+            </ol>
+        </div>
+
+        <footer>
+            <p>אנחנו כאן לכל שאלה! ברגע שהקובץ יהיה מוכן, נוכל להעלות אותו למערכת בתוך דקות.</p>
+        </footer>
+    </div>
+    <div class="no-print" style="text-align: center; margin-top: 20px;">
+        <button onclick="window.print()" style="padding: 10px 20px; font-size: 16px; cursor: pointer; background: #3498db; color: white; border: none; border-radius: 4px;">הדפס ל-PDF</button>
+    </div>
+</body>
+</html>
