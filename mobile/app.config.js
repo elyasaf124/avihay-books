@@ -36,10 +36,19 @@ const easProjectId =
   normalizeUuid(process.env.EXPO_PUBLIC_EAS_PROJECT_ID ?? "") ||
   normalizeUuid(process.env.EAS_PROJECT_ID ?? "") ||
   EAS_LINKED_PROJECT_ID;
-const apiBaseUrl =
+const PRODUCTION_API_URL = "https://avihay-books-api.onrender.com/api/v1";
+const PRODUCTION_API_KEY = "15b9cb452363ad4f6df728cad766018ddc788ca0ec8c4d0e2610030eb70356de";
+
+const rawApiBaseUrl =
   firstNonBlank(process.env.EXPO_PUBLIC_API_BASE_URL) ?? "http://localhost:4000/api/v1";
+/** בפרודקשן – אם ה־URL נשאר `localhost` (סימן שהסביבה לא נטענה) — נפנה ל־Render */
+const isProductionBuild = process.env.EAS_BUILD_PROFILE === "production" || process.env.EXPO_PUBLIC_APP_ENV === "production";
+const apiBaseUrl =
+  isProductionBuild && (rawApiBaseUrl.includes("localhost") || rawApiBaseUrl.includes("127.0.0.1"))
+    ? PRODUCTION_API_URL
+    : rawApiBaseUrl;
 const apiKeyRaw = firstNonBlank(process.env.EXPO_PUBLIC_API_KEY);
-const apiKey = apiKeyRaw ?? null;
+const apiKey = apiKeyRaw ?? (isProductionBuild ? PRODUCTION_API_KEY : null);
 /* מחובר ל־EXPO_PUBLIC_APP_ENV או EAS; ברירת מחדל development */
 const appEnv = process.env.EXPO_PUBLIC_APP_ENV ?? "development";
 const hasEasProjectId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
