@@ -234,12 +234,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     textAlign: "center",
-    writingDirection: "rtl",
   },
   unitMeta: {
     color: theme.colors.onSurfaceVariant,
     fontSize: 11,
     textAlign: "center",
-    writingDirection: "rtl",
   },
 });

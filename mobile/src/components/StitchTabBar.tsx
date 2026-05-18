@@ -189,6 +189,5 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     fontSize: 11,
     textAlign: "center",
-    writingDirection: "rtl",
   },
 });

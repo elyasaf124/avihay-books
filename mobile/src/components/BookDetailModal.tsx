@@ -234,14 +234,12 @@ const styles = StyleSheet.create({
   title: {
     ...theme.typography.headlineMd,
     color: theme.colors.primary,
-    writingDirection: "rtl",
-    textAlign: "right",
+    textAlign: "left",
   },
   author: {
     ...theme.typography.bodyMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   newPill: {
     backgroundColor: theme.colors.secondaryFixed,
@@ -257,18 +255,18 @@ const styles = StyleSheet.create({
   label: {
     ...theme.typography.labelMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
+    textAlign: "left",
   },
   value: {
     ...theme.typography.bodyLg,
     color: theme.colors.onSurface,
-    textAlign: "right",
+    textAlign: "left",
     marginTop: 2,
   },
   shortPath: {
     ...theme.typography.headlineSm,
     color: theme.colors.secondary,
-    textAlign: "right",
+    textAlign: "left",
     marginTop: 4,
   },
   locationBlock: {

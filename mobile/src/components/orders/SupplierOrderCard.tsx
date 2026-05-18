@@ -168,14 +168,12 @@ const styles = StyleSheet.create({
   supplier: {
     ...theme.typography.headlineMd,
     color: theme.colors.primary,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   subline: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   list: {
     backgroundColor: theme.colors.surfaceContainerLow,
@@ -194,14 +192,12 @@ const styles = StyleSheet.create({
   lineTitle: {
     ...theme.typography.bodyLg,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   lineMeta: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   lineRight: { alignItems: "flex-start", gap: 2 },
   qty: {

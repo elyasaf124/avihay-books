@@ -192,15 +192,13 @@ const styles = StyleSheet.create({
   title: {
     ...theme.typography.headlineSm,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
     flex: 1,
   },
   author: {
     ...theme.typography.bodyMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   statsRow: {
     flexDirection: "row",
@@ -246,14 +244,12 @@ const styles = StyleSheet.create({
   statLabel: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   statValue: {
     ...theme.typography.headlineSm,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   statValueAccent: { color: theme.colors.primary },
   badge: {

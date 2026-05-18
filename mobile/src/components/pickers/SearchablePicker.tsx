@@ -178,7 +178,7 @@ export function SearchablePickerField({
                 value={query}
                 onChangeText={setQuery}
                 style={styles.dropdownSearchInput}
-                textAlign="right"
+                textAlign="left"
                 autoFocus
               />
               <Pressable
@@ -283,8 +283,7 @@ const styles = StyleSheet.create({
   fieldLabel: {
     ...theme.typography.labelMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   trigger: {
     flexDirection: "row",
@@ -321,8 +320,7 @@ const styles = StyleSheet.create({
     margin: 0,
     ...theme.typography.bodyMd,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
     minHeight: 22,
     maxHeight: 44,
   },
@@ -362,7 +360,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     minHeight: 36,
     maxHeight: 40,
-    textAlign: "right",
+    textAlign: "left",
   },
   clearRow: {
     flexDirection: "row",
@@ -415,8 +413,7 @@ const styles = StyleSheet.create({
     ...theme.typography.bodyMd,
     color: theme.colors.onSurface,
     flex: 1,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   optionTextSelected: {
     ...theme.typography.labelMd,
@@ -428,7 +425,6 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     textAlign: "center",
     paddingVertical: theme.spacing.lg,
-    writingDirection: "rtl",
     paddingHorizontal: theme.spacing.sm,
   },
 });

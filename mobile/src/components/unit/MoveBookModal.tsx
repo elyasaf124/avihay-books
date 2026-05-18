@@ -766,8 +766,7 @@ const styles = StyleSheet.create({
     ...theme.typography.headlineSm,
     color: theme.colors.primary,
     flex: 1,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   bookCard: {
     flexDirection: "row",
@@ -782,12 +781,12 @@ const styles = StyleSheet.create({
     ...theme.typography.bodyLg,
     color: theme.colors.onSurface,
     fontWeight: "700",
-    textAlign: "right",
+    textAlign: "left",
   },
   bookAuthor: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
+    textAlign: "left",
   },
   moveContextBanner: {
     gap: theme.spacing.sm,
@@ -800,8 +799,7 @@ const styles = StyleSheet.create({
   moveContextCurrent: {
     ...theme.typography.bodyMd,
     color: theme.colors.onSecondaryContainer,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
     lineHeight: 22,
   },
   slotChipRow: {
@@ -836,8 +834,7 @@ const styles = StyleSheet.create({
     flex: 1,
     ...theme.typography.labelMd,
     color: theme.colors.primary,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   quickLookupInputFull: {
     borderWidth: 1,
@@ -846,16 +843,14 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
     color: theme.colors.onSurface,
     fontFamily: theme.fontFamily.regular,
   },
   quickDebouncedHint: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   tabRow: {
     flexDirection: "row",
@@ -865,8 +860,7 @@ const styles = StyleSheet.create({
   placementPolicyHint: {
     ...theme.typography.caption,
     color: theme.colors.tertiary,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
     backgroundColor: theme.colors.tertiaryContainer,
     padding: theme.spacing.sm,
     borderRadius: theme.radius.md,
@@ -888,8 +882,7 @@ const styles = StyleSheet.create({
   resolvedPath: {
     ...theme.typography.bodyMd,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
     lineHeight: 22,
     backgroundColor: theme.colors.primaryContainer,
     padding: theme.spacing.sm,
@@ -907,8 +900,7 @@ const styles = StyleSheet.create({
   numericLabel: {
     ...theme.typography.labelMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   numericInput: {
     borderWidth: 1,
@@ -917,8 +909,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
     color: theme.colors.onSurface,
     fontFamily: theme.fontFamily.regular,
   },
@@ -929,8 +920,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: theme.radius.md,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   error: {
     ...theme.typography.caption,
@@ -939,8 +929,7 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: theme.radius.md,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   submitBtn: {
     backgroundColor: theme.colors.primary,

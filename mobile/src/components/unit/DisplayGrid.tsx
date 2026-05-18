@@ -232,9 +232,7 @@ const styles = StyleSheet.create({
 
     color: theme.colors.onSurfaceVariant,
 
-    textAlign: "right",
-
-    writingDirection: "rtl",
+    textAlign: "left",
 
     paddingHorizontal: theme.spacing.xs,
 
@@ -412,9 +410,7 @@ const styles = StyleSheet.create({
 
     color: theme.colors.onSurface,
 
-    textAlign: "right",
-
-    writingDirection: "rtl",
+    textAlign: "left",
 
   },
 
@@ -424,9 +420,7 @@ const styles = StyleSheet.create({
 
     color: theme.colors.onSurfaceVariant,
 
-    textAlign: "right",
-
-    writingDirection: "rtl",
+    textAlign: "left",
 
     marginTop: 4,
 
@@ -460,9 +454,7 @@ const styles = StyleSheet.create({
 
     color: theme.colors.primary,
 
-    textAlign: "right",
-
-    writingDirection: "rtl",
+    textAlign: "left",
 
   },
 

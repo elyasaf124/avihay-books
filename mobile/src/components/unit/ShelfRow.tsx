@@ -30,7 +30,6 @@ export function ShelfRow({
         data={shelf.cells}
         keyExtractor={(c) => c.id}
         horizontal
-        inverted
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View style={styles.gap} />}
@@ -55,8 +54,7 @@ const styles = StyleSheet.create({
   heading: {
     ...theme.typography.headlineSm,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   list: {
     paddingHorizontal: theme.spacing.xs,
