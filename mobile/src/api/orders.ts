@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { OrderListItem, OrderStatus, OrderType, OrdersBySupplierGroup } from "@avihay-books/shared";
+import type {
+  OrderListItem,
+  OrderRow,
+  OrderStatus,
+  OrderType,
+  OrdersBySupplierGroup,
+} from "@avihay-books/shared";
 import { useMemo } from "react";
 import { api } from "./client";
 
@@ -14,6 +20,12 @@ function pickMergedStatus(a: OrderStatus, b: OrderStatus): OrderStatus {
 }
 
 const ORDERS_LIST_KEY = (type: OrderType) => ["orders", "list", type] as const;
+
+/** מפתח יציב לספר בשורת הזמנה (קטלוג או ידני). */
+function orderBookLineKey(o: Pick<OrderListItem, "book_id" | "manual_book_title">): string {
+  if (o.book_id) return o.book_id;
+  return `m:${o.manual_book_title ?? ""}`;
+}
 
 export function useOrdersList(type: OrderType) {
   return useQuery<OrderListItem[]>({
@@ -40,8 +52,8 @@ export function mergeOrderLinesForDisplay(
   for (const item of sorted) {
     const dedupeKey =
       orderType === "inventory"
-        ? `${item.supplier_id}\u0000${item.book_id}`
-        : `${item.supplier_id}\u0000${item.book_id}\u0000${item.customer_name ?? ""}\u0000${item.customer_phone ?? ""}`;
+        ? `${item.supplier_id}\u0000${orderBookLineKey(item)}`
+        : `${item.supplier_id}\u0000${orderBookLineKey(item)}\u0000${item.customer_name ?? ""}\u0000${item.customer_phone ?? ""}`;
     const prev = map.get(dedupeKey);
     if (!prev) {
       map.set(dedupeKey, { ...item });
@@ -88,14 +100,41 @@ export function useOrdersGroupedBySupplier(
   }, [items, orderType]);
 }
 
+/** סך כמויות מהזמנות לקוח + וואטסאפ לפי צמד `supplier_id` + `book_id` (לבסיס מאותו מפתח איחוד כמו במלאי). */
+export function summedCustomerAndWhatsappQtyByBookSupplier(orders: OrderListItem[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const o of orders) {
+    if (o.order_type !== "customer" && o.order_type !== "whatsapp") continue;
+    const k = `${o.supplier_id}\u0000${orderBookLineKey(o)}`;
+    m.set(k, (m.get(k) ?? 0) + o.quantity);
+  }
+  return m;
+}
+
+/** לתצוגת לשונית מלאי: מוסיף לכמויות בשורות מלאי את סך ההזמנות מלקוח / וואטסאפ לאותו ספר וספק (`PDF`/`מייל` משקפים אותן כמויות מצטברות). */
+export function augmentInventoryGroupsWithCustomerWhatsappTotals(
+  groups: OrdersBySupplierGroup[],
+  extraQtyBySupplierBook: Map<string, number>,
+): OrdersBySupplierGroup[] {
+  return groups.map((g) => ({
+    ...g,
+    orders: g.orders.map((o) => {
+      const extra = extraQtyBySupplierBook.get(`${o.supplier_id}\u0000${orderBookLineKey(o)}`) ?? 0;
+      if (extra === 0) return o;
+      return { ...o, quantity: o.quantity + extra };
+    }),
+  }));
+}
+
 /** מפתח יציב לשורה כפי שמוצגת אחרי איחוד כפילויות (למחיקה מרוכזת בשרת). */
 export function orderDisplayLineKey(order: OrderListItem): string {
-  return `${order.book_id}\u0000${order.supplier_id}\u0000${order.order_type}\u0000${order.customer_name ?? ""}\u0000${order.customer_phone ?? ""}`;
+  return `${orderBookLineKey(order)}\u0000${order.supplier_id}\u0000${order.order_type}\u0000${order.customer_name ?? ""}\u0000${order.customer_phone ?? ""}`;
 }
 
 /** גוף `POST /orders/remove-line`. */
 export function removeOrderLineBodyFromDisplayRow(order: OrderListItem): {
-  book_id: string;
+  book_id: string | null;
+  manual_book_title: string | null;
   supplier_id: string;
   order_type: OrderType;
   customer_name: string | null;
@@ -103,6 +142,7 @@ export function removeOrderLineBodyFromDisplayRow(order: OrderListItem): {
 } {
   return {
     book_id: order.book_id,
+    manual_book_title: order.manual_book_title,
     supplier_id: order.supplier_id,
     order_type: order.order_type,
     customer_name: order.customer_name,
@@ -124,6 +164,35 @@ export function useRemoveOrderLine() {
         "/orders/remove-line",
         removeOrderLineBodyFromDisplayRow(order),
       );
+      return data;
+    },
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
+    },
+  });
+}
+
+/** גוף `POST /orders` — הזמנת לקוח (`customer`), מהקטלוג או לפי כותרת ידנית. */
+export interface CreateCustomerOrderBody {
+  supplier_id: string;
+  order_type: "customer";
+  quantity: number;
+  customer_name: string;
+  customer_phone: string;
+  status?: "pending";
+  book_id?: string | null;
+  manual_book_title?: string | null;
+  manual_book_author?: string | null;
+}
+
+export function useCreateCustomerOrder() {
+  const client = useQueryClient();
+  return useMutation<OrderRow, Error, CreateCustomerOrderBody>({
+    mutationFn: async (body) => {
+      const { data } = await api.post<OrderRow>("/orders", {
+        ...body,
+        status: body.status ?? "pending",
+      });
       return data;
     },
     onSuccess: () => {

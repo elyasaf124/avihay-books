@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   SectionList,
@@ -32,8 +34,17 @@ function cloneMockNotifications(): NotificationListItem[] {
   return mockNotifications.map((n) => ({ ...n }));
 }
 
+function interpolate(template: string, vars: Record<string, string>): string {
+  return Object.entries(vars).reduce((s, [k, v]) => s.replaceAll(`{{${k}}}`, v), template);
+}
+
 export default function NotificationsScreen(): JSX.Element {
   const listQuery = useNotifications();
+  useFocusEffect(
+    useCallback(() => {
+      void listQuery.refetch();
+    }, [listQuery.refetch]),
+  );
   const markRead = useMarkNotificationRead();
   const markAll = useMarkAllNotificationsRead();
   const deleteNotif = useDeleteNotification();
@@ -43,7 +54,11 @@ export default function NotificationsScreen(): JSX.Element {
   const [mockItems, setMockItems] = useState<NotificationListItem[]>(cloneMockNotifications);
 
   const isOffline = listQuery.isError;
-  const hasServerNotifications = Boolean(listQuery.data && listQuery.data.length > 0 && !isOffline);
+  /**
+   * `isFetched` עדיף על `isSuccess` לכפתור «בדוק התראות»: אחרי fetch שחזר רשימה ריקה או אחרי ריענון,
+   * חלק מגרסאות/מצבי TanStack משאירים את הכפתור מנוטרל אם נשענים רק על `isSuccess`.
+   */
+  const hasServerNotifications = listQuery.isFetched && !isOffline;
 
   /** נתוני שרת אם יש; אחרת `mock` עם עדכונים מקומיים */
   const notifications: NotificationListItem[] = useMemo(() => {
@@ -90,13 +105,23 @@ export default function NotificationsScreen(): JSX.Element {
 
   const onRunChecks = useCallback(() => {
     if (!hasServerNotifications || runChecks.isPending) return;
-    runChecks.mutate();
+    runChecks.mutate(undefined, {
+      onError: (err: Error) => {
+        Alert.alert(he.generic.errorTitle, err.message || String(err));
+      },
+    });
   }, [runChecks, hasServerNotifications]);
+
+  const lastRun = runChecks.isSuccess ? runChecks.data : undefined;
+  const totalCreatedLastRun =
+    lastRun == null
+      ? 0
+      : lastRun.low_stock_created +
+        lastRun.remove_from_display_created +
+        lastRun.supplier_reorder_reminder_created;
 
   const refreshing = listQuery.isFetching && !listQuery.isLoading;
   const isInitialLoading = listQuery.isLoading && !isOffline;
-
-  const showMockBanner = listQuery.isSuccess && !hasServerNotifications && !isOffline;
 
   return (
     <View style={styles.screen}>
@@ -104,13 +129,6 @@ export default function NotificationsScreen(): JSX.Element {
         <View style={styles.offlineBanner}>
           <Ionicons name="cloud-offline-outline" size={16} color={theme.colors.onErrorContainer} />
           <Text style={styles.offlineText}>{he.notifications.offlineBanner}</Text>
-        </View>
-      ) : null}
-
-      {showMockBanner ? (
-        <View style={styles.mockBanner}>
-          <Ionicons name="information-circle-outline" size={18} color={theme.colors.primary} />
-          <Text style={styles.mockBannerText}>{he.notifications.mockBanner}</Text>
         </View>
       ) : null}
 
@@ -147,6 +165,29 @@ export default function NotificationsScreen(): JSX.Element {
           </Pressable>
         </View>
       </View>
+
+      {hasServerNotifications && lastRun != null ? (
+        <View style={styles.checkRunSummary}>
+          <Text style={styles.checkRunSummaryText}>
+            {totalCreatedLastRun > 0
+              ? interpolate(he.notifications.summaryRefreshed, {
+                  count: String(totalCreatedLastRun),
+                })
+              : he.notifications.summaryNothingNew}
+          </Text>
+          <Text style={styles.checkRunSummaryDetail}>
+            {interpolate(he.notifications.checkSummaryRemoveDisplay, {
+              after: lastRun.remove_from_display_after ?? "—",
+              candidates: String(lastRun.remove_from_display_candidate_count ?? 0),
+              created: String(lastRun.remove_from_display_created ?? 0),
+            })}
+          </Text>
+          {(lastRun.remove_from_display_candidate_count ?? 0) > 0 &&
+          (lastRun.remove_from_display_created ?? 0) === 0 ? (
+            <Text style={styles.checkRunSummaryHint}>{he.notifications.checkSummaryRemoveDisplayDedup}</Text>
+          ) : null}
+        </View>
+      ) : null}
 
       {notifications.length > 0 ? (
         <View style={styles.swipeHintBar}>
@@ -218,26 +259,6 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: "left",
   },
-  mockBanner: {
-    marginHorizontal: theme.spacing.marginMobile,
-    marginTop: theme.spacing.sm,
-    backgroundColor: theme.colors.primaryFixed,
-    paddingVertical: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.md,
-    borderRadius: theme.radius.full,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.primaryFixedDim,
-  },
-  mockBannerText: {
-    ...theme.typography.labelMd,
-    color: theme.colors.onPrimaryFixedVariant,
-    flex: 1,
-    fontSize: 12,
-    textAlign: "left",
-  },
   summary: {
     paddingHorizontal: theme.spacing.marginMobile,
     paddingTop: theme.spacing.md,
@@ -267,6 +288,31 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "flex-start",
     flexWrap: "wrap",
+  },
+  checkRunSummary: {
+    marginHorizontal: theme.spacing.marginMobile,
+    marginTop: theme.spacing.sm,
+    padding: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceContainerLowest,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+    gap: theme.spacing.xs,
+  },
+  checkRunSummaryText: {
+    ...theme.typography.bodyMd,
+    color: theme.colors.onSurface,
+    textAlign: "left",
+  },
+  checkRunSummaryDetail: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: "left",
+  },
+  checkRunSummaryHint: {
+    ...theme.typography.caption,
+    color: theme.colors.primary,
+    textAlign: "left",
   },
   primaryBtn: {
     flexDirection: "row",

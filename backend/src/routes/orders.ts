@@ -33,24 +33,47 @@ ordersRouter.patch(
   }),
 );
 
-const removeLineBodySchema = z.object({
-  book_id: z.string().uuid(),
-  supplier_id: z.string().uuid(),
-  order_type: z.enum(ORDER_TYPES),
-  customer_name: z.string().max(255).nullable().optional(),
-  customer_phone: z.string().max(20).nullable().optional(),
-});
+const removeLineBodySchema = z
+  .object({
+    book_id: z.string().uuid().nullable(),
+    manual_book_title: z.string().max(500).nullable().optional(),
+    supplier_id: z.string().uuid(),
+    order_type: z.enum(ORDER_TYPES),
+    customer_name: z.string().max(255).nullable().optional(),
+    customer_phone: z.string().max(20).nullable().optional(),
+  })
+  .superRefine((body, ctx) => {
+    const bid = body.book_id ?? null;
+    const manual = body.manual_book_title?.trim() ?? "";
+    if (!bid && !manual) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["book_id"],
+        message: "remove_line_requires_book_or_manual",
+      });
+    }
+    if (bid && manual) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["manual_book_title"],
+        message: "remove_line_book_xor_manual",
+      });
+    }
+  });
 
 ordersRouter.post(
   "/remove-line",
   asyncHandler(async (req, res) => {
     const body = removeLineBodySchema.parse(req.body ?? {});
+    const manualNorm =
+      body.book_id != null ? null : body.manual_book_title?.trim() ? body.manual_book_title.trim() : null;
     const n = await deleteOrdersMatchingLine({
       book_id: body.book_id,
       supplier_id: body.supplier_id,
       order_type: body.order_type,
       customer_name: body.customer_name ?? null,
       customer_phone: body.customer_phone ?? null,
+      manual_book_title: manualNorm,
     });
     if (n < 1) throw new HttpError(404, "orders_line_not_found");
     res.json({ deleted: n });

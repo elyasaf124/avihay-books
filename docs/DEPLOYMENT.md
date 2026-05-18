@@ -84,7 +84,7 @@ npm run start --workspace=@avihay-books/backend
 ### `PostgreSQL` חינמי — `Neon`
 
 1. צור חשבון ב־[Neon](https://neon.tech) ופרויקט `Postgres` חדש.
-2. צור מסד (למשל `book-store`) והעתק את מחרוזת החיבור (`DATABASE_URL`). לרוב כבר כוללת `?sslmode=require` — זה תקין.
+2. צור מסד (למשל `book-store`) והעתק את מחרוזת החיבור (`DATABASE_URL`). אם Neon מוסיף `?sslmode=require` — אפשר להשאיר; האפליקציה מסירה את הפרמטר ומגדירה `TLS` לפי ה־host / `DATABASE_SSL`.
 3. ב־`Neon` אפשר לאפשר גישה מכל IP או רשימת `IP` של `Render` (למסלול מחמיר יותר). לבדיקות ראשוניות הספקים נותנים חיבור מאובטח דרך `TLS` בלבד.
 
 ### `API` חינמי — `Render`

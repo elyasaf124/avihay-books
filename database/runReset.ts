@@ -1,5 +1,5 @@
 import "../backend/src/config/loadEnv.js";
-import { postgresSslForUrl } from "@avihay-books/shared";
+import { normalizePostgresConnectionString, postgresSslForUrl } from "@avihay-books/shared";
 import { Pool } from "pg";
 
 /**
@@ -7,9 +7,10 @@ import { Pool } from "pg";
  * the migrations_history. Subsequent `npm run db:migrate` rebuilds everything.
  */
 async function main(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) throw new Error("DATABASE_URL is not set.");
+  const rawDatabaseUrl = process.env.DATABASE_URL;
+  if (!rawDatabaseUrl) throw new Error("DATABASE_URL is not set.");
 
+  const databaseUrl = normalizePostgresConnectionString(rawDatabaseUrl);
   const ssl = postgresSslForUrl(databaseUrl);
   const pool = new Pool({
     connectionString: databaseUrl,

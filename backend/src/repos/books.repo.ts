@@ -67,8 +67,20 @@ export async function findAllBooks(
   return rows;
 }
 
-export async function searchBooks(query: string): Promise<Book[]> {
+export async function searchBooks(query: string, opts: { supplierId?: string } = {}): Promise<Book[]> {
   const pattern = `%${query}%`;
+  if (opts.supplierId) {
+    const { rows } = await pool.query<Book>(
+      `SELECT * FROM books
+        WHERE is_active = TRUE
+          AND supplier_id = $2
+          AND (title ILIKE $1 OR author ILIKE $1 OR topic ILIKE $1)
+        ORDER BY title
+        LIMIT 50`,
+      [pattern, opts.supplierId],
+    );
+    return rows;
+  }
   const { rows } = await pool.query<Book>(
     `SELECT * FROM books
       WHERE is_active = TRUE

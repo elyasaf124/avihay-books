@@ -11,6 +11,9 @@ export async function appendToPendingInventoryOrder(input: OrderInput): Promise<
   if (v.order_type !== "inventory") {
     return upsertOrder(input);
   }
+  if (!v.book_id) {
+    return upsertOrder(input);
+  }
 
   const { rows: candidates } = await pool.query<OrderRow>(
     `SELECT * FROM orders
@@ -43,11 +46,17 @@ export async function appendToPendingInventoryOrder(input: OrderInput): Promise<
 
 export async function upsertOrder(input: OrderInput): Promise<OrderRow> {
   const v = orderInputSchema.parse(input);
+  const bookId = v.book_id ?? null;
+  const manualTitle =
+    bookId != null ? null : (v.manual_book_title?.trim() ? v.manual_book_title.trim() : null);
+  const manualAuthor =
+    bookId != null ? null : (v.manual_book_author?.trim() ? v.manual_book_author.trim() : null);
   const sql = `
     INSERT INTO orders (
-      id, book_id, supplier_id, order_type, quantity, customer_name, customer_phone, status
+      id, book_id, supplier_id, order_type, quantity,
+      customer_name, customer_phone, manual_book_title, manual_book_author, status
     )
-    VALUES (COALESCE($1, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8)
+    VALUES (COALESCE($1, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10)
     ON CONFLICT (id) DO UPDATE SET
       book_id = EXCLUDED.book_id,
       supplier_id = EXCLUDED.supplier_id,
@@ -55,16 +64,20 @@ export async function upsertOrder(input: OrderInput): Promise<OrderRow> {
       quantity = EXCLUDED.quantity,
       customer_name = EXCLUDED.customer_name,
       customer_phone = EXCLUDED.customer_phone,
+      manual_book_title = EXCLUDED.manual_book_title,
+      manual_book_author = EXCLUDED.manual_book_author,
       status = EXCLUDED.status
     RETURNING *`;
   const { rows } = await pool.query<OrderRow>(sql, [
     v.id ?? null,
-    v.book_id,
+    bookId,
     v.supplier_id,
     v.order_type,
     v.quantity,
     v.customer_name ?? null,
     v.customer_phone ?? null,
+    manualTitle,
+    manualAuthor,
     v.status,
   ]);
   return rows[0]!;
@@ -87,26 +100,31 @@ export async function findAllOrders(filter: { type?: OrderType } = {}): Promise<
  * תמיכה בסינון לפי `order_type` כדי להזין את שלוש לשוניות ההזמנות.
  */
 export interface OrdersLineMatch {
-  book_id: string;
+  book_id: string | null;
   supplier_id: string;
   order_type: OrderType;
   customer_name: string | null;
   customer_phone: string | null;
+  manual_book_title: string | null;
 }
 
 /** מוחק את כל השורות התואמות לשורת תצוגה אחת (לאחר איחוד כפילויות בלקוח). */
 export async function deleteOrdersMatchingLine(match: OrdersLineMatch): Promise<number> {
   const result = await pool.query(
     `DELETE FROM orders
-      WHERE book_id = $1 AND supplier_id = $2 AND order_type = $3
+      WHERE book_id IS NOT DISTINCT FROM $1
+        AND supplier_id = $2
+        AND order_type = $3
         AND customer_name IS NOT DISTINCT FROM $4
-        AND customer_phone IS NOT DISTINCT FROM $5`,
+        AND customer_phone IS NOT DISTINCT FROM $5
+        AND manual_book_title IS NOT DISTINCT FROM $6`,
     [
       match.book_id,
       match.supplier_id,
       match.order_type,
       match.customer_name,
       match.customer_phone,
+      match.manual_book_title,
     ],
   );
   return result.rowCount ?? 0;
@@ -123,15 +141,16 @@ export async function findAllOrdersExpanded(
   }
   const { rows } = await pool.query<OrderListItem>(
     `SELECT o.id, o.book_id, o.supplier_id, o.order_type, o.quantity,
-            o.customer_name, o.customer_phone, o.status, o.created_at,
-            b.title       AS book_title,
-            b.author      AS book_author,
-            b.price::text AS book_price,
+            o.customer_name, o.customer_phone, o.manual_book_title, o.manual_book_author,
+            o.status, o.created_at,
+            COALESCE(b.title, o.manual_book_title, '') AS book_title,
+            COALESCE(b.author, o.manual_book_author, '') AS book_author,
+            CASE WHEN o.book_id IS NULL THEN '—' ELSE b.price::text END AS book_price,
             s.name        AS supplier_name,
             s.color_hex   AS supplier_color,
             s.email       AS supplier_email
        FROM orders o
-       JOIN books     b ON b.id = o.book_id
+       LEFT JOIN books b ON b.id = o.book_id
        JOIN suppliers s ON s.id = o.supplier_id
        ${where}
        ORDER BY o.created_at DESC`,

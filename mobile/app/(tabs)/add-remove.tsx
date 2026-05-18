@@ -5,6 +5,7 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -19,6 +20,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "expo-router";
 import {
+  useAdjustInventoryStock,
   useCreateBook,
   useCreateBookLocation,
   useInventoryBooksBySupplier,
@@ -44,6 +46,11 @@ import { theme } from "../../src/theme";
 
 /** ייחוס יציב למקרה של `data === undefined` — אסור להשתמש ב־`[]` inlined (מתחלף כל רינדר). */
 const NO_BOOKS: BookWithLocations[] = [];
+
+/** מגבלת שורות בדרופדאון החיפוש (ביצועים כשיש מאות ספרים לאותו ספק). */
+const BOOK_DROPDOWN_SUGGESTION_CAP = 50;
+
+const BOOK_FILTER_BLUR_CLOSE_MS = Platform.OS === "ios" ? 140 : 230;
 
 function interpolate(template: string, vars: Record<string, string>): string {
   return Object.entries(vars).reduce((s, [k, v]) => {
@@ -95,21 +102,121 @@ export default function AddRemoveScreen(): JSX.Element {
   const suppliers = useSuppliersWithFallback();
   const supplierPickerItems = useMemo(() => suppliersToPickerItems(suppliers), [suppliers]);
   const [supplierId, setSupplierId] = useState<string | null>(null);
+  const [bookTitleFilter, setBookTitleFilter] = useState("");
+  const [bookSupplierFilterFocused, setBookSupplierFilterFocused] = useState(false);
+  /** `true`: הרשימה פתוחה עד סגירה בכפתור החץ (`blur` בשדה לא סוגר). */
+  const [bookSuggestionsPanelPinned, setBookSuggestionsPanelPinned] = useState(false);
+  const [scrollBooksListToBookId, setScrollBooksListToBookId] = useState<string | null>(null);
+  const blurBookFilterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const booksFlatListRef = useRef<FlatList<BookWithLocations> | null>(null);
   const [newBookOpen, setNewBookOpen] = useState(false);
   /** מזהה מיקום לעדכון משולב, או `null` לעדכון מלאי כולל בלבד. */
   const [locationByBook, setLocationByBook] = useState<Record<string, string | null>>({});
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
+  /** טקסט בשדה «כמה להוסיף למלאי» לפי `book.id`. */
+  const [stockBulkDraft, setStockBulkDraft] = useState<Record<string, string>>({});
 
   const booksQuery = useInventoryBooksBySupplier(supplierId);
   const storeMapQuery = useStoreMap();
   const patchBook = usePatchBook();
   const patchLoc = usePatchBookLocation();
+  const adjustInventoryStock = useAdjustInventoryStock();
   const createBook = useCreateBook();
   const createBookLocation = useCreateBookLocation();
   const moveBook = useMoveBook();
   const booksData = booksQuery.data;
   const books = booksData ?? NO_BOOKS;
+  const bookTitleFilterTrimmed = bookTitleFilter.trim();
+  const filteredBooks = useMemo(() => {
+    if (!bookTitleFilterTrimmed) return books;
+    const q = bookTitleFilterTrimmed.normalize("NFKC").toLocaleLowerCase("und");
+    return books.filter((b) =>
+      b.title.normalize("NFKC").toLocaleLowerCase("und").includes(q),
+    );
+  }, [books, bookTitleFilterTrimmed]);
+
+  const dropdownSuggestionBooks = useMemo(
+    () => filteredBooks.slice(0, BOOK_DROPDOWN_SUGGESTION_CAP),
+    [filteredBooks],
+  );
+  const dropdownSuggestionTruncated = dropdownSuggestionBooks.length < filteredBooks.length;
+
   const isOffline = booksQuery.isError;
+
+  const clearBookFilterBlurTimer = useCallback(() => {
+    if (blurBookFilterTimerRef.current !== null) {
+      clearTimeout(blurBookFilterTimerRef.current);
+      blurBookFilterTimerRef.current = null;
+    }
+  }, []);
+
+  const onBookTitleFilterFocus = useCallback(() => {
+    clearBookFilterBlurTimer();
+    setBookSupplierFilterFocused(true);
+  }, [clearBookFilterBlurTimer]);
+
+  const onBookTitleFilterBlur = useCallback(() => {
+    blurBookFilterTimerRef.current = setTimeout(() => {
+      setBookSupplierFilterFocused(false);
+      blurBookFilterTimerRef.current = null;
+    }, BOOK_FILTER_BLUR_CLOSE_MS);
+  }, [clearBookFilterBlurTimer]);
+
+  const toggleBookSuggestionsPanelPinned = useCallback(() => {
+    clearBookFilterBlurTimer();
+    setBookSuggestionsPanelPinned((p) => !p);
+  }, [clearBookFilterBlurTimer]);
+
+  const onPickBookFromDropdown = useCallback(
+    (book: BookWithLocations) => {
+      clearBookFilterBlurTimer();
+      setBookTitleFilter(book.title);
+      setBookSupplierFilterFocused(false);
+      setBookSuggestionsPanelPinned(false);
+      Keyboard.dismiss();
+      setScrollBooksListToBookId(book.id);
+    },
+    [clearBookFilterBlurTimer],
+  );
+
+  useEffect(() => () => clearBookFilterBlurTimer(), [clearBookFilterBlurTimer]);
+
+  useEffect(() => {
+    setBookTitleFilter("");
+    setStockBulkDraft({});
+    setBookSupplierFilterFocused(false);
+    setBookSuggestionsPanelPinned(false);
+    setScrollBooksListToBookId(null);
+    clearBookFilterBlurTimer();
+  }, [supplierId, clearBookFilterBlurTimer]);
+
+  useEffect(() => {
+    if (scrollBooksListToBookId === null) return undefined;
+    const id = scrollBooksListToBookId;
+    const idx = filteredBooks.findIndex((b) => b.id === id);
+    if (idx >= 0) {
+      let cancelled = false;
+      const tf = requestAnimationFrame(() => {
+        if (cancelled) return;
+        try {
+          booksFlatListRef.current?.scrollToIndex({
+            index: idx,
+            viewPosition: 0.06,
+            animated: true,
+          });
+        } catch {
+          //
+        }
+        setScrollBooksListToBookId(null);
+      });
+      return () => {
+        cancelled = true;
+        cancelAnimationFrame(tf);
+      };
+    }
+    const tmo = setTimeout(() => setScrollBooksListToBookId(null), 600);
+    return () => clearTimeout(tmo);
+  }, [filteredBooks, scrollBooksListToBookId]);
   /** מפת ארונות מהשרת — משתמשים ב־`data` שנשמר בקאש גם אם `refetch` אחרון נכשל (בלי לנעול לפי `isError`). */
   const placementStoreMap = storeMapQuery.data ?? null;
 
@@ -126,6 +233,7 @@ export default function AddRemoveScreen(): JSX.Element {
     if (!supplierId) {
       setLocationByBook((p) => (Object.keys(p).length ? {} : p));
       setPriceDraft((p) => (Object.keys(p).length ? {} : p));
+      setStockBulkDraft((p) => (Object.keys(p).length ? {} : p));
       return;
     }
     /** בעת טעינה אין להחזיק `booksQuery.data`; אחרת כל פריים מאלץ את `setState`. */
@@ -134,6 +242,7 @@ export default function AddRemoveScreen(): JSX.Element {
     if (booksData.length === 0) {
       setLocationByBook((p) => (Object.keys(p).length === 0 ? p : {}));
       setPriceDraft((p) => (Object.keys(p).length === 0 ? p : {}));
+      setStockBulkDraft((p) => (Object.keys(p).length === 0 ? p : {}));
       return;
     }
 
@@ -164,6 +273,15 @@ export default function AddRemoveScreen(): JSX.Element {
       for (const k of Object.keys(prev)) {
         if (!validIds.has(k)) changed = true;
       }
+      return changed ? merged : prev;
+    });
+    setStockBulkDraft((prev) => {
+      let changed = false;
+      const merged: Record<string, string> = {};
+      for (const id of validIds) {
+        if (prev[id] !== undefined) merged[id] = prev[id];
+      }
+      if (Object.keys(prev).length !== Object.keys(merged).length) changed = true;
       return changed ? merged : prev;
     });
   }, [supplierId, booksData]);
@@ -242,27 +360,31 @@ export default function AddRemoveScreen(): JSX.Element {
       dataUpdatedAt: booksQuery.dataUpdatedAt,
       busyBookId,
       priceDraft,
+      stockBulkDraft,
       locationByBook,
       createLocPending: createBookLocation.isPending,
       movePending: moveBook.isPending,
       placementReady: placementStoreMap != null,
       storeMapUpdatedAt: storeMapQuery.dataUpdatedAt,
+      bookTitleFilterTrimmed,
     }),
     [
       booksQuery.dataUpdatedAt,
       busyBookId,
       priceDraft,
+      stockBulkDraft,
       locationByBook,
       createBookLocation.isPending,
       moveBook.isPending,
       placementStoreMap,
       storeMapQuery.dataUpdatedAt,
+      bookTitleFilterTrimmed,
     ],
   );
 
   const applyStockDelta = useCallback(
-    async (book: BookWithLocations, delta: number) => {
-      if (busyBookId) return;
+    (book: BookWithLocations, delta: number) => {
+      if (!supplierId) return;
       const selId = locationByBook[book.id] ?? null;
       const selectedLoc =
         selId === null ? null : book.locations.find((loc) => loc.id === selId) ?? null;
@@ -270,33 +392,41 @@ export default function AddRemoveScreen(): JSX.Element {
       if (delta < 0 && book.stock_quantity <= 0) return;
       if (delta < 0 && selectedLoc && selectedLoc.quantity_in_cell <= 0) return;
 
-      try {
-        setBusyBookId(book.id);
-        if (selectedLoc) {
-          const newQty = Math.max(0, selectedLoc.quantity_in_cell + delta);
-          await patchLoc.mutateAsync({
-            location: {
-              id: selectedLoc.id,
-              book_id: book.id,
-              cell_id: selectedLoc.cell_id,
-              position_in_cell: selectedLoc.position_in_cell,
-              quantity_in_cell: newQty,
-            },
-          });
-        }
-        await patchBook.mutateAsync({
-          id: book.id,
-          patch: {
-            stock_quantity: newStock,
-          },
-        });
-      } catch {
-        Alert.alert(he.generic.errorTitle, he.addRemove.stockAdjustFailed);
-      } finally {
-        setBusyBookId(null);
+      let selectedExpanded: BookWithLocations["locations"][number] | null = null;
+      if (selectedLoc) {
+        const newQtyCell = Math.max(0, selectedLoc.quantity_in_cell + delta);
+        selectedExpanded = { ...selectedLoc, quantity_in_cell: newQtyCell };
       }
+
+      adjustInventoryStock.mutate(
+        {
+          supplierId,
+          bookId: book.id,
+          newStock,
+          selectedLocation: selectedExpanded,
+        },
+        {
+          onError: () => Alert.alert(he.generic.errorTitle, he.addRemove.stockAdjustFailed),
+        },
+      );
     },
-    [busyBookId, locationByBook, patchBook, patchLoc],
+    [supplierId, locationByBook, adjustInventoryStock],
+  );
+
+  /** הוספת מלאי מהשדה «כמה להוסיף»: מחרוזת מספר שלם חיובי. */
+  const applyStockBulkAdd = useCallback(
+    (book: BookWithLocations) => {
+      if (!supplierId) return;
+      const raw = stockBulkDraft[book.id]?.trim() ?? "";
+      const addQty = Number.parseInt(raw, 10);
+      if (!Number.isFinite(addQty) || addQty <= 0) return;
+      applyStockDelta(book, addQty);
+      setStockBulkDraft((p) => {
+        const { [book.id]: _, ...rest } = p;
+        return rest;
+      });
+    },
+    [supplierId, stockBulkDraft, applyStockDelta],
   );
 
   const applyPrice = useCallback(
@@ -555,28 +685,137 @@ export default function AddRemoveScreen(): JSX.Element {
             <Text style={styles.hintText}>{he.addRemove.emptyList}</Text>
           </View>
         ) : (
-          <FlatList
-            data={books}
-            extraData={listExtraData}
-            keyExtractor={(item) => item.id}
-            ListHeaderComponent={
-              mapPlacementGuardMessage ? (
+          <View style={styles.inventoryWithSearch}>
+            <View style={styles.inventorySearchDock}>
+              {mapPlacementGuardMessage ? (
                 <View style={styles.mapGuardBanner}>
                   <Ionicons name="map-outline" size={18} color={theme.colors.onPrimaryContainer} />
                   <Text style={styles.mapGuardText}>{mapPlacementGuardMessage}</Text>
                 </View>
+              ) : null}
+              <View style={styles.bookFilterRow}>
+                <Ionicons name="search-outline" size={20} color={theme.colors.onSurfaceVariant} />
+                <TextInput
+                  style={styles.bookFilterInput}
+                  value={bookTitleFilter}
+                  onChangeText={setBookTitleFilter}
+                  placeholder={he.addRemove.bookTitleSearchPlaceholder}
+                  placeholderTextColor={theme.colors.onSurfaceVariant}
+                  returnKeyType="search"
+                  textAlign="left"
+                  accessibilityLabel={he.addRemove.bookTitleSearchAccessibility}
+                  onFocus={onBookTitleFilterFocus}
+                  onBlur={onBookTitleFilterBlur}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={
+                    bookSuggestionsPanelPinned
+                      ? he.addRemove.bookDropdownHide
+                      : he.addRemove.bookDropdownShow
+                  }
+                  onPress={() => toggleBookSuggestionsPanelPinned()}
+                  hitSlop={10}
+                  style={styles.bookFilterChevronBtn}
+                >
+                  <Ionicons
+                    name={bookSuggestionsPanelPinned ? "chevron-up-outline" : "chevron-down-outline"}
+                    size={22}
+                    color={theme.colors.primary}
+                  />
+                </Pressable>
+              </View>
+              {bookSuggestionsPanelPinned || bookSupplierFilterFocused ? (
+                filteredBooks.length > 0 || bookTitleFilterTrimmed ? (
+                  <View style={styles.bookDropdownOuter}>
+                    {filteredBooks.length === 0 ? (
+                      <Text style={styles.bookDropdownEmptyText}>{he.addRemove.bookDropdownNoMatches}</Text>
+                    ) : (
+                      <>
+                      <ScrollView
+                        keyboardShouldPersistTaps="handled"
+                        nestedScrollEnabled
+                        showsVerticalScrollIndicator
+                        style={styles.bookDropdownScroll}
+                      >
+                        {dropdownSuggestionBooks.map((book) => (
+                          <Pressable
+                            key={book.id}
+                            onPressIn={() => clearBookFilterBlurTimer()}
+                            onPress={() => onPickBookFromDropdown(book)}
+                            style={({ pressed }) => [
+                              styles.bookDropdownRow,
+                              pressed && styles.bookDropdownRowPressed,
+                            ]}
+                          >
+                            <Text style={styles.bookDropdownTitle} numberOfLines={2}>
+                              {book.title}
+                            </Text>
+                            <Text style={styles.bookDropdownAuthor} numberOfLines={1}>
+                              {book.author}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                      {dropdownSuggestionTruncated ? (
+                        <Text style={styles.bookDropdownTruncHint}>
+                          {interpolate(he.addRemove.bookDropdownTruncated, {
+                            shown: String(dropdownSuggestionBooks.length),
+                            total: String(filteredBooks.length),
+                          })}
+                        </Text>
+                      ) : null}
+                    </>
+                  )}
+                </View>
               ) : null
-            }
-            contentContainerStyle={styles.listPad}
-            ItemSeparatorComponent={() => <View style={styles.sep} />}
-            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-            renderItem={({ item: book }) => {
+            ) : null}
+            </View>
+            <FlatList
+              ref={booksFlatListRef}
+              keyboardShouldPersistTaps="handled"
+              style={styles.inventoryBooksFlatList}
+              data={filteredBooks}
+              extraData={listExtraData}
+              keyExtractor={(item) => item.id}
+              ListEmptyComponent={
+                bookTitleFilterTrimmed ? (
+                  <View style={styles.bookSearchEmptyBox}>
+                    <Text style={styles.hintText}>{he.addRemove.bookSearchEmpty}</Text>
+                  </View>
+                ) : null
+              }
+              onScrollToIndexFailed={(info) => {
+                const list = booksFlatListRef.current;
+                if (!list) return;
+                setTimeout(() => {
+                  try {
+                    list.scrollToOffset({
+                      offset: Math.max(0, Math.floor(info.averageItemLength * info.index)),
+                      animated: true,
+                    });
+                  } catch {
+                    //
+                  }
+                }, 280);
+              }}
+              contentContainerStyle={styles.inventoryBooksListContent}
+              ItemSeparatorComponent={() => <View style={styles.sep} />}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+              renderItem={({ item: book }) => {
               const locId = locationByBook[book.id] ?? null;
               const selectedLoc =
                 locId === null ? null : book.locations.find((loc) => loc.id === locId) ?? null;
               const minusDisabled =
                 book.stock_quantity <= 0 ||
                 (selectedLoc !== null && selectedLoc.quantity_in_cell <= 0);
+
+              const stockBulkDraftRaw = stockBulkDraft[book.id]?.trim() ?? "";
+              const stockBulkParsed = Number.parseInt(stockBulkDraftRaw, 10);
+              const stockBulkAdditionValid =
+                Number.isFinite(stockBulkParsed) && stockBulkParsed > 0;
+              const stockBulkPreviewTotal =
+                stockBulkAdditionValid ? book.stock_quantity + stockBulkParsed : null;
 
               return (
                 <View style={styles.rowCard}>
@@ -687,25 +926,67 @@ export default function AddRemoveScreen(): JSX.Element {
                     <View style={styles.stepper}>
                       <Pressable
                         accessibilityRole="button"
-                        disabled={minusDisabled || busyBookId !== null}
+                        disabled={minusDisabled}
                         onPress={() => void applyStockDelta(book, -1)}
-                        style={[
-                          styles.stepBtn,
-                          (minusDisabled || busyBookId !== null) && styles.stepBtnDisabled,
-                        ]}
+                        style={[styles.stepBtn, minusDisabled && styles.stepBtnDisabled]}
                       >
                         <Ionicons name="remove" size={22} color={theme.colors.onSurface} />
                       </Pressable>
                       <Text style={styles.qty}>{book.stock_quantity}</Text>
                       <Pressable
                         accessibilityRole="button"
-                        disabled={busyBookId !== null}
                         onPress={() => void applyStockDelta(book, 1)}
-                        style={[styles.stepBtn, busyBookId !== null && styles.stepBtnDisabled]}
+                        style={styles.stepBtn}
                       >
                         <Ionicons name="add" size={22} color={theme.colors.onSurface} />
                       </Pressable>
                     </View>
+                  </View>
+
+                  <View style={styles.stockBulkBlock}>
+                    <Text style={styles.dimLabel}>{he.addRemove.stockBulkAddLabel}</Text>
+                    <View style={styles.stockBulkRow}>
+                      <TextInput
+                        value={stockBulkDraft[book.id] ?? ""}
+                        onChangeText={(t) =>
+                          setStockBulkDraft((p) => ({
+                            ...p,
+                            [book.id]: t.replace(/\D/g, ""),
+                          }))
+                        }
+                        keyboardType="number-pad"
+                        placeholder={he.addRemove.stockBulkAddPlaceholder}
+                        placeholderTextColor={theme.colors.onSurfaceVariant}
+                        style={styles.stockBulkInput}
+                        textAlign="left"
+                        accessibilityLabel={he.addRemove.stockBulkAddAccessibility}
+                      />
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => applyStockBulkAdd(book)}
+                        disabled={!stockBulkAdditionValid}
+                        style={[
+                          styles.stockBulkApplyBtn,
+                          !stockBulkAdditionValid && styles.stockBulkApplyBtnDisabled,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.stockBulkApplyBtnText,
+                            !stockBulkAdditionValid && styles.stockBulkApplyBtnTextDisabled,
+                          ]}
+                        >
+                          {he.addRemove.stockBulkAddCta}
+                        </Text>
+                      </Pressable>
+                    </View>
+                    {stockBulkPreviewTotal !== null ? (
+                      <Text style={styles.stockBulkPreview}>
+                        {interpolate(he.addRemove.stockBulkPreviewTotal, {
+                          total: String(stockBulkPreviewTotal),
+                        })}
+                      </Text>
+                    ) : null}
                   </View>
 
                   <Text style={styles.dimLabel}>{he.addRemove.tableHeaderPrice}</Text>
@@ -724,6 +1005,7 @@ export default function AddRemoveScreen(): JSX.Element {
               );
             }}
           />
+          </View>
         )}
       </SafeAreaView>
 
@@ -1317,7 +1599,83 @@ const styles = StyleSheet.create({
   },
   loadingBox: { alignItems: "center", paddingTop: theme.spacing.xl },
   loadingText: { marginTop: theme.spacing.sm, color: theme.colors.onSurfaceVariant },
-  listPad: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.xl },
+  inventoryWithSearch: { flex: 1 },
+  inventorySearchDock: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm },
+  inventoryBooksFlatList: { flex: 1 },
+  inventoryBooksListContent: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingBottom: theme.spacing.xl,
+    flexGrow: 1,
+  },
+  bookFilterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    backgroundColor: theme.colors.surfaceContainerLow,
+  },
+  bookFilterChevronBtn: {
+    paddingHorizontal: theme.spacing.xs,
+    justifyContent: "center",
+  },
+  bookDropdownOuter: {
+    marginTop: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surface,
+    overflow: "hidden",
+  },
+  bookDropdownScroll: { maxHeight: 196 },
+  bookDropdownRow: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.outlineVariant,
+  },
+  bookDropdownRowPressed: { backgroundColor: theme.colors.surfaceContainerHighest },
+  bookDropdownTitle: {
+    ...theme.typography.labelMd,
+    color: theme.colors.onSurface,
+    textAlign: "left",
+  },
+  bookDropdownAuthor: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: "left",
+    marginTop: 2,
+  },
+  bookDropdownTruncHint: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: "center",
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    backgroundColor: theme.colors.surfaceContainerLow,
+  },
+  bookDropdownEmptyText: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: "center",
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.sm,
+  },
+  bookFilterInput: {
+    flex: 1,
+    minHeight: 36,
+    paddingVertical: Platform.OS === "ios" ? theme.spacing.sm : theme.spacing.xs,
+    ...theme.typography.bodyMd,
+    color: theme.colors.onSurface,
+  },
+  bookSearchEmptyBox: {
+    alignItems: "center",
+    paddingVertical: theme.spacing.xl,
+    paddingHorizontal: theme.spacing.md,
+  },
   sep: { height: theme.spacing.md },
   rowCard: {
     backgroundColor: theme.colors.surface,
@@ -1478,6 +1836,41 @@ const styles = StyleSheet.create({
     minWidth: 36,
     textAlign: "center",
     color: theme.colors.onSurface,
+  },
+  stockBulkBlock: { marginTop: theme.spacing.sm, gap: theme.spacing.xs },
+  stockBulkRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
+  stockBulkInput: {
+    flex: 1,
+    minWidth: 0,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+    borderRadius: theme.radius.md,
+    paddingVertical: Platform.OS === "ios" ? theme.spacing.sm : theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceContainerLow,
+    ...theme.typography.bodyMd,
+    color: theme.colors.onSurface,
+  },
+  stockBulkApplyBtn: {
+    flexShrink: 0,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.primary,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+  },
+  stockBulkApplyBtnDisabled: {
+    opacity: 1,
+    borderColor: theme.colors.outlineVariant,
+    backgroundColor: theme.colors.surfaceContainerHigh,
+  },
+  stockBulkApplyBtnText: { ...theme.typography.labelMd, color: theme.colors.onPrimary },
+  stockBulkApplyBtnTextDisabled: { color: theme.colors.onSurfaceVariant },
+  stockBulkPreview: {
+    ...theme.typography.caption,
+    color: theme.colors.primary,
+    textAlign: "left",
   },
   priceRow: { flexDirection: "row", alignItems: "center", gap: theme.spacing.sm },
   priceInput: {

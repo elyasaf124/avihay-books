@@ -1,9 +1,18 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type { NotificationListItem } from "@avihay-books/shared";
 import { api } from "./client";
 
 export const NOTIFICATIONS_LIST_KEY = ["notifications", "list"] as const;
 export const NOTIFICATIONS_UNREAD_KEY = ["notifications", "unread-count"] as const;
+
+function refetchNotificationsQueries(client: QueryClient): Promise<void> {
+  return Promise.all([
+    client.refetchQueries({ queryKey: NOTIFICATIONS_LIST_KEY }),
+    client.refetchQueries({ queryKey: NOTIFICATIONS_UNREAD_KEY }),
+  ]).then(() => {
+    return undefined;
+  });
+}
 
 /** רשימת ההתראות המלאה — מסך ההתראות, כולל `book`/`supplier` משולבים. */
 export function useNotifications() {
@@ -13,7 +22,7 @@ export function useNotifications() {
       const { data } = await api.get<NotificationListItem[]>("/notifications");
       return data;
     },
-    staleTime: 15_000,
+    staleTime: 0,
     retry: 0,
   });
 }
@@ -46,9 +55,8 @@ export function useMarkNotificationRead() {
     mutationFn: async (id: string) => {
       await api.post(`/notifications/${id}/read`);
     },
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: NOTIFICATIONS_LIST_KEY });
-      void client.invalidateQueries({ queryKey: NOTIFICATIONS_UNREAD_KEY });
+    onSuccess: async () => {
+      await refetchNotificationsQueries(client);
     },
   });
 }
@@ -64,9 +72,8 @@ export function useMarkAllNotificationsRead() {
       const { data } = await api.post<MarkAllResponse>("/notifications/mark-all-read");
       return data;
     },
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: NOTIFICATIONS_LIST_KEY });
-      void client.invalidateQueries({ queryKey: NOTIFICATIONS_UNREAD_KEY });
+    onSuccess: async () => {
+      await refetchNotificationsQueries(client);
     },
   });
 }
@@ -77,9 +84,8 @@ export function useDeleteNotification() {
     mutationFn: async (id: string) => {
       await api.delete(`/notifications/${id}`);
     },
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: NOTIFICATIONS_LIST_KEY });
-      void client.invalidateQueries({ queryKey: NOTIFICATIONS_UNREAD_KEY });
+    onSuccess: async () => {
+      await refetchNotificationsQueries(client);
     },
   });
 }
@@ -87,6 +93,8 @@ export function useDeleteNotification() {
 export interface NotificationCheckSummary {
   low_stock_created: number;
   remove_from_display_created: number;
+  remove_from_display_candidate_count: number;
+  remove_from_display_after: string;
   supplier_reorder_reminder_created: number;
   ran_at: string;
 }
@@ -102,9 +110,8 @@ export function useRunNotificationChecks() {
       const { data } = await api.post<NotificationCheckSummary>("/notifications/run-checks");
       return data;
     },
-    onSuccess: () => {
-      void client.invalidateQueries({ queryKey: NOTIFICATIONS_LIST_KEY });
-      void client.invalidateQueries({ queryKey: NOTIFICATIONS_UNREAD_KEY });
+    onSuccess: async () => {
+      await refetchNotificationsQueries(client);
     },
   });
 }
