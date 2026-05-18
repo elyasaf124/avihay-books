@@ -216,8 +216,7 @@ const styles = StyleSheet.create({
     ...theme.typography.labelMd,
     color: theme.colors.onErrorContainer,
     flex: 1,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   mockBanner: {
     marginHorizontal: theme.spacing.marginMobile,
@@ -237,8 +236,7 @@ const styles = StyleSheet.create({
     color: theme.colors.onPrimaryFixedVariant,
     flex: 1,
     fontSize: 12,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   summary: {
     paddingHorizontal: theme.spacing.marginMobile,
@@ -253,16 +251,14 @@ const styles = StyleSheet.create({
   summaryLabel: {
     ...theme.typography.labelMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   summaryValue: {
     ...theme.typography.display,
     fontSize: 32,
     lineHeight: 36,
     color: theme.colors.primary,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   summaryActions: {
     flexDirection: "row",
@@ -314,8 +310,7 @@ const styles = StyleSheet.create({
   swipeHintText: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   list: {
     paddingHorizontal: theme.spacing.marginMobile,
@@ -326,8 +321,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     ...theme.typography.labelMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
     paddingTop: theme.spacing.sm,
     paddingBottom: theme.spacing.xs,
   },
@@ -355,6 +349,5 @@ const styles = StyleSheet.create({
     ...theme.typography.bodyMd,
     color: theme.colors.onSurfaceVariant,
     textAlign: "center",
-    writingDirection: "rtl",
   },
 });

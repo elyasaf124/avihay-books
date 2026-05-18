@@ -77,14 +77,12 @@ const styles = StyleSheet.create({
   title: {
     ...theme.typography.headlineSm,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   message: {
     ...theme.typography.bodyMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
     lineHeight: 20,
   },
   actions: {

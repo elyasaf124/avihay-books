@@ -38,7 +38,9 @@
           "imageWidth": 200
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-localization",
+      "./withForceRTL"
     ],
     "experiments": {
       "typedRoutes": false,
@@ -46,7 +48,9 @@
     },
     "extra": {
       "apiBaseUrl": "http://localhost:4000/api/v1",
-      "apiKey": null
+      "apiKey": null,
+      "supportsRTL": true,
+      "forcesRTL": true
     }
   }
 }

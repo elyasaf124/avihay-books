@@ -149,7 +149,7 @@ function FilterSheet({
               placeholder={he.picker.searchInList}
               placeholderTextColor={theme.colors.onSurfaceVariant}
               style={styles.supplierSearchInput}
-              textAlign="right"
+              textAlign="left"
             />
           </View>
           <View style={styles.supplierListViewport}>
@@ -250,8 +250,7 @@ const styles = StyleSheet.create({
     flex: 1,
     ...theme.typography.bodyMd,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   badge: {
     backgroundColor: theme.colors.primary,
@@ -288,14 +287,12 @@ const styles = StyleSheet.create({
   sheetTitle: {
     ...theme.typography.headlineSm,
     color: theme.colors.primary,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   sectionTitle: {
     ...theme.typography.labelMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   supplierSearchRow: {
     flexDirection: "row",
@@ -359,8 +356,7 @@ const styles = StyleSheet.create({
     ...theme.typography.bodyMd,
     color: theme.colors.onSurface,
     flex: 1,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   supplierRowNameActive: {
     ...theme.typography.labelMd,
@@ -372,7 +368,6 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     textAlign: "center",
     paddingVertical: theme.spacing.lg,
-    writingDirection: "rtl",
   },
   priceRow: {
     flexDirection: "row",
@@ -385,8 +380,7 @@ const styles = StyleSheet.create({
   priceLabel: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   priceInput: {
     borderWidth: 1,
@@ -395,8 +389,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
     color: theme.colors.onSurface,
     fontFamily: theme.fontFamily.regular,
   },

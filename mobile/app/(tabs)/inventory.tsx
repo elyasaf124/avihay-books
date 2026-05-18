@@ -241,8 +241,7 @@ const styles = StyleSheet.create({
     ...theme.typography.labelMd,
     color: theme.colors.onErrorContainer,
     flex: 1,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   header: {
     paddingHorizontal: theme.spacing.marginMobile,
@@ -253,14 +252,12 @@ const styles = StyleSheet.create({
   title: {
     ...theme.typography.headlineMd,
     color: theme.colors.primary,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   subtitle: {
     ...theme.typography.bodyMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   totalsRow: {
     flexDirection: "row",
@@ -288,8 +285,7 @@ const styles = StyleSheet.create({
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
     maxWidth: 72,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   list: {
     paddingHorizontal: theme.spacing.marginMobile,
@@ -320,7 +316,6 @@ const styles = StyleSheet.create({
     ...theme.typography.bodyMd,
     color: theme.colors.onSurfaceVariant,
     textAlign: "center",
-    writingDirection: "rtl",
   },
   card: {
     backgroundColor: theme.colors.surface,
@@ -341,14 +336,12 @@ const styles = StyleSheet.create({
   unitName: {
     ...theme.typography.headlineSm,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   positionLabel: {
     ...theme.typography.caption,
     color: theme.colors.primary,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   displayBadge: {
     flexDirection: "row",
@@ -368,8 +361,7 @@ const styles = StyleSheet.create({
   hint: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   statsRow: {
     flexDirection: "row",
@@ -393,8 +385,7 @@ const styles = StyleSheet.create({
   miniStatLabel: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   cardFooter: {
     flexDirection: "row",

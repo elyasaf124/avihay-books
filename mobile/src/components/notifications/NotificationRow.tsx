@@ -230,8 +230,7 @@ const styles = StyleSheet.create({
   typeLabel: {
     ...theme.typography.labelMd,
     color: theme.colors.primary,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
     flexShrink: 1,
   },
   timeLabel: {
@@ -239,7 +238,6 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     flex: 1,
     textAlign: "left",
-    writingDirection: "rtl",
   },
   unreadDot: {
     width: 10,
@@ -250,15 +248,13 @@ const styles = StyleSheet.create({
   message: {
     ...theme.typography.bodyMd,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   messageBold: { ...theme.typography.bodyLg, color: theme.colors.onSurface },
   meta: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   swipeAction: {
     backgroundColor: theme.colors.primary,

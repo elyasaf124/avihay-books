@@ -201,22 +201,19 @@ const styles = StyleSheet.create({
   title: {
     ...theme.typography.headlineMd,
     color: theme.colors.primary,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
     flex: 1,
   },
   field: { gap: 2 },
   fieldLabel: {
     ...theme.typography.labelMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   fieldValue: {
     ...theme.typography.bodyLg,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   noticeRow: {
     flexDirection: "row",
@@ -233,14 +230,12 @@ const styles = StyleSheet.create({
   noticeTitle: {
     ...theme.typography.bodyMd,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   noticeHint: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   stepper: {
     marginTop: theme.spacing.sm,
@@ -249,8 +244,7 @@ const styles = StyleSheet.create({
   stepperLabel: {
     ...theme.typography.labelMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   stepperRow: {
     flexDirection: "row",
@@ -291,8 +285,7 @@ const styles = StyleSheet.create({
     ...theme.typography.bodyMd,
     color: theme.colors.onErrorContainer,
     flex: 1,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   actions: {
     flexDirection: "row",

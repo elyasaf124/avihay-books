@@ -116,7 +116,7 @@ export function InlineSearchablePickList({
               placeholder={searchPlaceholder}
               placeholderTextColor={theme.colors.onSurfaceVariant}
               style={styles.searchInput}
-              textAlign="right"
+              textAlign="left"
               autoFocus
             />
             {query.length > 0 ? (
@@ -212,8 +212,7 @@ const styles = StyleSheet.create({
   fieldLabel: {
     ...theme.typography.labelMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   trigger: {
     flexDirection: "row",
@@ -233,8 +232,7 @@ const styles = StyleSheet.create({
     flex: 1,
     ...theme.typography.bodyMd,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   expanded: {
     gap: theme.spacing.xs,
@@ -305,8 +303,7 @@ const styles = StyleSheet.create({
     flex: 1,
     ...theme.typography.bodyMd,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   rowLabelSelected: {
     ...theme.typography.labelMd,
@@ -332,7 +329,6 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     textAlign: "center",
     paddingVertical: theme.spacing.lg,
-    writingDirection: "rtl",
     paddingHorizontal: theme.spacing.sm,
   },
   actions: {

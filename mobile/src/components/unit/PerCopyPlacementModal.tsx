@@ -259,7 +259,7 @@ export function PerCopyPlacementModal({
                       }}
                       placeholder={he.addRemove.cellNameSearchPlaceholder}
                       placeholderTextColor={theme.colors.onSurfaceVariant}
-                      textAlign="right"
+                      textAlign="left"
                     />
                   </View>
 
@@ -428,8 +428,7 @@ const styles = StyleSheet.create({
     ...theme.typography.headlineSm,
     color: theme.colors.primary,
     flex: 1,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   bookCard: {
     flexDirection: "row",
@@ -444,21 +443,20 @@ const styles = StyleSheet.create({
     ...theme.typography.bodyLg,
     fontWeight: "700",
     color: theme.colors.onSurface,
-    textAlign: "right",
+    textAlign: "left",
   },
-  bookAuthor: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "right" },
+  bookAuthor: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "left" },
   slotsSubtitle: {
     ...theme.typography.caption,
     color: theme.colors.primary,
     marginTop: 6,
-    textAlign: "right",
+    textAlign: "left",
   },
   slotsOptionalHint: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
     marginTop: 4,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   bulkShortcut: {
     flexDirection: "row",
@@ -476,8 +474,7 @@ const styles = StyleSheet.create({
   cellTypeHint: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
     marginBottom: theme.spacing.sm,
     lineHeight: 20,
   },
@@ -490,8 +487,8 @@ const styles = StyleSheet.create({
     gap: theme.spacing.xs,
     backgroundColor: theme.colors.surfaceContainerLowest,
   },
-  rowHeading: { ...theme.typography.labelMd, color: theme.colors.primary, textAlign: "right" },
-  rowHint: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "right" },
+  rowHeading: { ...theme.typography.labelMd, color: theme.colors.primary, textAlign: "left" },
+  rowHint: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "left" },
   nameRowSingle: { width: "100%" },
   nameInputFull: {
     width: "100%",
@@ -516,11 +513,11 @@ const styles = StyleSheet.create({
   },
   ambigChipText: {
     ...theme.typography.caption,
-    textAlign: "right",
+    textAlign: "left",
     color: theme.colors.onSurface,
   },
-  rowErr: { ...theme.typography.caption, color: theme.colors.error, textAlign: "right" },
-  rowOk: { ...theme.typography.caption, color: theme.colors.onSurface, textAlign: "right" },
+  rowErr: { ...theme.typography.caption, color: theme.colors.error, textAlign: "left" },
+  rowOk: { ...theme.typography.caption, color: theme.colors.onSurface, textAlign: "left" },
   treeLink: {
     flexDirection: "row",
     alignItems: "center",
@@ -535,7 +532,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.errorContainer,
     padding: theme.spacing.sm,
     borderRadius: theme.radius.md,
-    textAlign: "right",
+    textAlign: "left",
   },
   submitBtn: {
     backgroundColor: theme.colors.primary,

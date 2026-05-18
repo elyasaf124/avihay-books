@@ -100,17 +100,17 @@ const styles = StyleSheet.create({
   title: {
     ...theme.typography.headlineSm,
     color: theme.colors.primary,
-    textAlign: "right",
+    textAlign: "left",
   },
   body: {
     ...theme.typography.bodyMd,
     color: theme.colors.onSurface,
-    textAlign: "right",
+    textAlign: "left",
   },
   caption: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
+    textAlign: "left",
   },
   button: {
     alignItems: "center",

@@ -280,8 +280,7 @@ const styles = StyleSheet.create({
     ...theme.typography.labelMd,
     color: theme.colors.onErrorContainer,
     flex: 1,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   summary: {
     paddingHorizontal: theme.spacing.marginMobile,
@@ -294,16 +293,14 @@ const styles = StyleSheet.create({
   summaryLabel: {
     ...theme.typography.labelMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   summaryValue: {
     ...theme.typography.display,
     fontSize: 32,
     lineHeight: 36,
     color: theme.colors.primary,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   list: {
     paddingHorizontal: theme.spacing.marginMobile,
@@ -325,7 +322,6 @@ const styles = StyleSheet.create({
     ...theme.typography.bodyMd,
     color: theme.colors.onSurfaceVariant,
     textAlign: "center",
-    writingDirection: "rtl",
   },
   loadingBox: {
     flex: 1,

@@ -171,7 +171,7 @@ export function DisplaySaleModal({
             keyboardType="number-pad"
             placeholder="1"
             placeholderTextColor={theme.colors.onSurfaceVariant}
-            textAlign="right"
+            textAlign="left"
           />
           <Text style={styles.hint}>{he.unit.displaySale.hint}</Text>
 
@@ -226,25 +226,22 @@ const styles = StyleSheet.create({
     ...theme.typography.headlineSm,
     color: theme.colors.primary,
     flex: 1,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   bookLine: {
     ...theme.typography.bodyLg,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   meta: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   label: {
     ...theme.typography.labelMd,
     color: theme.colors.onSurface,
-    textAlign: "right",
+    textAlign: "left",
     marginTop: theme.spacing.sm,
   },
   input: {
@@ -259,14 +256,12 @@ const styles = StyleSheet.create({
   hint: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   err: {
     ...theme.typography.bodyMd,
     color: theme.colors.error,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   primaryBtn: {
     backgroundColor: theme.colors.primary,

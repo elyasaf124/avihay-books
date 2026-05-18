@@ -418,8 +418,7 @@ const styles = StyleSheet.create({
     ...theme.typography.labelMd,
     color: theme.colors.onErrorContainer,
     flex: 1,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   summaryRow: {
     paddingHorizontal: theme.spacing.marginMobile,
@@ -431,14 +430,12 @@ const styles = StyleSheet.create({
   summaryLabel: {
     ...theme.typography.labelMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   summaryValue: {
     ...theme.typography.headlineMd,
     color: theme.colors.primary,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   displayBadge: {
     flexDirection: "row",
@@ -473,7 +470,6 @@ const styles = StyleSheet.create({
     ...theme.typography.bodyMd,
     color: theme.colors.onSurfaceVariant,
     textAlign: "center",
-    writingDirection: "rtl",
   },
   notFoundCard: {
     marginHorizontal: theme.spacing.marginMobile,
@@ -490,13 +486,11 @@ const styles = StyleSheet.create({
     ...theme.typography.headlineMd,
     color: theme.colors.primary,
     textAlign: "center",
-    writingDirection: "rtl",
   },
   notFoundDescription: {
     ...theme.typography.bodyMd,
     color: theme.colors.onSurfaceVariant,
     textAlign: "center",
-    writingDirection: "rtl",
     lineHeight: 22,
   },
   backBtn: {

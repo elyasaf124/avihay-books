@@ -17,7 +17,7 @@ export function SearchBar({ value, onChange }: Props): JSX.Element {
         onChangeText={onChange}
         placeholder={he.home.search}
         placeholderTextColor={theme.colors.onSurfaceVariant}
-        textAlign="right"
+        textAlign="left"
       />
       <Ionicons name="search" size={20} color={theme.colors.onSurfaceVariant} />
     </View>
@@ -41,6 +41,5 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurface,
     fontSize: theme.typography.bodyMd.fontSize,
     paddingVertical: 4,
-    writingDirection: "rtl",
   },
 });

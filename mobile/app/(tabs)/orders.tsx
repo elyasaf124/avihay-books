@@ -194,8 +194,7 @@ const styles = StyleSheet.create({
     ...theme.typography.labelMd,
     color: theme.colors.onErrorContainer,
     flex: 1,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   tabsWrap: {
     paddingHorizontal: theme.spacing.marginMobile,
@@ -231,6 +230,5 @@ const styles = StyleSheet.create({
     ...theme.typography.bodyMd,
     color: theme.colors.onSurfaceVariant,
     textAlign: "center",
-    writingDirection: "rtl",
   },
 });

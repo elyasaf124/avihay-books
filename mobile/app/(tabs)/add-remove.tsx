@@ -1252,7 +1252,7 @@ function LabeledInput({
         value={value}
         keyboardType={keyboardType}
         onChangeText={onChangeText}
-        textAlign="right"
+        textAlign="left"
       />
     </View>
   );
@@ -1261,11 +1261,11 @@ function LabeledInput({
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.colors.background },
   titleBlock: { paddingHorizontal: theme.spacing.lg, paddingBottom: theme.spacing.sm },
-  title: { ...theme.typography.headlineMd, color: theme.colors.onBackground, textAlign: "right" },
+  title: { ...theme.typography.headlineMd, color: theme.colors.onBackground, textAlign: "left" },
   subtitle: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
+    textAlign: "left",
     marginTop: theme.spacing.xs,
   },
   topBar: {
@@ -1292,7 +1292,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.outlineVariant,
   },
-  secondaryHeaderBtnText: { ...theme.typography.labelMd, color: theme.colors.primary, textAlign: "right" },
+  secondaryHeaderBtnText: { ...theme.typography.labelMd, color: theme.colors.primary, textAlign: "left" },
   offlineBanner: {
     flexDirection: "row",
     gap: theme.spacing.sm,
@@ -1302,7 +1302,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.md,
     marginBottom: theme.spacing.sm,
   },
-  offlineText: { flex: 1, ...theme.typography.caption, color: theme.colors.onErrorContainer, textAlign: "right" },
+  offlineText: { flex: 1, ...theme.typography.caption, color: theme.colors.onErrorContainer, textAlign: "left" },
   hintBox: {
     alignItems: "center",
     padding: theme.spacing.xl,
@@ -1314,7 +1314,6 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     textAlign: "center",
     lineHeight: 22,
-    writingDirection: "rtl",
   },
   loadingBox: { alignItems: "center", paddingTop: theme.spacing.xl },
   loadingText: { marginTop: theme.spacing.sm, color: theme.colors.onSurfaceVariant },
@@ -1330,17 +1329,16 @@ const styles = StyleSheet.create({
     ...theme.shadow.floating,
   },
   rowMain: { flexDirection: "row", alignItems: "flex-start", gap: theme.spacing.sm },
-  bookTitle: { ...theme.typography.headlineSm, color: theme.colors.onSurface, textAlign: "right", writingDirection: "rtl" },
+  bookTitle: { ...theme.typography.headlineSm, color: theme.colors.onSurface, textAlign: "left", },
   bookAuthor: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
+    textAlign: "left",
     marginTop: 2,
-    writingDirection: "rtl",
   },
   trashHit: { padding: theme.spacing.xs },
-  sectionLabel: { ...theme.typography.labelMd, color: theme.colors.primary, textAlign: "right" },
-  dimLabel: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "right" },
+  sectionLabel: { ...theme.typography.labelMd, color: theme.colors.primary, textAlign: "left" },
+  dimLabel: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "left" },
   chipsRow: { maxHeight: 44, flexGrow: 0 },
   chip: {
     borderRadius: theme.radius.full,
@@ -1370,8 +1368,7 @@ const styles = StyleSheet.create({
     flex: 1,
     ...theme.typography.caption,
     color: theme.colors.onPrimaryContainer,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   mapGuardBanner: {
     flexDirection: "row",
@@ -1386,8 +1383,7 @@ const styles = StyleSheet.create({
     flex: 1,
     ...theme.typography.caption,
     color: theme.colors.onSecondaryContainer,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   mapActionRow: {
     flexDirection: "row",
@@ -1421,8 +1417,7 @@ const styles = StyleSheet.create({
     minWidth: "55%",
     ...theme.typography.bodyMd,
     color: theme.colors.onSurface,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
     lineHeight: 22,
   },
   perCopyChosenBlock: {
@@ -1434,8 +1429,7 @@ const styles = StyleSheet.create({
   perCopySummaryLine: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
-    writingDirection: "rtl",
+    textAlign: "left",
   },
   mapClearTouchable: { paddingVertical: 4 },
   mapClearLink: { ...theme.typography.labelMd, color: theme.colors.primary },
@@ -1496,7 +1490,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceContainerLow,
     ...theme.typography.bodyMd,
     color: theme.colors.onSurface,
-    textAlign: "right",
+    textAlign: "left",
   },
   applyPriceBtn: {
     paddingVertical: theme.spacing.sm,
@@ -1537,7 +1531,7 @@ const styles = StyleSheet.create({
   nbScroll: { gap: theme.spacing.sm, paddingBottom: theme.spacing.lg },
   sheetTitle: {
     ...theme.typography.headlineSm,
-    textAlign: "right",
+    textAlign: "left",
     color: theme.colors.onSurface,
     marginBottom: theme.spacing.sm,
   },
@@ -1563,9 +1557,8 @@ const styles = StyleSheet.create({
   inputLabel: {
     ...theme.typography.labelMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
+    textAlign: "left",
     marginBottom: theme.spacing.xs,
-    writingDirection: "rtl",
   },
   textInput: {
     borderWidth: 1,
@@ -1589,6 +1582,6 @@ const styles = StyleSheet.create({
   inlineError: {
     ...theme.typography.caption,
     color: theme.colors.error,
-    textAlign: "right",
+    textAlign: "left",
   },
 });

@@ -77,13 +77,11 @@ const styles = StyleSheet.create({
     ...theme.typography.headlineMd,
     color: theme.colors.primary,
     textAlign: "center",
-    writingDirection: "rtl",
   },
   desc: {
     ...theme.typography.bodyMd,
     color: theme.colors.onSurfaceVariant,
     textAlign: "center",
-    writingDirection: "rtl",
     lineHeight: 22,
   },
 });
