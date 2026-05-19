@@ -6,6 +6,7 @@ import {
   Alert,
   FlatList,
   Keyboard,
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -577,13 +578,13 @@ export default function AddRemoveScreen(): JSX.Element {
     const bulkMoves =
       uniqueBulkLocs.size > 0
         ? [...uniqueBulkLocs.values()].map((loc) => ({
-            id: loc.id,
-            label: interpolate(he.addRemove.inventoryMoveWholeRowBulk, {
-              n: String(loc.quantity_in_cell),
-              cell: loc.cell_name,
-            }),
-            onPress: () => applyInventoryWholeRow(inventoryMoveBook, loc),
-          }))
+          id: loc.id,
+          label: interpolate(he.addRemove.inventoryMoveWholeRowBulk, {
+            n: String(loc.quantity_in_cell),
+            cell: loc.cell_name,
+          }),
+          onPress: () => applyInventoryWholeRow(inventoryMoveBook, loc),
+        }))
         : undefined;
 
     const detail = interpolate(he.addRemove.inventoryMoveCopyLine, {
@@ -600,17 +601,17 @@ export default function AddRemoveScreen(): JSX.Element {
     const slotPicker =
       inventoryMoveSlots.length > 1
         ? {
-            labels: inventoryMoveSlots.map((_, i) =>
-              interpolate(he.addRemove.inventoryMoveSlotChip, {
-                i: String(i + 1),
-                n: String(inventoryMoveSlots.length),
-              }),
-            ),
-            activeMask,
-            onSelect: (i: number) => {
-              applyInventorySlotAt(i, inventoryMoveSlots, inventoryMoveBook);
-            },
-          }
+          labels: inventoryMoveSlots.map((_, i) =>
+            interpolate(he.addRemove.inventoryMoveSlotChip, {
+              i: String(i + 1),
+              n: String(inventoryMoveSlots.length),
+            }),
+          ),
+          activeMask,
+          onSelect: (i: number) => {
+            applyInventorySlotAt(i, inventoryMoveSlots, inventoryMoveBook);
+          },
+        }
         : undefined;
     return {
       currentLocationText,
@@ -656,6 +657,10 @@ export default function AddRemoveScreen(): JSX.Element {
   return (
     <>
       <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
         <View style={styles.titleBlock}>
           <Text style={styles.title}>{he.addRemove.title}</Text>
           <Text style={styles.subtitle}>{he.addRemove.subtitle}</Text>
@@ -732,48 +737,50 @@ export default function AddRemoveScreen(): JSX.Element {
                       <Text style={styles.bookDropdownEmptyText}>{he.addRemove.bookDropdownNoMatches}</Text>
                     ) : (
                       <>
-                      <ScrollView
-                        keyboardShouldPersistTaps="handled"
-                        nestedScrollEnabled
-                        showsVerticalScrollIndicator
-                        style={styles.bookDropdownScroll}
-                      >
-                        {dropdownSuggestionBooks.map((book) => (
-                          <Pressable
-                            key={book.id}
-                            onPressIn={() => clearBookFilterBlurTimer()}
-                            onPress={() => onPickBookFromDropdown(book)}
-                            style={({ pressed }) => [
-                              styles.bookDropdownRow,
-                              pressed && styles.bookDropdownRowPressed,
-                            ]}
-                          >
-                            <Text style={styles.bookDropdownTitle} numberOfLines={2}>
-                              {book.title}
-                            </Text>
-                            <Text style={styles.bookDropdownAuthor} numberOfLines={1}>
-                              {book.author}
-                            </Text>
-                          </Pressable>
-                        ))}
-                      </ScrollView>
-                      {dropdownSuggestionTruncated ? (
-                        <Text style={styles.bookDropdownTruncHint}>
-                          {interpolate(he.addRemove.bookDropdownTruncated, {
-                            shown: String(dropdownSuggestionBooks.length),
-                            total: String(filteredBooks.length),
-                          })}
-                        </Text>
-                      ) : null}
-                    </>
-                  )}
-                </View>
-              ) : null
-            ) : null}
+                        <ScrollView
+                          keyboardShouldPersistTaps="handled"
+                          nestedScrollEnabled
+                          showsVerticalScrollIndicator
+                          style={styles.bookDropdownScroll}
+                        >
+                          {dropdownSuggestionBooks.map((book) => (
+                            <Pressable
+                              key={book.id}
+                              onPressIn={() => clearBookFilterBlurTimer()}
+                              onPress={() => onPickBookFromDropdown(book)}
+                              style={({ pressed }) => [
+                                styles.bookDropdownRow,
+                                pressed && styles.bookDropdownRowPressed,
+                              ]}
+                            >
+                              <Text style={styles.bookDropdownTitle} numberOfLines={2}>
+                                {book.title}
+                              </Text>
+                              <Text style={styles.bookDropdownAuthor} numberOfLines={1}>
+                                {book.author}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </ScrollView>
+                        {dropdownSuggestionTruncated ? (
+                          <Text style={styles.bookDropdownTruncHint}>
+                            {interpolate(he.addRemove.bookDropdownTruncated, {
+                              shown: String(dropdownSuggestionBooks.length),
+                              total: String(filteredBooks.length),
+                            })}
+                          </Text>
+                        ) : null}
+                      </>
+                    )}
+                  </View>
+                ) : null
+              ) : null}
             </View>
             <FlatList
               ref={booksFlatListRef}
               keyboardShouldPersistTaps="handled"
+              automaticallyAdjustKeyboardInsets={true}
+              contentInsetAdjustmentBehavior="automatic"
               style={styles.inventoryBooksFlatList}
               data={filteredBooks}
               extraData={listExtraData}
@@ -803,210 +810,211 @@ export default function AddRemoveScreen(): JSX.Element {
               ItemSeparatorComponent={() => <View style={styles.sep} />}
               refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
               renderItem={({ item: book }) => {
-              const locId = locationByBook[book.id] ?? null;
-              const selectedLoc =
-                locId === null ? null : book.locations.find((loc) => loc.id === locId) ?? null;
-              const minusDisabled =
-                book.stock_quantity <= 0 ||
-                (selectedLoc !== null && selectedLoc.quantity_in_cell <= 0);
+                const locId = locationByBook[book.id] ?? null;
+                const selectedLoc =
+                  locId === null ? null : book.locations.find((loc) => loc.id === locId) ?? null;
+                const minusDisabled =
+                  book.stock_quantity <= 0 ||
+                  (selectedLoc !== null && selectedLoc.quantity_in_cell <= 0);
 
-              const stockBulkDraftRaw = stockBulkDraft[book.id]?.trim() ?? "";
-              const stockBulkParsed = Number.parseInt(stockBulkDraftRaw, 10);
-              const stockBulkAdditionValid =
-                Number.isFinite(stockBulkParsed) && stockBulkParsed > 0;
-              const stockBulkPreviewTotal =
-                stockBulkAdditionValid ? book.stock_quantity + stockBulkParsed : null;
+                const stockBulkDraftRaw = stockBulkDraft[book.id]?.trim() ?? "";
+                const stockBulkParsed = Number.parseInt(stockBulkDraftRaw, 10);
+                const stockBulkAdditionValid =
+                  Number.isFinite(stockBulkParsed) && stockBulkParsed > 0;
+                const stockBulkPreviewTotal =
+                  stockBulkAdditionValid ? book.stock_quantity + stockBulkParsed : null;
 
-              return (
-                <View style={styles.rowCard}>
-                  <View style={styles.rowMain}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.bookTitle}>{book.title}</Text>
-                      <Text style={styles.bookAuthor}>{book.author}</Text>
-                    </View>
-                    <Pressable
-                      accessibilityRole="button"
-                      hitSlop={8}
-                      onPress={() => setDeactivateBook(book)}
-                      style={styles.trashHit}
-                    >
-                      <Ionicons name="trash-outline" size={20} color={theme.colors.error} />
-                    </Pressable>
-                  </View>
-
-                  <Text style={styles.sectionLabel}>{he.addRemove.locationLabel}</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsRow}>
-                    <Pressable
-                      onPress={() => setLocationByBook((prev) => ({ ...prev, [book.id]: null }))}
-                      style={[
-                        styles.chip,
-                        locId === null && styles.chipActive,
-                      ]}
-                    >
-                      <Text style={[styles.chipText, locId === null && styles.chipTextActive]}>
-                        {he.addRemove.locationChipNone}
-                      </Text>
-                    </Pressable>
-                    {book.locations.map((loc) => (
+                return (
+                  <View style={styles.rowCard}>
+                    <View style={styles.rowMain}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.bookTitle}>{book.title}</Text>
+                        <Text style={styles.bookAuthor}>{book.author}</Text>
+                      </View>
                       <Pressable
-                        key={loc.id}
-                        onPress={() =>
-                          setLocationByBook((prev) => ({
-                            ...prev,
-                            [book.id]: loc.id,
-                          }))
-                        }
-                        style={[styles.chip, loc.id === locId && styles.chipActive]}
+                        accessibilityRole="button"
+                        hitSlop={8}
+                        onPress={() => setDeactivateBook(book)}
+                        style={styles.trashHit}
                       >
-                        <Text style={[styles.chipText, loc.id === locId && styles.chipTextActive]}>
-                          {interpolate(he.addRemove.locationChipCell, {
-                            name: loc.cell_name,
-                            qty: String(loc.quantity_in_cell),
-                          })}
+                        <Ionicons name="trash-outline" size={20} color={theme.colors.error} />
+                      </Pressable>
+                    </View>
+
+                    <Text style={styles.sectionLabel}>{he.addRemove.locationLabel}</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsRow}>
+                      <Pressable
+                        onPress={() => setLocationByBook((prev) => ({ ...prev, [book.id]: null }))}
+                        style={[
+                          styles.chip,
+                          locId === null && styles.chipActive,
+                        ]}
+                      >
+                        <Text style={[styles.chipText, locId === null && styles.chipTextActive]}>
+                          {he.addRemove.locationChipNone}
                         </Text>
                       </Pressable>
-                    ))}
-                  </ScrollView>
+                      {book.locations.map((loc) => (
+                        <Pressable
+                          key={loc.id}
+                          onPress={() =>
+                            setLocationByBook((prev) => ({
+                              ...prev,
+                              [book.id]: loc.id,
+                            }))
+                          }
+                          style={[styles.chip, loc.id === locId && styles.chipActive]}
+                        >
+                          <Text style={[styles.chipText, loc.id === locId && styles.chipTextActive]}>
+                            {interpolate(he.addRemove.locationChipCell, {
+                              name: loc.cell_name,
+                              qty: String(loc.quantity_in_cell),
+                            })}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
 
-                  <Text style={[styles.dimLabel, styles.mapHintBelowChips]}>{he.addRemove.mapPlacementHint}</Text>
-                  <View style={styles.mapActionRow}>
-                    {book.stock_quantity > 0 && unplacedQuantity(book) > 0 ? (
-                      <Pressable
-                        accessibilityRole="button"
-                        style={[
-                          styles.mapActionBtn,
-                          (busyBookId !== null ||
-                            createBookLocation.isPending ||
-                            placementStoreMap == null) &&
+                    <Text style={[styles.dimLabel, styles.mapHintBelowChips]}>{he.addRemove.mapPlacementHint}</Text>
+                    <View style={styles.mapActionRow}>
+                      {book.stock_quantity > 0 && unplacedQuantity(book) > 0 ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          style={[
+                            styles.mapActionBtn,
+                            (busyBookId !== null ||
+                              createBookLocation.isPending ||
+                              placementStoreMap == null) &&
                             styles.mapActionBtnDisabled,
-                        ]}
-                        disabled={
-                          busyBookId !== null || createBookLocation.isPending || placementStoreMap == null
-                        }
-                        onPress={() => {
-                          setInventoryMapError(null);
-                          setExistingPerCopyModalError(null);
-                          setExistingPerCopyBook(book);
-                        }}
-                      >
-                        <Ionicons name="map-outline" size={18} color={theme.colors.primary} />
-                        <Text style={styles.mapActionBtnText}>{he.addRemove.addToMap}</Text>
-                      </Pressable>
-                    ) : null}
-                    {book.stock_quantity > 0 && book.locations.length > 0 ? (
-                      <Pressable
-                        accessibilityRole="button"
-                        style={[
-                          styles.mapActionBtn,
-                          (busyBookId !== null ||
+                          ]}
+                          disabled={
+                            busyBookId !== null || createBookLocation.isPending || placementStoreMap == null
+                          }
+                          onPress={() => {
+                            setInventoryMapError(null);
+                            setExistingPerCopyModalError(null);
+                            setExistingPerCopyBook(book);
+                          }}
+                        >
+                          <Ionicons name="map-outline" size={18} color={theme.colors.primary} />
+                          <Text style={styles.mapActionBtnText}>{he.addRemove.addToMap}</Text>
+                        </Pressable>
+                      ) : null}
+                      {book.stock_quantity > 0 && book.locations.length > 0 ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          style={[
+                            styles.mapActionBtn,
+                            (busyBookId !== null ||
+                              moveBook.isPending ||
+                              createBookLocation.isPending ||
+                              patchLoc.isPending ||
+                              placementStoreMap == null) && styles.mapActionBtnDisabled,
+                          ]}
+                          disabled={
+                            busyBookId !== null ||
                             moveBook.isPending ||
                             createBookLocation.isPending ||
                             patchLoc.isPending ||
-                            placementStoreMap == null) && styles.mapActionBtnDisabled,
-                        ]}
-                        disabled={
-                          busyBookId !== null ||
-                          moveBook.isPending ||
-                          createBookLocation.isPending ||
-                          patchLoc.isPending ||
-                          placementStoreMap == null
-                        }
-                        onPress={() => {
-                          openInventoryMoveSession(book, locId);
-                        }}
-                      >
-                        <Ionicons name="shuffle-outline" size={18} color={theme.colors.primary} />
-                        <Text style={styles.mapActionBtnText}>{he.addRemove.changeMapLocation}</Text>
-                      </Pressable>
-                    ) : null}
-                  </View>
-
-                  <View style={styles.stockRow}>
-                    <Text style={styles.dimLabel}>{he.addRemove.tableHeaderStock}</Text>
-                    <View style={styles.stepper}>
-                      <Pressable
-                        accessibilityRole="button"
-                        disabled={minusDisabled}
-                        onPress={() => void applyStockDelta(book, -1)}
-                        style={[styles.stepBtn, minusDisabled && styles.stepBtnDisabled]}
-                      >
-                        <Ionicons name="remove" size={22} color={theme.colors.onSurface} />
-                      </Pressable>
-                      <Text style={styles.qty}>{book.stock_quantity}</Text>
-                      <Pressable
-                        accessibilityRole="button"
-                        onPress={() => void applyStockDelta(book, 1)}
-                        style={styles.stepBtn}
-                      >
-                        <Ionicons name="add" size={22} color={theme.colors.onSurface} />
-                      </Pressable>
+                            placementStoreMap == null
+                          }
+                          onPress={() => {
+                            openInventoryMoveSession(book, locId);
+                          }}
+                        >
+                          <Ionicons name="shuffle-outline" size={18} color={theme.colors.primary} />
+                          <Text style={styles.mapActionBtnText}>{he.addRemove.changeMapLocation}</Text>
+                        </Pressable>
+                      ) : null}
                     </View>
-                  </View>
 
-                  <View style={styles.stockBulkBlock}>
-                    <Text style={styles.dimLabel}>{he.addRemove.stockBulkAddLabel}</Text>
-                    <View style={styles.stockBulkRow}>
-                      <TextInput
-                        value={stockBulkDraft[book.id] ?? ""}
-                        onChangeText={(t) =>
-                          setStockBulkDraft((p) => ({
-                            ...p,
-                            [book.id]: t.replace(/\D/g, ""),
-                          }))
-                        }
-                        keyboardType="number-pad"
-                        placeholder={he.addRemove.stockBulkAddPlaceholder}
-                        placeholderTextColor={theme.colors.onSurfaceVariant}
-                        style={styles.stockBulkInput}
-                        textAlign="left"
-                        accessibilityLabel={he.addRemove.stockBulkAddAccessibility}
-                      />
-                      <Pressable
-                        accessibilityRole="button"
-                        onPress={() => applyStockBulkAdd(book)}
-                        disabled={!stockBulkAdditionValid}
-                        style={[
-                          styles.stockBulkApplyBtn,
-                          !stockBulkAdditionValid && styles.stockBulkApplyBtnDisabled,
-                        ]}
-                      >
-                        <Text
+                    <View style={styles.stockRow}>
+                      <Text style={styles.dimLabel}>{he.addRemove.tableHeaderStock}</Text>
+                      <View style={styles.stepper}>
+                        <Pressable
+                          accessibilityRole="button"
+                          disabled={minusDisabled}
+                          onPress={() => void applyStockDelta(book, -1)}
+                          style={[styles.stepBtn, minusDisabled && styles.stepBtnDisabled]}
+                        >
+                          <Ionicons name="remove" size={22} color={theme.colors.onSurface} />
+                        </Pressable>
+                        <Text style={styles.qty}>{book.stock_quantity}</Text>
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => void applyStockDelta(book, 1)}
+                          style={styles.stepBtn}
+                        >
+                          <Ionicons name="add" size={22} color={theme.colors.onSurface} />
+                        </Pressable>
+                      </View>
+                    </View>
+
+                    <View style={styles.stockBulkBlock}>
+                      <Text style={styles.dimLabel}>{he.addRemove.stockBulkAddLabel}</Text>
+                      <View style={styles.stockBulkRow}>
+                        <TextInput
+                          value={stockBulkDraft[book.id] ?? ""}
+                          onChangeText={(t) =>
+                            setStockBulkDraft((p) => ({
+                              ...p,
+                              [book.id]: t.replace(/\D/g, ""),
+                            }))
+                          }
+                          keyboardType="number-pad"
+                          placeholder={he.addRemove.stockBulkAddPlaceholder}
+                          placeholderTextColor={theme.colors.onSurfaceVariant}
+                          style={styles.stockBulkInput}
+                          textAlign="left"
+                          accessibilityLabel={he.addRemove.stockBulkAddAccessibility}
+                        />
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => applyStockBulkAdd(book)}
+                          disabled={!stockBulkAdditionValid}
                           style={[
-                            styles.stockBulkApplyBtnText,
-                            !stockBulkAdditionValid && styles.stockBulkApplyBtnTextDisabled,
+                            styles.stockBulkApplyBtn,
+                            !stockBulkAdditionValid && styles.stockBulkApplyBtnDisabled,
                           ]}
                         >
-                          {he.addRemove.stockBulkAddCta}
+                          <Text
+                            style={[
+                              styles.stockBulkApplyBtnText,
+                              !stockBulkAdditionValid && styles.stockBulkApplyBtnTextDisabled,
+                            ]}
+                          >
+                            {he.addRemove.stockBulkAddCta}
+                          </Text>
+                        </Pressable>
+                      </View>
+                      {stockBulkPreviewTotal !== null ? (
+                        <Text style={styles.stockBulkPreview}>
+                          {interpolate(he.addRemove.stockBulkPreviewTotal, {
+                            total: String(stockBulkPreviewTotal),
+                          })}
                         </Text>
+                      ) : null}
+                    </View>
+
+                    <Text style={styles.dimLabel}>{he.addRemove.tableHeaderPrice}</Text>
+                    <View style={styles.priceRow}>
+                      <TextInput
+                        value={priceDraft[book.id] ?? String(book.price)}
+                        onChangeText={(t) => setPriceDraft((p) => ({ ...p, [book.id]: t }))}
+                        keyboardType="decimal-pad"
+                        style={styles.priceInput}
+                      />
+                      <Pressable style={styles.applyPriceBtn} onPress={() => void applyPrice(book)}>
+                        <Text style={styles.applyPriceText}>{he.addRemove.applyPrice}</Text>
                       </Pressable>
                     </View>
-                    {stockBulkPreviewTotal !== null ? (
-                      <Text style={styles.stockBulkPreview}>
-                        {interpolate(he.addRemove.stockBulkPreviewTotal, {
-                          total: String(stockBulkPreviewTotal),
-                        })}
-                      </Text>
-                    ) : null}
                   </View>
-
-                  <Text style={styles.dimLabel}>{he.addRemove.tableHeaderPrice}</Text>
-                  <View style={styles.priceRow}>
-                    <TextInput
-                      value={priceDraft[book.id] ?? String(book.price)}
-                      onChangeText={(t) => setPriceDraft((p) => ({ ...p, [book.id]: t }))}
-                      keyboardType="decimal-pad"
-                      style={styles.priceInput}
-                    />
-                    <Pressable style={styles.applyPriceBtn} onPress={() => void applyPrice(book)}>
-                      <Text style={styles.applyPriceText}>{he.addRemove.applyPrice}</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              );
-            }}
-          />
+                );
+              }}
+            />
           </View>
         )}
+        </KeyboardAvoidingView>
       </SafeAreaView>
 
       <NewBookModal
@@ -1102,10 +1110,10 @@ export default function AddRemoveScreen(): JSX.Element {
         preview={
           newBookPcCtx
             ? {
-                title: newBookPcCtx.title,
-                author: newBookPcCtx.author,
-                supplier_color: newBookPcCtx.supplier_color,
-              }
+              title: newBookPcCtx.title,
+              author: newBookPcCtx.author,
+              supplier_color: newBookPcCtx.supplier_color,
+            }
             : { title: "", author: "" }
         }
         previewIsNew={newBookPcCtx?.is_new ?? false}
@@ -1127,11 +1135,11 @@ export default function AddRemoveScreen(): JSX.Element {
         preview={
           existingPerCopyBook
             ? {
-                title: existingPerCopyBook.title,
-                author: existingPerCopyBook.author,
-                supplier_color: suppliers.find((s) => s.id === existingPerCopyBook.supplier_id)
-                  ?.color_hex,
-              }
+              title: existingPerCopyBook.title,
+              author: existingPerCopyBook.author,
+              supplier_color: suppliers.find((s) => s.id === existingPerCopyBook.supplier_id)
+                ?.color_hex,
+            }
             : { title: "", author: "" }
         }
         previewIsNew={existingPerCopyBook?.is_new ?? false}
@@ -1323,9 +1331,18 @@ function NewBookModal({
 
   return (
     <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
-      <Pressable style={styles.sheetBackdrop} onPress={onClose}>
-        <Pressable style={styles.newBookSheet} onPress={(e) => e.stopPropagation()}>
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.nbScroll}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        <Pressable style={styles.sheetBackdrop} onPress={onClose}>
+          <Pressable style={styles.newBookSheet} onPress={(e) => e.stopPropagation()}>
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets={true}
+            contentInsetAdjustmentBehavior="automatic"
+            contentContainerStyle={styles.nbScroll}
+          >
             <Text style={styles.sheetTitle}>{he.addRemove.newBookModalTitle}</Text>
             <LabeledInput
               label={he.addRemove.fieldTitle}
@@ -1509,8 +1526,9 @@ function NewBookModal({
               </Pressable>
             </View>
           </ScrollView>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

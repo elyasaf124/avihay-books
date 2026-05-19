@@ -42,7 +42,7 @@ const styles = StyleSheet.create({
   headerTitleRightSlot: {
     position: "absolute",
     /** קצה ימין פיזי — מתאים ל־`RTL` עם כותרת «הזמנות» */
-    right: theme.spacing.marginMobile,
+    left: theme.spacing.marginMobile,
     top: 0,
     bottom: 0,
     justifyContent: "center",
@@ -53,12 +53,12 @@ const styles = StyleSheet.create({
     ...theme.typography.headlineSm,
     fontFamily: theme.fontFamily.bold,
     color: theme.colors.primary,
-    textAlign: "right",
+    textAlign: "left",
   },
   headerOrderBtnSlot: {
     position: "absolute",
     /** שמאל פיזי + ריווח קל שלא יידבק לשולי המסך */
-    left: theme.spacing.marginMobile + theme.spacing.sm,
+    right: theme.spacing.marginMobile + theme.spacing.sm,
     top: 0,
     bottom: 0,
     justifyContent: "center",

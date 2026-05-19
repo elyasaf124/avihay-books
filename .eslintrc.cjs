@@ -6,6 +6,8 @@ module.exports = {
     ecmaVersion: "latest",
     sourceType: "module",
     ecmaFeatures: { jsx: true },
+    project: ["./mobile/tsconfig.json", "./backend/tsconfig.json", "./shared/tsconfig.json"],
+    tsconfigRootDir: __dirname,
   },
   env: {
     node: true,
