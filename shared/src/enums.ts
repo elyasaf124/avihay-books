@@ -17,8 +17,23 @@ export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 export const WHATSAPP_INTENTS = ["stock_check", "price_check", "place_order"] as const;
 export type WhatsappIntent = (typeof WHATSAPP_INTENTS)[number];
 
-export const STORE_POSITIONS = ["front", "left", "right", "island", "display"] as const;
+export const STORE_POSITIONS = [
+  "front",
+  "left",
+  "right",
+  "island",
+  "display",
+  "stacks",
+] as const;
 export type StorePosition = (typeof STORE_POSITIONS)[number];
+
+/** יחידות עם UI ערימות (לא מדפים/תאים במסך) */
+export const FLAT_SURFACE_POSITIONS = ["display", "stacks"] as const;
+export type FlatSurfacePosition = (typeof FLAT_SURFACE_POSITIONS)[number];
+
+export function isFlatSurfacePosition(p: StorePosition): p is FlatSurfacePosition {
+  return (FLAT_SURFACE_POSITIONS as readonly string[]).includes(p);
+}
 
 export const SIDE_LABELS = ["צד א׳", "צד ב׳"] as const;
 export type SideLabel = (typeof SIDE_LABELS)[number];

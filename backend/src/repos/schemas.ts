@@ -123,11 +123,18 @@ export const orderInputSchema = z
     const manualTitle = data.manual_book_title?.trim() ?? "";
 
     if (data.order_type === "inventory") {
-      if (!bookId) {
+      if (!bookId && !manualTitle) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["book_id"],
-          message: "inventory_requires_book_id",
+          message: "inventory_requires_book_or_manual_title",
+        });
+      }
+      if (bookId && manualTitle) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["manual_book_title"],
+          message: "book_id_xor_manual_title",
         });
       }
       return;

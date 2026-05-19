@@ -268,6 +268,18 @@ const unitSpecs: MockUnitSpec[] = [
     unitIdx: 5,
     shelves: [
       {
+        label: "משטח סטנד",
+        cells: [
+          { name: "סטנד 1", capacity: 6, books: [catalog.b3!, catalog.b6!] },
+          { name: "סטנד 2", capacity: 6, books: [catalog.b7!, catalog.b8!] },
+        ],
+      },
+    ],
+  },
+  {
+    unitIdx: 6,
+    shelves: [
+      {
         label: "משטח תצוגה",
         cells: [
           { name: "תצוגה 1", capacity: 6, books: [catalog.b2!] },
@@ -340,7 +352,9 @@ function buildUnit(spec: MockUnitSpec): StoreMapUnit {
             ? "ארון ימין"
             : spec.unitIdx === 4
               ? "האי"
-              : "ארון תצוגה",
+              : spec.unitIdx === 5
+                ? "סטנד"
+                : "ארון תצוגה",
     store_position:
       spec.unitIdx === 1
         ? ("front" as const)
@@ -350,9 +364,11 @@ function buildUnit(spec: MockUnitSpec): StoreMapUnit {
             ? ("right" as const)
             : spec.unitIdx === 4
               ? ("island" as const)
-              : ("display" as const),
+              : spec.unitIdx === 5
+                ? ("stacks" as const)
+                : ("display" as const),
     has_sides: spec.unitIdx === 4,
-    is_display_unit: spec.unitIdx === 5,
+    is_display_unit: spec.unitIdx === 5 || spec.unitIdx === 6,
     display_order: spec.unitIdx,
     sides:
       spec.sides?.map((s, idx) => ({

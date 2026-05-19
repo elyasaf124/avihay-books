@@ -38,6 +38,7 @@ export const UNIT_FRONT = id("b1111111-1111-1111-1111-111111111111");
 export const UNIT_LEFT = id("b2222222-2222-2222-2222-222222222222");
 export const UNIT_RIGHT = id("b3333333-3333-3333-3333-333333333333");
 export const UNIT_ISLAND = id("b4444444-4444-4444-4444-444444444444");
+export const UNIT_STACKS = id("b6666666-6666-6666-6666-666666666666");
 export const UNIT_DISPLAY = id("b5555555-5555-5555-5555-555555555555");
 
 export const SIDE_A = id("c1111111-1111-1111-1111-111111111111");
@@ -100,12 +101,20 @@ export const shelvingUnits: ShelvingUnitInput[] = [
     display_order: 3,
   },
   {
+    id: UNIT_STACKS,
+    name: "סטנד",
+    store_position: "stacks",
+    has_sides: false,
+    is_display_unit: true,
+    display_order: 4,
+  },
+  {
     id: UNIT_ISLAND,
     name: "האי",
     store_position: "island",
     has_sides: true,
     is_display_unit: false,
-    display_order: 4,
+    display_order: 5,
   },
   {
     id: UNIT_DISPLAY,
@@ -113,7 +122,7 @@ export const shelvingUnits: ShelvingUnitInput[] = [
     store_position: "display",
     has_sides: false,
     is_display_unit: true,
-    display_order: 5,
+    display_order: 6,
   },
 ];
 
@@ -186,6 +195,7 @@ const shelfPlans: ShelfPlan[] = [
   { containerId: UNIT_RIGHT, containerKind: "unit", count: 4 },
   { containerId: SIDE_A, containerKind: "side", count: 3 },
   { containerId: SIDE_B, containerKind: "side", count: 3 },
+  { containerId: UNIT_STACKS, containerKind: "unit", count: 1 },
   { containerId: UNIT_DISPLAY, containerKind: "unit", count: 1 },
 ];
 
@@ -200,7 +210,11 @@ for (const plan of shelfPlans) {
       side_id: plan.containerKind === "side" ? plan.containerId : null,
       shelf_number: n,
       label:
-        plan.containerId === UNIT_DISPLAY ? "משטח תצוגה" : `מדף ${n}`,
+        plan.containerId === UNIT_DISPLAY
+          ? "משטח תצוגה"
+          : plan.containerId === UNIT_STACKS
+            ? "משטח סטנד"
+            : `מדף ${n}`,
       _key: `${plan.containerKind}:${plan.containerId}:${n}`,
     });
   }
@@ -212,11 +226,17 @@ let cellNameCounter = 1;
 let cellCtr = 0;
 for (const shelf of shelves) {
   const isDisplayShelf = shelf.unit_id === UNIT_DISPLAY;
-  const nCells = isDisplayShelf ? 8 : cellsPerShelf;
+  const isStacksShelf = shelf.unit_id === UNIT_STACKS;
+  const isFlatShelf = isDisplayShelf || isStacksShelf;
+  const nCells = isFlatShelf ? 8 : cellsPerShelf;
   for (let n = 1; n <= nCells; n++) {
     cellCtr++;
-    const cellName = isDisplayShelf ? `תצוגה ${n}` : String(cellNameCounter);
-    if (!isDisplayShelf) cellNameCounter++;
+    const cellName = isDisplayShelf
+      ? `תצוגה ${n}`
+      : isStacksShelf
+        ? `סטנד ${n}`
+        : String(cellNameCounter);
+    if (!isFlatShelf) cellNameCounter++;
     cells.push({
       id: deterministicUuid("cell", cellCtr),
       shelf_id: shelf.id!,

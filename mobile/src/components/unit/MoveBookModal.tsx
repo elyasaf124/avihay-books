@@ -113,7 +113,11 @@ export function MoveBookModal({
 
   const filteredStoreUnits = useMemo(() => {
     const all = storeMap?.units ?? [];
-    if (treatAsNewBook) return all.filter((u) => u.store_position === "display");
+    if (treatAsNewBook) {
+      return all.filter(
+        (u) => u.store_position === "display" || u.store_position === "stacks",
+      );
+    }
     return all.filter((u) => u.store_position !== "display");
   }, [storeMap, treatAsNewBook]);
   const [unitId, setUnitId] = useState<string | null>(null);

@@ -22,6 +22,8 @@ interface StackItem {
 
 
 
+export type DisplayGridVariant = "display" | "stacks";
+
 interface Props {
 
   aggregates: DisplayBookAggregate[];
@@ -31,6 +33,8 @@ interface Props {
   onBookPress: (aggregate: DisplayBookAggregate) => void;
 
   onBookLongPress: (aggregate: DisplayBookAggregate) => void;
+
+  variant?: DisplayGridVariant;
 
 }
 
@@ -48,7 +52,10 @@ function interpolate(template: string, vars: Record<string, string>): string {
 
 
 
-function cellSummaryForAggregate(agg: DisplayBookAggregate): string {
+function cellSummaryForAggregate(
+  agg: DisplayBookAggregate,
+  variant: DisplayGridVariant,
+): string {
 
   const names = [...new Set(agg.spots.map((s) => s.cell_name))];
 
@@ -56,11 +63,17 @@ function cellSummaryForAggregate(agg: DisplayBookAggregate): string {
 
   if (names.length === 1) {
 
-    return interpolate(he.unit.displayGridOneCell, { cell: names[0]! });
+    const tpl =
+      variant === "stacks" ? he.unit.stacksGridOneCell : he.unit.displayGridOneCell;
+
+    return interpolate(tpl, { cell: names[0]! });
 
   }
 
-  return interpolate(he.unit.displayGridManyCells, { n: String(names.length) });
+  const tplMany =
+    variant === "stacks" ? he.unit.stacksGridManyCells : he.unit.displayGridManyCells;
+
+  return interpolate(tplMany, { n: String(names.length) });
 
 }
 
@@ -84,6 +97,8 @@ export function DisplayGrid({
 
   onBookLongPress,
 
+  variant = "display",
+
 }: Props): JSX.Element {
 
   const stacks = useMemo((): StackItem[] => {
@@ -94,11 +109,17 @@ export function DisplayGrid({
 
       aggregate,
 
-      cellSummary: cellSummaryForAggregate(aggregate),
+      cellSummary: cellSummaryForAggregate(aggregate, variant),
 
     }));
 
-  }, [aggregates]);
+  }, [aggregates, variant]);
+
+  const sectionTitle =
+    variant === "stacks" ? he.unit.stacksGridTitle : he.unit.displayGridTitle;
+
+  const copiesLabel =
+    variant === "stacks" ? he.unit.stacksGridCopies : he.unit.displayGridCopies;
 
 
 
@@ -106,7 +127,7 @@ export function DisplayGrid({
 
     <View style={styles.wrap}>
 
-      <Text style={styles.sectionHint}>{he.unit.displayGridTitle}</Text>
+      <Text style={styles.sectionHint}>{sectionTitle}</Text>
 
       <FlatList
 
@@ -178,7 +199,7 @@ export function DisplayGrid({
 
                       <Text style={styles.qtyPill}>
 
-                        {interpolate(he.unit.displayGridCopies, { n: String(agg.totalQuantity) })}
+                        {interpolate(copiesLabel, { n: String(agg.totalQuantity) })}
 
                       </Text>
 

@@ -27,13 +27,18 @@ interface Rect2 {
   h: number;
 }
 
-const layout: Record<"front" | "left" | "right" | "island" | "display", Rect2> = {
+const layout: Record<
+  "front" | "left" | "right" | "island" | "display" | "stacks",
+  Rect2
+> = {
   front: { x: 16, y: 12, w: VB_W - 32, h: 78 },
   left: { x: 16, y: 98, w: 72, h: VB_H - 110 },
   right: { x: VB_W - 88, y: 98, w: 72, h: VB_H - 110 },
   /** משטח תצוגה — מעל האי */
-  display: { x: 104, y: 164, w: VB_W - 208, h: 30 },
-  island: { x: 104, y: 198, w: VB_W - 208, h: 128 },
+  display: { x: 104, y: 148, w: VB_W - 208, h: 26 },
+  island: { x: 104, y: 178, w: VB_W - 208, h: 108 },
+  /** סטנד — מתחת לאי */
+  stacks: { x: 104, y: 290, w: VB_W - 208, h: 24 },
 };
 
 function bookCount(u: StoreMapUnit): number {
@@ -62,6 +67,7 @@ export function StoreMap({ data, onUnitPress }: Props): JSX.Element {
   const right = byPos.get("right");
   const island = byPos.get("island");
   const display = byPos.get("display");
+  const stacks = byPos.get("stacks");
 
   return (
     <View style={styles.ltrGeo} {...webDirLtr}>
@@ -80,6 +86,10 @@ export function StoreMap({ data, onUnitPress }: Props): JSX.Element {
             <Stop offset="0" stopColor="#fff8e5" />
             <Stop offset="0.5" stopColor="#e8c96a" />
             <Stop offset="1" stopColor="#c9a44a" />
+          </LinearGradient>
+          <LinearGradient id="stacksWood" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor={theme.colors.surfaceContainerHigh} />
+            <Stop offset="1" stopColor={theme.colors.surfaceContainer} />
           </LinearGradient>
         </Defs>
 
@@ -168,9 +178,22 @@ export function StoreMap({ data, onUnitPress }: Props): JSX.Element {
             strokeWidth={1.5}
           />
         )}
+
+        {stacks && (
+          <Rect
+            x={layout.stacks.x}
+            y={layout.stacks.y}
+            width={layout.stacks.w}
+            height={layout.stacks.h}
+            rx={5}
+            fill="url(#stacksWood)"
+            stroke={theme.colors.outline}
+            strokeWidth={1.5}
+          />
+        )}
       </Svg>
 
-      {(["front", "left", "right", "display", "island"] as const).map((pos) => {
+      {(["front", "left", "right", "display", "island", "stacks"] as const).map((pos) => {
         const unit = byPos.get(pos);
         if (!unit) return null;
         const r = layout[pos];
