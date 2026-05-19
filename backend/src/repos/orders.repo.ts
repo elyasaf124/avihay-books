@@ -11,18 +11,28 @@ export async function appendToPendingInventoryOrder(input: OrderInput): Promise<
   if (v.order_type !== "inventory") {
     return upsertOrder(input);
   }
-  if (!v.book_id) {
-    return upsertOrder(input);
-  }
 
-  const { rows: candidates } = await pool.query<OrderRow>(
-    `SELECT * FROM orders
-     WHERE book_id = $1 AND supplier_id = $2 AND order_type = 'inventory'
-       AND customer_name IS NULL AND customer_phone IS NULL
-       AND status = 'pending'
-     ORDER BY created_at ASC`,
-    [v.book_id, v.supplier_id],
-  );
+  const manualTitle =
+    v.book_id != null ? null : v.manual_book_title?.trim() ? v.manual_book_title.trim() : null;
+
+  const { rows: candidates } = v.book_id
+    ? await pool.query<OrderRow>(
+        `SELECT * FROM orders
+         WHERE book_id = $1 AND supplier_id = $2 AND order_type = 'inventory'
+           AND customer_name IS NULL AND customer_phone IS NULL
+           AND status = 'pending'
+         ORDER BY created_at ASC`,
+        [v.book_id, v.supplier_id],
+      )
+    : await pool.query<OrderRow>(
+        `SELECT * FROM orders
+         WHERE book_id IS NULL AND supplier_id = $1 AND order_type = 'inventory'
+           AND customer_name IS NULL AND customer_phone IS NULL
+           AND manual_book_title IS NOT DISTINCT FROM $2
+           AND status = 'pending'
+         ORDER BY created_at ASC`,
+        [v.supplier_id, manualTitle],
+      );
 
   if (candidates.length === 0) {
     return upsertOrder(input);

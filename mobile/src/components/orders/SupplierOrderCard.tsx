@@ -11,7 +11,9 @@ interface Props {
   onExportPdf: (group: OrdersBySupplierGroup) => void;
   onSendEmail: (group: OrdersBySupplierGroup) => void;
   onRemoveOrderLine: (order: OrderListItem) => void;
+  onEditOrderLine?: (order: OrderListItem) => void;
   removingOrderLineKey: string | null;
+  updatingOrderLineKey: string | null;
 }
 
 /**
@@ -26,7 +28,9 @@ export function SupplierOrderCard({
   onExportPdf,
   onSendEmail,
   onRemoveOrderLine,
+  onEditOrderLine,
   removingOrderLineKey,
+  updatingOrderLineKey,
 }: Props): JSX.Element {
   const totalUnits = group.orders.reduce((s, o) => s + o.quantity, 0);
   const isInventory = orderType === "inventory";
@@ -48,15 +52,20 @@ export function SupplierOrderCard({
       </View>
 
       <View style={styles.list}>
-        {group.orders.map((o) => (
-          <OrderLine
-            key={orderDisplayLineKey(o)}
-            order={o}
-            showCustomer={!isInventory}
-            removing={removingOrderLineKey === orderDisplayLineKey(o)}
-            onRemove={() => onRemoveOrderLine(o)}
-          />
-        ))}
+        {group.orders.map((o) => {
+          const lineKey = orderDisplayLineKey(o);
+          return (
+            <OrderLine
+              key={lineKey}
+              order={o}
+              showCustomer={!isInventory}
+              showEdit={onEditOrderLine != null}
+              busy={removingOrderLineKey === lineKey || updatingOrderLineKey === lineKey}
+              onRemove={() => onRemoveOrderLine(o)}
+              onEdit={onEditOrderLine ? () => onEditOrderLine(o) : undefined}
+            />
+          );
+        })}
       </View>
 
       {isInventory ? (
@@ -92,13 +101,17 @@ export function SupplierOrderCard({
 function OrderLine({
   order,
   showCustomer,
-  removing,
+  showEdit,
+  busy,
   onRemove,
+  onEdit,
 }: {
   order: OrderListItem;
   showCustomer: boolean;
-  removing: boolean;
+  showEdit: boolean;
+  busy: boolean;
   onRemove: () => void;
+  onEdit?: () => void;
 }): JSX.Element {
   return (
     <View style={styles.lineRow}>
@@ -117,28 +130,42 @@ function OrderLine({
         ) : null}
       </View>
       <View style={styles.lineRight}>
-        <Text style={styles.qty}>
-          ×{order.quantity}
-        </Text>
+        <Text style={styles.qty}>×{order.quantity}</Text>
         <Text style={styles.statusText}>
           {he.orders.statusLabels[order.status]}
         </Text>
       </View>
-      {removing ? (
-        <ActivityIndicator style={styles.lineDismissWrap} color={theme.colors.primary} />
+      {busy ? (
+        <ActivityIndicator style={styles.lineActionWrap} color={theme.colors.primary} />
       ) : (
-        <Pressable
-          onPress={onRemove}
-          style={({ pressed }) => [
-            styles.lineDismissBtn,
-            pressed && styles.lineDismissPressed,
-          ]}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          accessibilityRole="button"
-          accessibilityLabel={he.orders.removeLineA11y}
-        >
-          <Ionicons name="close-circle-outline" size={22} color={theme.colors.error} />
-        </Pressable>
+        <View style={styles.lineActions}>
+          {showEdit && onEdit ? (
+            <Pressable
+              onPress={onEdit}
+              style={({ pressed }) => [
+                styles.lineActionBtn,
+                pressed && styles.lineActionPressed,
+              ]}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              accessibilityRole="button"
+              accessibilityLabel={he.orders.editLineA11y}
+            >
+              <Ionicons name="pencil-outline" size={20} color={theme.colors.primary} />
+            </Pressable>
+          ) : null}
+          <Pressable
+            onPress={onRemove}
+            style={({ pressed }) => [
+              styles.lineActionBtn,
+              pressed && styles.lineActionPressed,
+            ]}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            accessibilityRole="button"
+            accessibilityLabel={he.orders.removeLineA11y}
+          >
+            <Ionicons name="close-circle-outline" size={22} color={theme.colors.error} />
+          </Pressable>
+        </View>
       )}
     </View>
   );
@@ -209,20 +236,25 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     fontSize: 11,
   },
-  lineDismissWrap: {
+  lineActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.xs,
+  },
+  lineActionWrap: {
     paddingHorizontal: theme.spacing.xs,
     minWidth: 28,
     alignItems: "center",
     justifyContent: "center",
   },
-  lineDismissBtn: {
+  lineActionBtn: {
     paddingHorizontal: theme.spacing.xs,
     paddingVertical: 2,
     borderRadius: theme.radius.sm,
     alignItems: "center",
     justifyContent: "center",
   },
-  lineDismissPressed: { opacity: 0.72 },
+  lineActionPressed: { opacity: 0.72 },
   actions: {
     flexDirection: "row",
     gap: theme.spacing.sm,

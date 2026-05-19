@@ -116,6 +116,22 @@ export default function AddRemoveScreen(): JSX.Element {
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
   /** טקסט בשדה «כמה להוסיף למלאי» לפי `book.id`. */
   const [stockBulkDraft, setStockBulkDraft] = useState<Record<string, string>>({});
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => setKeyboardVisible(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setKeyboardVisible(false)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   const booksQuery = useInventoryBooksBySupplier(supplierId);
   const storeMapQuery = useStoreMap();
@@ -658,362 +674,365 @@ export default function AddRemoveScreen(): JSX.Element {
     <>
       <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
         <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={{ flex: 1 }}
         >
-        <View style={styles.titleBlock}>
-          <Text style={styles.title}>{he.addRemove.title}</Text>
-          <Text style={styles.subtitle}>{he.addRemove.subtitle}</Text>
-        </View>
+          <View style={styles.titleBlock}>
+            <Text style={styles.title}>{he.addRemove.title}</Text>
+            <Text style={styles.subtitle}>{he.addRemove.subtitle}</Text>
+          </View>
 
-        {headerButtons}
+          {headerButtons}
 
-        {isOffline ? (
-          <View style={styles.offlineBanner}>
-            <Ionicons name="cloud-offline-outline" size={16} color={theme.colors.onErrorContainer} />
-            <Text style={styles.offlineText}>{he.addRemove.offlineBanner}</Text>
-          </View>
-        ) : null}
-
-        {!supplierId ? (
-          <View style={styles.hintBox}>
-            <Ionicons name="information-circle-outline" size={36} color={theme.colors.primary} />
-            <Text style={styles.hintText}>{he.addRemove.pickSupplierHint}</Text>
-          </View>
-        ) : booksQuery.isLoading ? (
-          <View style={styles.loadingBox}>
-            <ActivityIndicator color={theme.colors.primary} />
-            <Text style={styles.loadingText}>{he.addRemove.loading}</Text>
-          </View>
-        ) : books.length === 0 ? (
-          <View style={styles.hintBox}>
-            <Text style={styles.hintText}>{he.addRemove.emptyList}</Text>
-          </View>
-        ) : (
-          <View style={styles.inventoryWithSearch}>
-            <View style={styles.inventorySearchDock}>
-              {mapPlacementGuardMessage ? (
-                <View style={styles.mapGuardBanner}>
-                  <Ionicons name="map-outline" size={18} color={theme.colors.onPrimaryContainer} />
-                  <Text style={styles.mapGuardText}>{mapPlacementGuardMessage}</Text>
-                </View>
-              ) : null}
-              <View style={styles.bookFilterRow}>
-                <Ionicons name="search-outline" size={20} color={theme.colors.onSurfaceVariant} />
-                <TextInput
-                  style={styles.bookFilterInput}
-                  value={bookTitleFilter}
-                  onChangeText={setBookTitleFilter}
-                  placeholder={he.addRemove.bookTitleSearchPlaceholder}
-                  placeholderTextColor={theme.colors.onSurfaceVariant}
-                  returnKeyType="search"
-                  textAlign="left"
-                  accessibilityLabel={he.addRemove.bookTitleSearchAccessibility}
-                  onFocus={onBookTitleFilterFocus}
-                  onBlur={onBookTitleFilterBlur}
-                />
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={
-                    bookSuggestionsPanelPinned
-                      ? he.addRemove.bookDropdownHide
-                      : he.addRemove.bookDropdownShow
-                  }
-                  onPress={() => toggleBookSuggestionsPanelPinned()}
-                  hitSlop={10}
-                  style={styles.bookFilterChevronBtn}
-                >
-                  <Ionicons
-                    name={bookSuggestionsPanelPinned ? "chevron-up-outline" : "chevron-down-outline"}
-                    size={22}
-                    color={theme.colors.primary}
-                  />
-                </Pressable>
-              </View>
-              {bookSuggestionsPanelPinned || bookSupplierFilterFocused ? (
-                filteredBooks.length > 0 || bookTitleFilterTrimmed ? (
-                  <View style={styles.bookDropdownOuter}>
-                    {filteredBooks.length === 0 ? (
-                      <Text style={styles.bookDropdownEmptyText}>{he.addRemove.bookDropdownNoMatches}</Text>
-                    ) : (
-                      <>
-                        <ScrollView
-                          keyboardShouldPersistTaps="handled"
-                          nestedScrollEnabled
-                          showsVerticalScrollIndicator
-                          style={styles.bookDropdownScroll}
-                        >
-                          {dropdownSuggestionBooks.map((book) => (
-                            <Pressable
-                              key={book.id}
-                              onPressIn={() => clearBookFilterBlurTimer()}
-                              onPress={() => onPickBookFromDropdown(book)}
-                              style={({ pressed }) => [
-                                styles.bookDropdownRow,
-                                pressed && styles.bookDropdownRowPressed,
-                              ]}
-                            >
-                              <Text style={styles.bookDropdownTitle} numberOfLines={2}>
-                                {book.title}
-                              </Text>
-                              <Text style={styles.bookDropdownAuthor} numberOfLines={1}>
-                                {book.author}
-                              </Text>
-                            </Pressable>
-                          ))}
-                        </ScrollView>
-                        {dropdownSuggestionTruncated ? (
-                          <Text style={styles.bookDropdownTruncHint}>
-                            {interpolate(he.addRemove.bookDropdownTruncated, {
-                              shown: String(dropdownSuggestionBooks.length),
-                              total: String(filteredBooks.length),
-                            })}
-                          </Text>
-                        ) : null}
-                      </>
-                    )}
-                  </View>
-                ) : null
-              ) : null}
+          {isOffline ? (
+            <View style={styles.offlineBanner}>
+              <Ionicons name="cloud-offline-outline" size={16} color={theme.colors.onErrorContainer} />
+              <Text style={styles.offlineText}>{he.addRemove.offlineBanner}</Text>
             </View>
-            <FlatList
-              ref={booksFlatListRef}
-              keyboardShouldPersistTaps="handled"
-              automaticallyAdjustKeyboardInsets={true}
-              contentInsetAdjustmentBehavior="automatic"
-              style={styles.inventoryBooksFlatList}
-              data={filteredBooks}
-              extraData={listExtraData}
-              keyExtractor={(item) => item.id}
-              ListEmptyComponent={
-                bookTitleFilterTrimmed ? (
-                  <View style={styles.bookSearchEmptyBox}>
-                    <Text style={styles.hintText}>{he.addRemove.bookSearchEmpty}</Text>
+          ) : null}
+
+          {!supplierId ? (
+            <View style={styles.hintBox}>
+              <Ionicons name="information-circle-outline" size={36} color={theme.colors.primary} />
+              <Text style={styles.hintText}>{he.addRemove.pickSupplierHint}</Text>
+            </View>
+          ) : booksQuery.isLoading ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator color={theme.colors.primary} />
+              <Text style={styles.loadingText}>{he.addRemove.loading}</Text>
+            </View>
+          ) : books.length === 0 ? (
+            <View style={styles.hintBox}>
+              <Text style={styles.hintText}>{he.addRemove.emptyList}</Text>
+            </View>
+          ) : (
+            <View style={styles.inventoryWithSearch}>
+              <View style={styles.inventorySearchDock}>
+                {mapPlacementGuardMessage ? (
+                  <View style={styles.mapGuardBanner}>
+                    <Ionicons name="map-outline" size={18} color={theme.colors.onPrimaryContainer} />
+                    <Text style={styles.mapGuardText}>{mapPlacementGuardMessage}</Text>
                   </View>
-                ) : null
-              }
-              onScrollToIndexFailed={(info) => {
-                const list = booksFlatListRef.current;
-                if (!list) return;
-                setTimeout(() => {
-                  try {
-                    list.scrollToOffset({
-                      offset: Math.max(0, Math.floor(info.averageItemLength * info.index)),
-                      animated: true,
-                    });
-                  } catch {
-                    //
-                  }
-                }, 280);
-              }}
-              contentContainerStyle={styles.inventoryBooksListContent}
-              ItemSeparatorComponent={() => <View style={styles.sep} />}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-              renderItem={({ item: book }) => {
-                const locId = locationByBook[book.id] ?? null;
-                const selectedLoc =
-                  locId === null ? null : book.locations.find((loc) => loc.id === locId) ?? null;
-                const minusDisabled =
-                  book.stock_quantity <= 0 ||
-                  (selectedLoc !== null && selectedLoc.quantity_in_cell <= 0);
-
-                const stockBulkDraftRaw = stockBulkDraft[book.id]?.trim() ?? "";
-                const stockBulkParsed = Number.parseInt(stockBulkDraftRaw, 10);
-                const stockBulkAdditionValid =
-                  Number.isFinite(stockBulkParsed) && stockBulkParsed > 0;
-                const stockBulkPreviewTotal =
-                  stockBulkAdditionValid ? book.stock_quantity + stockBulkParsed : null;
-
-                return (
-                  <View style={styles.rowCard}>
-                    <View style={styles.rowMain}>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.bookTitle}>{book.title}</Text>
-                        <Text style={styles.bookAuthor}>{book.author}</Text>
-                      </View>
-                      <Pressable
-                        accessibilityRole="button"
-                        hitSlop={8}
-                        onPress={() => setDeactivateBook(book)}
-                        style={styles.trashHit}
-                      >
-                        <Ionicons name="trash-outline" size={20} color={theme.colors.error} />
-                      </Pressable>
+                ) : null}
+                <View style={styles.bookFilterRow}>
+                  <Ionicons name="search-outline" size={20} color={theme.colors.onSurfaceVariant} />
+                  <TextInput
+                    style={styles.bookFilterInput}
+                    value={bookTitleFilter}
+                    onChangeText={setBookTitleFilter}
+                    placeholder={he.addRemove.bookTitleSearchPlaceholder}
+                    placeholderTextColor={theme.colors.onSurfaceVariant}
+                    returnKeyType="search"
+                    textAlign="left"
+                    accessibilityLabel={he.addRemove.bookTitleSearchAccessibility}
+                    onFocus={onBookTitleFilterFocus}
+                    onBlur={onBookTitleFilterBlur}
+                  />
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      bookSuggestionsPanelPinned
+                        ? he.addRemove.bookDropdownHide
+                        : he.addRemove.bookDropdownShow
+                    }
+                    onPress={() => toggleBookSuggestionsPanelPinned()}
+                    hitSlop={10}
+                    style={styles.bookFilterChevronBtn}
+                  >
+                    <Ionicons
+                      name={bookSuggestionsPanelPinned ? "chevron-up-outline" : "chevron-down-outline"}
+                      size={22}
+                      color={theme.colors.primary}
+                    />
+                  </Pressable>
+                </View>
+                {bookSuggestionsPanelPinned || bookSupplierFilterFocused ? (
+                  filteredBooks.length > 0 || bookTitleFilterTrimmed ? (
+                    <View style={styles.bookDropdownOuter}>
+                      {filteredBooks.length === 0 ? (
+                        <Text style={styles.bookDropdownEmptyText}>{he.addRemove.bookDropdownNoMatches}</Text>
+                      ) : (
+                        <>
+                          <ScrollView
+                            keyboardShouldPersistTaps="handled"
+                            nestedScrollEnabled
+                            showsVerticalScrollIndicator
+                            style={styles.bookDropdownScroll}
+                          >
+                            {dropdownSuggestionBooks.map((book) => (
+                              <Pressable
+                                key={book.id}
+                                onPressIn={() => clearBookFilterBlurTimer()}
+                                onPress={() => onPickBookFromDropdown(book)}
+                                style={({ pressed }) => [
+                                  styles.bookDropdownRow,
+                                  pressed && styles.bookDropdownRowPressed,
+                                ]}
+                              >
+                                <Text style={styles.bookDropdownTitle} numberOfLines={2}>
+                                  {book.title}
+                                </Text>
+                                <Text style={styles.bookDropdownAuthor} numberOfLines={1}>
+                                  {book.author}
+                                </Text>
+                              </Pressable>
+                            ))}
+                          </ScrollView>
+                          {dropdownSuggestionTruncated ? (
+                            <Text style={styles.bookDropdownTruncHint}>
+                              {interpolate(he.addRemove.bookDropdownTruncated, {
+                                shown: String(dropdownSuggestionBooks.length),
+                                total: String(filteredBooks.length),
+                              })}
+                            </Text>
+                          ) : null}
+                        </>
+                      )}
                     </View>
+                  ) : null
+                ) : null}
+              </View>
+              <FlatList
+                ref={booksFlatListRef}
+                keyboardShouldPersistTaps="handled"
+                automaticallyAdjustKeyboardInsets={true}
+                contentInsetAdjustmentBehavior="automatic"
+                style={styles.inventoryBooksFlatList}
+                data={filteredBooks}
+                extraData={listExtraData}
+                keyExtractor={(item) => item.id}
+                ListEmptyComponent={
+                  bookTitleFilterTrimmed ? (
+                    <View style={styles.bookSearchEmptyBox}>
+                      <Text style={styles.hintText}>{he.addRemove.bookSearchEmpty}</Text>
+                    </View>
+                  ) : null
+                }
+                onScrollToIndexFailed={(info) => {
+                  const list = booksFlatListRef.current;
+                  if (!list) return;
+                  setTimeout(() => {
+                    try {
+                      list.scrollToOffset({
+                        offset: Math.max(0, Math.floor(info.averageItemLength * info.index)),
+                        animated: true,
+                      });
+                    } catch {
+                      //
+                    }
+                  }, 280);
+                }}
+                contentContainerStyle={[
+                  styles.inventoryBooksListContent,
+                  keyboardVisible && { paddingBottom: 380 }
+                ]}
+                ItemSeparatorComponent={() => <View style={styles.sep} />}
+                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+                renderItem={({ item: book }) => {
+                  const locId = locationByBook[book.id] ?? null;
+                  const selectedLoc =
+                    locId === null ? null : book.locations.find((loc) => loc.id === locId) ?? null;
+                  const minusDisabled =
+                    book.stock_quantity <= 0 ||
+                    (selectedLoc !== null && selectedLoc.quantity_in_cell <= 0);
 
-                    <Text style={styles.sectionLabel}>{he.addRemove.locationLabel}</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsRow}>
-                      <Pressable
-                        onPress={() => setLocationByBook((prev) => ({ ...prev, [book.id]: null }))}
-                        style={[
-                          styles.chip,
-                          locId === null && styles.chipActive,
-                        ]}
-                      >
-                        <Text style={[styles.chipText, locId === null && styles.chipTextActive]}>
-                          {he.addRemove.locationChipNone}
-                        </Text>
-                      </Pressable>
-                      {book.locations.map((loc) => (
+                  const stockBulkDraftRaw = stockBulkDraft[book.id]?.trim() ?? "";
+                  const stockBulkParsed = Number.parseInt(stockBulkDraftRaw, 10);
+                  const stockBulkAdditionValid =
+                    Number.isFinite(stockBulkParsed) && stockBulkParsed > 0;
+                  const stockBulkPreviewTotal =
+                    stockBulkAdditionValid ? book.stock_quantity + stockBulkParsed : null;
+
+                  return (
+                    <View style={styles.rowCard}>
+                      <View style={styles.rowMain}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.bookTitle}>{book.title}</Text>
+                          <Text style={styles.bookAuthor}>{book.author}</Text>
+                        </View>
                         <Pressable
-                          key={loc.id}
-                          onPress={() =>
-                            setLocationByBook((prev) => ({
-                              ...prev,
-                              [book.id]: loc.id,
-                            }))
-                          }
-                          style={[styles.chip, loc.id === locId && styles.chipActive]}
+                          accessibilityRole="button"
+                          hitSlop={8}
+                          onPress={() => setDeactivateBook(book)}
+                          style={styles.trashHit}
                         >
-                          <Text style={[styles.chipText, loc.id === locId && styles.chipTextActive]}>
-                            {interpolate(he.addRemove.locationChipCell, {
-                              name: loc.cell_name,
-                              qty: String(loc.quantity_in_cell),
-                            })}
+                          <Ionicons name="trash-outline" size={20} color={theme.colors.error} />
+                        </Pressable>
+                      </View>
+
+                      <Text style={styles.sectionLabel}>{he.addRemove.locationLabel}</Text>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsRow}>
+                        <Pressable
+                          onPress={() => setLocationByBook((prev) => ({ ...prev, [book.id]: null }))}
+                          style={[
+                            styles.chip,
+                            locId === null && styles.chipActive,
+                          ]}
+                        >
+                          <Text style={[styles.chipText, locId === null && styles.chipTextActive]}>
+                            {he.addRemove.locationChipNone}
                           </Text>
                         </Pressable>
-                      ))}
-                    </ScrollView>
+                        {book.locations.map((loc) => (
+                          <Pressable
+                            key={loc.id}
+                            onPress={() =>
+                              setLocationByBook((prev) => ({
+                                ...prev,
+                                [book.id]: loc.id,
+                              }))
+                            }
+                            style={[styles.chip, loc.id === locId && styles.chipActive]}
+                          >
+                            <Text style={[styles.chipText, loc.id === locId && styles.chipTextActive]}>
+                              {interpolate(he.addRemove.locationChipCell, {
+                                name: loc.cell_name,
+                                qty: String(loc.quantity_in_cell),
+                              })}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
 
-                    <Text style={[styles.dimLabel, styles.mapHintBelowChips]}>{he.addRemove.mapPlacementHint}</Text>
-                    <View style={styles.mapActionRow}>
-                      {book.stock_quantity > 0 && unplacedQuantity(book) > 0 ? (
-                        <Pressable
-                          accessibilityRole="button"
-                          style={[
-                            styles.mapActionBtn,
-                            (busyBookId !== null ||
-                              createBookLocation.isPending ||
-                              placementStoreMap == null) &&
-                            styles.mapActionBtnDisabled,
-                          ]}
-                          disabled={
-                            busyBookId !== null || createBookLocation.isPending || placementStoreMap == null
-                          }
-                          onPress={() => {
-                            setInventoryMapError(null);
-                            setExistingPerCopyModalError(null);
-                            setExistingPerCopyBook(book);
-                          }}
-                        >
-                          <Ionicons name="map-outline" size={18} color={theme.colors.primary} />
-                          <Text style={styles.mapActionBtnText}>{he.addRemove.addToMap}</Text>
-                        </Pressable>
-                      ) : null}
-                      {book.stock_quantity > 0 && book.locations.length > 0 ? (
-                        <Pressable
-                          accessibilityRole="button"
-                          style={[
-                            styles.mapActionBtn,
-                            (busyBookId !== null ||
+                      <Text style={[styles.dimLabel, styles.mapHintBelowChips]}>{he.addRemove.mapPlacementHint}</Text>
+                      <View style={styles.mapActionRow}>
+                        {book.stock_quantity > 0 && unplacedQuantity(book) > 0 ? (
+                          <Pressable
+                            accessibilityRole="button"
+                            style={[
+                              styles.mapActionBtn,
+                              (busyBookId !== null ||
+                                createBookLocation.isPending ||
+                                placementStoreMap == null) &&
+                              styles.mapActionBtnDisabled,
+                            ]}
+                            disabled={
+                              busyBookId !== null || createBookLocation.isPending || placementStoreMap == null
+                            }
+                            onPress={() => {
+                              setInventoryMapError(null);
+                              setExistingPerCopyModalError(null);
+                              setExistingPerCopyBook(book);
+                            }}
+                          >
+                            <Ionicons name="map-outline" size={18} color={theme.colors.primary} />
+                            <Text style={styles.mapActionBtnText}>{he.addRemove.addToMap}</Text>
+                          </Pressable>
+                        ) : null}
+                        {book.stock_quantity > 0 && book.locations.length > 0 ? (
+                          <Pressable
+                            accessibilityRole="button"
+                            style={[
+                              styles.mapActionBtn,
+                              (busyBookId !== null ||
+                                moveBook.isPending ||
+                                createBookLocation.isPending ||
+                                patchLoc.isPending ||
+                                placementStoreMap == null) && styles.mapActionBtnDisabled,
+                            ]}
+                            disabled={
+                              busyBookId !== null ||
                               moveBook.isPending ||
                               createBookLocation.isPending ||
                               patchLoc.isPending ||
-                              placementStoreMap == null) && styles.mapActionBtnDisabled,
-                          ]}
-                          disabled={
-                            busyBookId !== null ||
-                            moveBook.isPending ||
-                            createBookLocation.isPending ||
-                            patchLoc.isPending ||
-                            placementStoreMap == null
-                          }
-                          onPress={() => {
-                            openInventoryMoveSession(book, locId);
-                          }}
-                        >
-                          <Ionicons name="shuffle-outline" size={18} color={theme.colors.primary} />
-                          <Text style={styles.mapActionBtnText}>{he.addRemove.changeMapLocation}</Text>
-                        </Pressable>
-                      ) : null}
-                    </View>
-
-                    <View style={styles.stockRow}>
-                      <Text style={styles.dimLabel}>{he.addRemove.tableHeaderStock}</Text>
-                      <View style={styles.stepper}>
-                        <Pressable
-                          accessibilityRole="button"
-                          disabled={minusDisabled}
-                          onPress={() => void applyStockDelta(book, -1)}
-                          style={[styles.stepBtn, minusDisabled && styles.stepBtnDisabled]}
-                        >
-                          <Ionicons name="remove" size={22} color={theme.colors.onSurface} />
-                        </Pressable>
-                        <Text style={styles.qty}>{book.stock_quantity}</Text>
-                        <Pressable
-                          accessibilityRole="button"
-                          onPress={() => void applyStockDelta(book, 1)}
-                          style={styles.stepBtn}
-                        >
-                          <Ionicons name="add" size={22} color={theme.colors.onSurface} />
-                        </Pressable>
+                              placementStoreMap == null
+                            }
+                            onPress={() => {
+                              openInventoryMoveSession(book, locId);
+                            }}
+                          >
+                            <Ionicons name="shuffle-outline" size={18} color={theme.colors.primary} />
+                            <Text style={styles.mapActionBtnText}>{he.addRemove.changeMapLocation}</Text>
+                          </Pressable>
+                        ) : null}
                       </View>
-                    </View>
 
-                    <View style={styles.stockBulkBlock}>
-                      <Text style={styles.dimLabel}>{he.addRemove.stockBulkAddLabel}</Text>
-                      <View style={styles.stockBulkRow}>
-                        <TextInput
-                          value={stockBulkDraft[book.id] ?? ""}
-                          onChangeText={(t) =>
-                            setStockBulkDraft((p) => ({
-                              ...p,
-                              [book.id]: t.replace(/\D/g, ""),
-                            }))
-                          }
-                          keyboardType="number-pad"
-                          placeholder={he.addRemove.stockBulkAddPlaceholder}
-                          placeholderTextColor={theme.colors.onSurfaceVariant}
-                          style={styles.stockBulkInput}
-                          textAlign="left"
-                          accessibilityLabel={he.addRemove.stockBulkAddAccessibility}
-                        />
-                        <Pressable
-                          accessibilityRole="button"
-                          onPress={() => applyStockBulkAdd(book)}
-                          disabled={!stockBulkAdditionValid}
-                          style={[
-                            styles.stockBulkApplyBtn,
-                            !stockBulkAdditionValid && styles.stockBulkApplyBtnDisabled,
-                          ]}
-                        >
-                          <Text
+                      <View style={styles.stockRow}>
+                        <Text style={styles.dimLabel}>{he.addRemove.tableHeaderStock}</Text>
+                        <View style={styles.stepper}>
+                          <Pressable
+                            accessibilityRole="button"
+                            disabled={minusDisabled}
+                            onPress={() => void applyStockDelta(book, -1)}
+                            style={[styles.stepBtn, minusDisabled && styles.stepBtnDisabled]}
+                          >
+                            <Ionicons name="remove" size={22} color={theme.colors.onSurface} />
+                          </Pressable>
+                          <Text style={styles.qty}>{book.stock_quantity}</Text>
+                          <Pressable
+                            accessibilityRole="button"
+                            onPress={() => void applyStockDelta(book, 1)}
+                            style={styles.stepBtn}
+                          >
+                            <Ionicons name="add" size={22} color={theme.colors.onSurface} />
+                          </Pressable>
+                        </View>
+                      </View>
+
+                      <View style={styles.stockBulkBlock}>
+                        <Text style={styles.dimLabel}>{he.addRemove.stockBulkAddLabel}</Text>
+                        <View style={styles.stockBulkRow}>
+                          <TextInput
+                            value={stockBulkDraft[book.id] ?? ""}
+                            onChangeText={(t) =>
+                              setStockBulkDraft((p) => ({
+                                ...p,
+                                [book.id]: t.replace(/\D/g, ""),
+                              }))
+                            }
+                            keyboardType="number-pad"
+                            placeholder={he.addRemove.stockBulkAddPlaceholder}
+                            placeholderTextColor={theme.colors.onSurfaceVariant}
+                            style={styles.stockBulkInput}
+                            textAlign="left"
+                            accessibilityLabel={he.addRemove.stockBulkAddAccessibility}
+                          />
+                          <Pressable
+                            accessibilityRole="button"
+                            onPress={() => applyStockBulkAdd(book)}
+                            disabled={!stockBulkAdditionValid}
                             style={[
-                              styles.stockBulkApplyBtnText,
-                              !stockBulkAdditionValid && styles.stockBulkApplyBtnTextDisabled,
+                              styles.stockBulkApplyBtn,
+                              !stockBulkAdditionValid && styles.stockBulkApplyBtnDisabled,
                             ]}
                           >
-                            {he.addRemove.stockBulkAddCta}
+                            <Text
+                              style={[
+                                styles.stockBulkApplyBtnText,
+                                !stockBulkAdditionValid && styles.stockBulkApplyBtnTextDisabled,
+                              ]}
+                            >
+                              {he.addRemove.stockBulkAddCta}
+                            </Text>
+                          </Pressable>
+                        </View>
+                        {stockBulkPreviewTotal !== null ? (
+                          <Text style={styles.stockBulkPreview}>
+                            {interpolate(he.addRemove.stockBulkPreviewTotal, {
+                              total: String(stockBulkPreviewTotal),
+                            })}
                           </Text>
+                        ) : null}
+                      </View>
+
+                      <Text style={styles.dimLabel}>{he.addRemove.tableHeaderPrice}</Text>
+                      <View style={styles.priceRow}>
+                        <TextInput
+                          value={priceDraft[book.id] ?? String(book.price)}
+                          onChangeText={(t) => setPriceDraft((p) => ({ ...p, [book.id]: t }))}
+                          keyboardType="decimal-pad"
+                          style={styles.priceInput}
+                        />
+                        <Pressable style={styles.applyPriceBtn} onPress={() => void applyPrice(book)}>
+                          <Text style={styles.applyPriceText}>{he.addRemove.applyPrice}</Text>
                         </Pressable>
                       </View>
-                      {stockBulkPreviewTotal !== null ? (
-                        <Text style={styles.stockBulkPreview}>
-                          {interpolate(he.addRemove.stockBulkPreviewTotal, {
-                            total: String(stockBulkPreviewTotal),
-                          })}
-                        </Text>
-                      ) : null}
                     </View>
-
-                    <Text style={styles.dimLabel}>{he.addRemove.tableHeaderPrice}</Text>
-                    <View style={styles.priceRow}>
-                      <TextInput
-                        value={priceDraft[book.id] ?? String(book.price)}
-                        onChangeText={(t) => setPriceDraft((p) => ({ ...p, [book.id]: t }))}
-                        keyboardType="decimal-pad"
-                        style={styles.priceInput}
-                      />
-                      <Pressable style={styles.applyPriceBtn} onPress={() => void applyPrice(book)}>
-                        <Text style={styles.applyPriceText}>{he.addRemove.applyPrice}</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                );
-              }}
-            />
-          </View>
-        )}
+                  );
+                }}
+              />
+            </View>
+          )}
         </KeyboardAvoidingView>
       </SafeAreaView>
 
@@ -1337,195 +1356,195 @@ function NewBookModal({
       >
         <Pressable style={styles.sheetBackdrop} onPress={onClose}>
           <Pressable style={styles.newBookSheet} onPress={(e) => e.stopPropagation()}>
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            automaticallyAdjustKeyboardInsets={true}
-            contentInsetAdjustmentBehavior="automatic"
-            contentContainerStyle={styles.nbScroll}
-          >
-            <Text style={styles.sheetTitle}>{he.addRemove.newBookModalTitle}</Text>
-            <LabeledInput
-              label={he.addRemove.fieldTitle}
-              value={form.title}
-              onChangeText={(title) => setForm((s) => ({ ...s, title }))}
-            />
-            <LabeledInput
-              label={he.addRemove.fieldAuthor}
-              value={form.author}
-              onChangeText={(author) => setForm((s) => ({ ...s, author }))}
-            />
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              automaticallyAdjustKeyboardInsets={true}
+              contentInsetAdjustmentBehavior="automatic"
+              contentContainerStyle={styles.nbScroll}
+            >
+              <Text style={styles.sheetTitle}>{he.addRemove.newBookModalTitle}</Text>
+              <LabeledInput
+                label={he.addRemove.fieldTitle}
+                value={form.title}
+                onChangeText={(title) => setForm((s) => ({ ...s, title }))}
+              />
+              <LabeledInput
+                label={he.addRemove.fieldAuthor}
+                value={form.author}
+                onChangeText={(author) => setForm((s) => ({ ...s, author }))}
+              />
 
-            <Text style={styles.inputLabel}>{he.addRemove.fieldSupplier}</Text>
-            <View style={styles.supMiniList}>
-              {supplierItems.map((s) => (
-                <Pressable
-                  key={s.id}
-                  onPress={() => setForm((f) => ({ ...f, supplier_id: s.id }))}
-                  style={[
-                    styles.chip,
-                    styles.supChip,
-                    form.supplier_id === s.id && styles.chipActive,
-                  ]}
-                >
-                  <Text
+              <Text style={styles.inputLabel}>{he.addRemove.fieldSupplier}</Text>
+              <View style={styles.supMiniList}>
+                {supplierItems.map((s) => (
+                  <Pressable
+                    key={s.id}
+                    onPress={() => setForm((f) => ({ ...f, supplier_id: s.id }))}
                     style={[
-                      styles.chipText,
-                      form.supplier_id === s.id && styles.chipTextActive,
+                      styles.chip,
+                      styles.supChip,
+                      form.supplier_id === s.id && styles.chipActive,
                     ]}
                   >
-                    {s.name}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <LabeledInput
-              label={he.addRemove.fieldPrice}
-              value={form.price}
-              keyboardType="decimal-pad"
-              onChangeText={(price) => setForm((s) => ({ ...s, price }))}
-            />
-            <LabeledInput
-              label={he.addRemove.fieldStock}
-              value={form.stock_quantity}
-              keyboardType="number-pad"
-              onChangeText={(stock_quantity) =>
-                setForm((s) => ({ ...s, stock_quantity }))
-              }
-            />
-
-            <Text style={[styles.dimLabel, styles.mapHintNb]}>{he.addRemove.mapPlacementHint}</Text>
-            {mapPlacementBlockedMessage ? (
-              <View style={styles.nbMapBlockedWrap}>
-                <Ionicons name="information-circle-outline" size={18} color={theme.colors.primary} />
-                <Text style={styles.nbMapBlockedText}>{mapPlacementBlockedMessage}</Text>
-              </View>
-            ) : null}
-            {perCopySummaries && perCopySummaries.length > 0 ? (
-              <View style={styles.perCopyChosenBlock}>
-                <Text style={styles.mapChosenLines} numberOfLines={2}>
-                  {interpolate(he.addRemove.perCopyChoiceSummaryN, {
-                    n: String(perCopySummaries.length),
-                  })}
-                </Text>
-                {perCopySummaries.map((path, idx) => (
-                  <Text key={idx} style={styles.perCopySummaryLine} numberOfLines={2}>
-                    {interpolate(he.addRemove.chosenMapLocation, { path })}
-                  </Text>
+                    <Text
+                      style={[
+                        styles.chipText,
+                        form.supplier_id === s.id && styles.chipTextActive,
+                      ]}
+                    >
+                      {s.name}
+                    </Text>
+                  </Pressable>
                 ))}
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => void onClearPerCopy()}
-                  hitSlop={8}
-                  style={styles.mapClearTouchable}
-                  disabled={submitting}
-                >
-                  <Text style={styles.mapClearLink}>{he.addRemove.clearPerCopyChoice}</Text>
-                </Pressable>
               </View>
-            ) : null}
-            <Pressable
-              accessibilityRole="button"
-              disabled={submitting || mapPlacementBlockedMessage != null}
-              style={[
-                styles.mapChooseBtnWide,
-                (submitting || mapPlacementBlockedMessage != null) && styles.mapActionBtnDisabled,
-              ]}
-              onPress={openPicker}
-            >
-              <Ionicons name="map-outline" size={18} color={theme.colors.primary} />
-              <Text style={styles.mapChooseBtnWideText}>{he.addRemove.openPerCopyPlacement}</Text>
-            </Pressable>
 
-            <LabeledInput
-              label={he.addRemove.fieldTopic}
-              value={form.topic}
-              onChangeText={(topic) => setForm((s) => ({ ...s, topic }))}
-            />
-
-            <View style={styles.switchRow}>
-              <Text style={styles.inputLabel}>{he.addRemove.newBookFlag}</Text>
-              <Switch
-                accessibilityLabel={he.addRemove.newBookFlag}
-                value={form.is_new}
-                onValueChange={(is_new) =>
-                  setForm((s) => ({ ...s, is_new, display_quantity: is_new ? s.display_quantity : "0" }))
+              <LabeledInput
+                label={he.addRemove.fieldPrice}
+                value={form.price}
+                keyboardType="decimal-pad"
+                onChangeText={(price) => setForm((s) => ({ ...s, price }))}
+              />
+              <LabeledInput
+                label={he.addRemove.fieldStock}
+                value={form.stock_quantity}
+                keyboardType="number-pad"
+                onChangeText={(stock_quantity) =>
+                  setForm((s) => ({ ...s, stock_quantity }))
                 }
               />
-            </View>
-            {form.is_new ? (
-              <View style={styles.inputBlock}>
-                <LabeledInput
-                  label={he.addRemove.newBookDisplayQty}
-                  value={form.display_quantity}
-                  keyboardType="number-pad"
-                  onChangeText={(display_quantity) =>
-                    setForm((s) => ({ ...s, display_quantity: display_quantity.replace(/[^0-9]/g, "") }))
+
+              <Text style={[styles.dimLabel, styles.mapHintNb]}>{he.addRemove.mapPlacementHint}</Text>
+              {mapPlacementBlockedMessage ? (
+                <View style={styles.nbMapBlockedWrap}>
+                  <Ionicons name="information-circle-outline" size={18} color={theme.colors.primary} />
+                  <Text style={styles.nbMapBlockedText}>{mapPlacementBlockedMessage}</Text>
+                </View>
+              ) : null}
+              {perCopySummaries && perCopySummaries.length > 0 ? (
+                <View style={styles.perCopyChosenBlock}>
+                  <Text style={styles.mapChosenLines} numberOfLines={2}>
+                    {interpolate(he.addRemove.perCopyChoiceSummaryN, {
+                      n: String(perCopySummaries.length),
+                    })}
+                  </Text>
+                  {perCopySummaries.map((path, idx) => (
+                    <Text key={idx} style={styles.perCopySummaryLine} numberOfLines={2}>
+                      {interpolate(he.addRemove.chosenMapLocation, { path })}
+                    </Text>
+                  ))}
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => void onClearPerCopy()}
+                    hitSlop={8}
+                    style={styles.mapClearTouchable}
+                    disabled={submitting}
+                  >
+                    <Text style={styles.mapClearLink}>{he.addRemove.clearPerCopyChoice}</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              <Pressable
+                accessibilityRole="button"
+                disabled={submitting || mapPlacementBlockedMessage != null}
+                style={[
+                  styles.mapChooseBtnWide,
+                  (submitting || mapPlacementBlockedMessage != null) && styles.mapActionBtnDisabled,
+                ]}
+                onPress={openPicker}
+              >
+                <Ionicons name="map-outline" size={18} color={theme.colors.primary} />
+                <Text style={styles.mapChooseBtnWideText}>{he.addRemove.openPerCopyPlacement}</Text>
+              </Pressable>
+
+              <LabeledInput
+                label={he.addRemove.fieldTopic}
+                value={form.topic}
+                onChangeText={(topic) => setForm((s) => ({ ...s, topic }))}
+              />
+
+              <View style={styles.switchRow}>
+                <Text style={styles.inputLabel}>{he.addRemove.newBookFlag}</Text>
+                <Switch
+                  accessibilityLabel={he.addRemove.newBookFlag}
+                  value={form.is_new}
+                  onValueChange={(is_new) =>
+                    setForm((s) => ({ ...s, is_new, display_quantity: is_new ? s.display_quantity : "0" }))
                   }
                 />
-                <Text style={[styles.dimLabel, { marginTop: theme.spacing.xs }]}>
-                  {he.addRemove.newBookDisplayQtyHint}
-                </Text>
               </View>
-            ) : null}
+              {form.is_new ? (
+                <View style={styles.inputBlock}>
+                  <LabeledInput
+                    label={he.addRemove.newBookDisplayQty}
+                    value={form.display_quantity}
+                    keyboardType="number-pad"
+                    onChangeText={(display_quantity) =>
+                      setForm((s) => ({ ...s, display_quantity: display_quantity.replace(/[^0-9]/g, "") }))
+                    }
+                  />
+                  <Text style={[styles.dimLabel, { marginTop: theme.spacing.xs }]}>
+                    {he.addRemove.newBookDisplayQtyHint}
+                  </Text>
+                </View>
+              ) : null}
 
-            {errorOccurred ? (
-              <Text style={styles.inlineError}>{he.addRemove.createFailed}</Text>
-            ) : null}
+              {errorOccurred ? (
+                <Text style={styles.inlineError}>{he.addRemove.createFailed}</Text>
+              ) : null}
 
-            <View style={styles.modalActions}>
-              <Pressable onPress={onClose} style={[styles.modalBtn, styles.modalBtnGhost]}>
-                <Text>{he.generic.cancel}</Text>
-              </Pressable>
-              <Pressable
-                disabled={submitting}
-                onPress={() => {
-                  const priceNum = Number(String(form.price).replace(",", "."));
-                  const stockNum = Number.parseInt(form.stock_quantity, 10);
-                  const titleClean = form.title.trim();
-                  const authorClean = form.author.trim();
-                  const topicClean = form.topic.trim();
-                  const displayRaw = Number.parseInt(form.display_quantity || "0", 10);
-                  const displayQty = form.is_new
-                    ? Number.isNaN(displayRaw)
-                      ? 0
-                      : Math.max(0, displayRaw)
-                    : 0;
-                  if (
-                    !titleClean ||
-                    !authorClean ||
-                    !form.supplier_id ||
-                    Number.isNaN(priceNum) ||
-                    Number.isNaN(stockNum) ||
-                    stockNum < 0
-                  ) {
-                    return;
-                  }
-                  if (form.is_new && displayQty > stockNum) {
-                    Alert.alert(he.generic.errorTitle, he.addRemove.newBookDisplayQtyInvalid);
-                    return;
-                  }
-                  void onSubmit({
-                    title: titleClean,
-                    author: authorClean,
-                    supplier_id: form.supplier_id,
-                    price: priceNum,
-                    stock_quantity: stockNum,
-                    topic: topicClean,
-                    is_new: form.is_new,
-                    display_quantity: displayQty,
-                  });
-                }}
-                style={[styles.modalBtn, styles.modalBtnPrimary]}
-              >
-                {submitting ? (
-                  <ActivityIndicator color={theme.colors.onPrimary} />
-                ) : (
-                  <Text style={styles.modalBtnPrimaryText}>{he.addRemove.createBook}</Text>
-                )}
-              </Pressable>
-            </View>
-          </ScrollView>
+              <View style={styles.modalActions}>
+                <Pressable onPress={onClose} style={[styles.modalBtn, styles.modalBtnGhost]}>
+                  <Text>{he.generic.cancel}</Text>
+                </Pressable>
+                <Pressable
+                  disabled={submitting}
+                  onPress={() => {
+                    const priceNum = Number(String(form.price).replace(",", "."));
+                    const stockNum = Number.parseInt(form.stock_quantity, 10);
+                    const titleClean = form.title.trim();
+                    const authorClean = form.author.trim();
+                    const topicClean = form.topic.trim();
+                    const displayRaw = Number.parseInt(form.display_quantity || "0", 10);
+                    const displayQty = form.is_new
+                      ? Number.isNaN(displayRaw)
+                        ? 0
+                        : Math.max(0, displayRaw)
+                      : 0;
+                    if (
+                      !titleClean ||
+                      !authorClean ||
+                      !form.supplier_id ||
+                      Number.isNaN(priceNum) ||
+                      Number.isNaN(stockNum) ||
+                      stockNum < 0
+                    ) {
+                      return;
+                    }
+                    if (form.is_new && displayQty > stockNum) {
+                      Alert.alert(he.generic.errorTitle, he.addRemove.newBookDisplayQtyInvalid);
+                      return;
+                    }
+                    void onSubmit({
+                      title: titleClean,
+                      author: authorClean,
+                      supplier_id: form.supplier_id,
+                      price: priceNum,
+                      stock_quantity: stockNum,
+                      topic: topicClean,
+                      is_new: form.is_new,
+                      display_quantity: displayQty,
+                    });
+                  }}
+                  style={[styles.modalBtn, styles.modalBtnPrimary]}
+                >
+                  {submitting ? (
+                    <ActivityIndicator color={theme.colors.onPrimary} />
+                  ) : (
+                    <Text style={styles.modalBtnPrimaryText}>{he.addRemove.createBook}</Text>
+                  )}
+                </Pressable>
+              </View>
+            </ScrollView>
           </Pressable>
         </Pressable>
       </KeyboardAvoidingView>

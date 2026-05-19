@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
-import type { StoreMapBook, StoreMapShelf } from "@avihay-books/shared";
+import { isFlatSurfacePosition, type StoreMapBook, type StoreMapShelf } from "@avihay-books/shared";
 import { theme } from "../../../src/theme";
 import { he } from "../../../src/i18n/he";
 import { useStoreMap } from "../../../src/api/storeMap";
@@ -136,23 +136,26 @@ export default function UnitScreen(): JSX.Element {
     [shelves, filteredCellBooks],
   );
 
+  const isFlatSurface = unit != null && isFlatSurfacePosition(unit.store_position);
+  const gridVariant = unit?.store_position === "stacks" ? "stacks" : "display";
+
   const totalBooks = useMemo(() => {
-    if (unit?.store_position === "display") {
+    if (isFlatSurface) {
       return displayAggregatesAll.length;
     }
     let count = 0;
     for (const shelf of shelves) for (const cell of shelf.cells) count += cell.books.length;
     return count;
-  }, [unit?.store_position, displayAggregatesAll, shelves]);
+  }, [isFlatSurface, displayAggregatesAll, shelves]);
 
   const matchedBookCount = useMemo(() => {
-    if (unit?.store_position === "display") {
+    if (isFlatSurface) {
       return displayAggregatesFiltered.length;
     }
     let n = 0;
     for (const arr of filteredCellBooks.values()) n += arr.length;
     return n;
-  }, [unit?.store_position, displayAggregatesFiltered, filteredCellBooks]);
+  }, [isFlatSurface, displayAggregatesFiltered, filteredCellBooks]);
 
   const filtersActive =
     filters.supplierIds.length > 0 || filters.priceMin !== null || filters.priceMax !== null;
@@ -259,11 +262,13 @@ export default function UnitScreen(): JSX.Element {
               {unit.is_display_unit ? (
                 <View style={styles.displayBadge}>
                   <Ionicons
-                    name="star-outline"
+                    name={unit.store_position === "stacks" ? "layers-outline" : "star-outline"}
                     size={14}
                     color={theme.colors.onSecondaryFixed}
                   />
-                  <Text style={styles.displayBadgeText}>תצוגה</Text>
+                  <Text style={styles.displayBadgeText}>
+                    {unit.store_position === "stacks" ? he.units.stacks : he.inventory.displayShelf}
+                  </Text>
                 </View>
               ) : null}
             </View>
@@ -294,9 +299,10 @@ export default function UnitScreen(): JSX.Element {
                 <Ionicons name="filter-outline" size={28} color={theme.colors.primary} />
                 <Text style={styles.emptyShelvesText}>{he.unit.filterNoMatch}</Text>
               </View>
-            ) : unit.store_position === "display" ? (
+            ) : isFlatSurface ? (
               <View style={styles.shelvesCol}>
                 <DisplayGrid
+                  variant={gridVariant}
                   aggregates={displayAggregatesFiltered}
                   shortagedIds={optimisticShortage}
                   onBookPress={(agg) => setSaleFor(agg)}
@@ -340,13 +346,13 @@ export default function UnitScreen(): JSX.Element {
         visible={detailsFor !== null}
         onClose={() => setDetailsFor(null)}
         displayOnDisplayTotal={
-          unit?.store_position === "display" && detailsFor
+          isFlatSurface && detailsFor
             ? displayAggregatesAll.find((a) => a.book_id === detailsFor.book_id)?.totalQuantity ??
               null
             : null
         }
         onRecordDisplaySale={
-          unit?.store_position === "display"
+          isFlatSurface
             ? () => {
                 const id = detailsFor?.book_id;
                 const agg = id ? displayAggregatesAll.find((a) => a.book_id === id) ?? null : null;

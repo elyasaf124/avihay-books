@@ -49,6 +49,7 @@ const POSITION_LABEL: Record<StorePosition, string> = {
   right: he.units.right,
   island: he.units.island,
   display: he.units.display,
+  stacks: he.units.stacks,
 };
 
 interface UnitCardModel {
@@ -163,8 +164,16 @@ export default function InventoryScreen(): JSX.Element {
                 </View>
                 {item.unit.is_display_unit ? (
                   <View style={styles.displayBadge}>
-                    <Ionicons name="star" size={12} color={theme.colors.onTertiaryContainer} />
-                    <Text style={styles.displayBadgeText}>{he.inventory.displayShelf}</Text>
+                    <Ionicons
+                      name={item.unit.store_position === "stacks" ? "layers" : "star"}
+                      size={12}
+                      color={theme.colors.onTertiaryContainer}
+                    />
+                    <Text style={styles.displayBadgeText}>
+                      {item.unit.store_position === "stacks"
+                        ? he.inventory.stacksShelf
+                        : he.inventory.displayShelf}
+                    </Text>
                   </View>
                 ) : null}
               </View>

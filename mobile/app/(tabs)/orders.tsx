@@ -17,15 +17,20 @@ import { theme } from "../../src/theme";
 import { he } from "../../src/i18n/he";
 import {
   augmentInventoryGroupsWithCustomerWhatsappTotals,
+  customerOrderBundleKey,
+  inventorySupplierBookKey,
   mergeOrderLinesForDisplay,
   orderDisplayLineKey,
   summedCustomerAndWhatsappQtyByBookSupplier,
+  summedInventoryBaseQtyBySupplierBook,
   useOrdersGroupedBySupplier,
   useOrdersList,
   useRemoveOrderLine,
+  useUpdateInventoryOrderQuantity,
 } from "../../src/api/orders";
 import { ConfirmDialog } from "../../src/components/ConfirmDialog";
 import { CustomerDemandOrderModal } from "../../src/components/orders/CustomerDemandOrderModal";
+import { InventoryOrderQtyModal } from "../../src/components/orders/InventoryOrderQtyModal";
 import { mockOrderList } from "../../src/mocks/shortageOrders";
 import { OrderTabs } from "../../src/components/orders/OrderTabs";
 import { SupplierOrderCard } from "../../src/components/orders/SupplierOrderCard";
@@ -160,6 +165,11 @@ export default function OrdersScreen(): JSX.Element {
   const [activeTab, setActiveTab] = useState<OrderType>("inventory");
   const [removeOrderTarget, setRemoveOrderTarget] = useState<OrderListItem | null>(null);
   const [customerOrderOpen, setCustomerOrderOpen] = useState(false);
+  const [editDemandBundle, setEditDemandBundle] = useState<{
+    orderType: "customer" | "whatsapp";
+    items: OrderListItem[];
+  } | null>(null);
+  const [editInventoryTarget, setEditInventoryTarget] = useState<OrderListItem | null>(null);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -172,6 +182,7 @@ export default function OrdersScreen(): JSX.Element {
   }, [navigation]);
 
   const removeLineMutation = useRemoveOrderLine();
+  const updateInventoryQtyMutation = useUpdateInventoryOrderQuantity();
 
   const inventoryQuery = useOrdersList("inventory");
   const customerQuery = useOrdersList("customer");
@@ -196,6 +207,12 @@ export default function OrdersScreen(): JSX.Element {
   const inventoryItems = dataForType("inventory", inventoryQuery.data);
   const customerItems = dataForType("customer", customerQuery.data);
   const whatsappItems = dataForType("whatsapp", whatsappQuery.data);
+  const rawInventoryItems = inventoryQuery.data ?? [];
+
+  const inventoryBaseQtyByKey = useMemo(
+    () => summedInventoryBaseQtyBySupplierBook(rawInventoryItems),
+    [rawInventoryItems],
+  );
 
   const activeItems =
     activeTab === "inventory"
@@ -213,11 +230,13 @@ export default function OrdersScreen(): JSX.Element {
 
   const groups = useMemo(() => {
     if (activeTab !== "inventory") return baseGroups;
+    const customerWhatsappItems = [...customerItems, ...whatsappItems];
     return augmentInventoryGroupsWithCustomerWhatsappTotals(
       baseGroups,
       extraCustomerWhatsappByBookSupplier,
+      customerWhatsappItems,
     );
-  }, [activeTab, baseGroups, extraCustomerWhatsappByBookSupplier]);
+  }, [activeTab, baseGroups, extraCustomerWhatsappByBookSupplier, customerItems, whatsappItems]);
 
   const counts: Record<OrderType, number> = useMemo(
     () => ({
@@ -253,6 +272,63 @@ export default function OrdersScreen(): JSX.Element {
       Alert.alert(he.orders.confirmRemoveTitle, he.orders.removeFailed);
     }
   };
+
+  const openEditDemandBundle = (line: OrderListItem, orderType: "customer" | "whatsapp") => {
+    if (isOffline) {
+      Alert.alert(he.orders.removeBlockedOffline);
+      return;
+    }
+    const key = customerOrderBundleKey(line);
+    const source = orderType === "customer" ? customerQuery.data : whatsappQuery.data;
+    const bundle = (source ?? []).filter((o) => customerOrderBundleKey(o) === key);
+    if (bundle.length === 0) return;
+    setEditDemandBundle({ orderType, items: bundle });
+  };
+
+  const openEditOrderLine = (line: OrderListItem) => {
+    if (isOffline) {
+      Alert.alert(he.orders.removeBlockedOffline);
+      return;
+    }
+    if (activeTab === "inventory") {
+      setEditInventoryTarget(line);
+      return;
+    }
+    if (activeTab === "customer") {
+      openEditDemandBundle(line, "customer");
+      return;
+    }
+    if (activeTab === "whatsapp") {
+      openEditDemandBundle(line, "whatsapp");
+    }
+  };
+
+  const confirmUpdateInventoryQty = async (line: OrderListItem, newBaseQty: number) => {
+    if (updateInventoryQtyMutation.isPending) return;
+    try {
+      await updateInventoryQtyMutation.mutateAsync({
+        rawInventory: rawInventoryItems,
+        line,
+        newBaseQty,
+      });
+      setEditInventoryTarget(null);
+      Alert.alert(he.orders.customerOrderSuccessTitle, he.orders.inventoryOrderEditQtySuccess);
+    } catch {
+      Alert.alert(he.generic.errorTitle, he.orders.inventoryOrderEditQtyFailed);
+    }
+  };
+
+  const editInventoryBaseQty = editInventoryTarget
+    ? (inventoryBaseQtyByKey.get(inventorySupplierBookKey(editInventoryTarget)) ?? 0)
+    : 0;
+  const editInventoryExtraQty = editInventoryTarget
+    ? (extraCustomerWhatsappByBookSupplier.get(inventorySupplierBookKey(editInventoryTarget)) ?? 0)
+    : 0;
+
+  const updatingOrderLineKey =
+    updateInventoryQtyMutation.isPending && editInventoryTarget
+      ? orderDisplayLineKey(editInventoryTarget)
+      : null;
 
   return (
     <View style={styles.screen}>
@@ -306,7 +382,9 @@ export default function OrdersScreen(): JSX.Element {
               onExportPdf={(g) => void exportSupplierOrdersToPdf(g)}
               onSendEmail={(g) => void emailSupplierOrders(g)}
               onRemoveOrderLine={askRemoveOrderLine}
+              onEditOrderLine={isOffline ? undefined : openEditOrderLine}
               removingOrderLineKey={removingLineKey}
+              updatingOrderLineKey={updatingOrderLineKey}
             />
           )}
         />
@@ -330,6 +408,33 @@ export default function OrdersScreen(): JSX.Element {
         onClose={() => setCustomerOrderOpen(false)}
         isOffline={isOffline}
         onCreated={() => setActiveTab("customer")}
+      />
+      <CustomerDemandOrderModal
+        visible={editDemandBundle !== null}
+        onClose={() => setEditDemandBundle(null)}
+        isOffline={isOffline}
+        mode="edit"
+        demandOrderType={editDemandBundle?.orderType ?? "customer"}
+        initialBundle={editDemandBundle?.items}
+        onUpdated={() => setActiveTab(editDemandBundle?.orderType ?? "customer")}
+      />
+      <InventoryOrderQtyModal
+        key={
+          editInventoryTarget
+            ? `${inventorySupplierBookKey(editInventoryTarget)}-${editInventoryBaseQty}`
+            : "closed"
+        }
+        visible={editInventoryTarget !== null}
+        order={editInventoryTarget}
+        inventoryQuantity={editInventoryBaseQty}
+        customerQuantity={editInventoryExtraQty}
+        submitting={updateInventoryQtyMutation.isPending}
+        onCancel={() => setEditInventoryTarget(null)}
+        onSubmit={(qty) => {
+          if (editInventoryTarget) {
+            void confirmUpdateInventoryQty(editInventoryTarget, qty);
+          }
+        }}
       />
     </View>
   );

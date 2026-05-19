@@ -3,7 +3,10 @@ import { HttpError } from "../middleware/errorHandler.js";
 import { bookLocationInputSchema, type BookLocationInput } from "./schemas.js";
 import type { BookLocation, BookLocationExpanded } from "@avihay-books/shared";
 
-/** ספרים עם `is_new` חייבים להיות רק בארון `display`; רגילים — לא ב־`display`. */
+/**
+ * `display` — רק ספרים חדשים; `stacks` (סטנד) — כל ספר;
+ * ארונות רגילים — רק ספרים שאינם חדשים.
+ */
 async function assertValidBookCellPlacement(bookId: string, cellId: string): Promise<void> {
   const { rows } = await pool.query<{ is_new: boolean; store_position: string }>(
     `SELECT b.is_new, pos.store_position::text AS store_position
@@ -23,14 +26,14 @@ async function assertValidBookCellPlacement(bookId: string, cellId: string): Pro
   if (!row) {
     throw new HttpError(404, "book_or_cell_not_found", { book_id: bookId, cell_id: cellId });
   }
-  const isDisplay = row.store_position === "display";
-  if (row.is_new && !isDisplay) {
+  const pos = row.store_position;
+  if (row.is_new && pos !== "display" && pos !== "stacks") {
     throw new HttpError(422, "new_book_must_be_in_display", {
       book_id: bookId,
       cell_id: cellId,
     });
   }
-  if (!row.is_new && isDisplay) {
+  if (!row.is_new && pos === "display") {
     throw new HttpError(422, "only_new_books_in_display", {
       book_id: bookId,
       cell_id: cellId,
