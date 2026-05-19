@@ -27,8 +27,7 @@ function firstNonBlank(...candidates) {
 }
 
 /** קישור לפרויקט ב־EAS — נוצר ב־`expo.dev` (אי אפשר לכתוב לקובץ דינמי מ־`eas init`). */
-const EAS_LINKED_PROJECT_ID = "7bfd3dfc-eeb0-4d5b-bd7e-90913e89af22";
-
+const EAS_LINKED_PROJECT_ID = "165eded6-07f1-48a8-a850-5378dc2a8f71";
 function normalizeUuid(value) {
   if (typeof value !== "string") return "";
   const t = value.trim().replace(/^\uFEFF/, "").replace(/\s+$/g, "");

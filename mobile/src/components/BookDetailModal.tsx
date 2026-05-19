@@ -98,8 +98,8 @@ export function BookDetailModal({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.card} onPress={(e) => e.stopPropagation()}>
-          <ScrollView contentContainerStyle={{ padding: theme.spacing.lg }}>
+        <View style={styles.card}>
+          <View style={styles.header}>
             <View style={styles.titleRow}>
               {display.supplierColor ? (
                 <View
@@ -116,7 +116,14 @@ export function BookDetailModal({
                 </View>
               ) : null}
             </View>
+          </View>
 
+          <ScrollView
+            style={styles.scroll}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator
+            keyboardShouldPersistTaps="handled"
+          >
             {display.topic ? (
               <Field label={he.bookDetail.topic} value={display.topic} />
             ) : null}
@@ -147,57 +154,57 @@ export function BookDetailModal({
                 <Text style={styles.shortPath}>{paths[0]!.short_path}</Text>
               </View>
             )}
-
-            <View style={styles.actionsCol}>
-              {onRecordDisplaySale ? (
-                <Pressable
-                  onPress={onRecordDisplaySale}
-                  disabled={busy}
-                  style={[styles.actionBtn, styles.primarySaleBtn, busy && styles.actionDisabled]}
-                >
-                  <Ionicons
-                    name="cart-outline"
-                    size={18}
-                    color={theme.colors.onPrimary}
-                  />
-                  <Text style={styles.primarySaleBtnText}>{he.bookDetail.recordDisplaySale}</Text>
-                </Pressable>
-              ) : null}
-              {onAddShortage ? (
-                <Pressable
-                  onPress={onAddShortage}
-                  disabled={busy}
-                  style={[styles.actionBtn, styles.warnBtn, busy && styles.actionDisabled]}
-                >
-                  <Ionicons
-                    name="alert-circle-outline"
-                    size={18}
-                    color={theme.colors.onTertiaryContainer}
-                  />
-                  <Text style={styles.warnBtnText}>{he.bookDetail.addToShortage}</Text>
-                </Pressable>
-              ) : null}
-              {onMove ? (
-                <Pressable
-                  onPress={onMove}
-                  disabled={busy}
-                  style={[styles.actionBtn, styles.secondaryBtn, busy && styles.actionDisabled]}
-                >
-                  <Ionicons
-                    name="swap-horizontal-outline"
-                    size={18}
-                    color={theme.colors.onSurface}
-                  />
-                  <Text style={styles.secondaryBtnText}>{he.bookDetail.moveLocation}</Text>
-                </Pressable>
-              ) : null}
-
-              <Pressable style={[styles.actionBtn, styles.closeBtn]} onPress={onClose}>
-                <Text style={styles.closeBtnText}>{he.bookDetail.close}</Text>
-              </Pressable>
-            </View>
           </ScrollView>
-        </Pressable>
+
+          <View style={styles.actionsCol}>
+            {onRecordDisplaySale ? (
+              <Pressable
+                onPress={onRecordDisplaySale}
+                disabled={busy}
+                style={[styles.actionBtn, styles.primarySaleBtn, busy && styles.actionDisabled]}
+              >
+                <Ionicons
+                  name="cart-outline"
+                  size={18}
+                  color={theme.colors.onPrimary}
+                />
+                <Text style={styles.primarySaleBtnText}>{he.bookDetail.recordDisplaySale}</Text>
+              </Pressable>
+            ) : null}
+            {onAddShortage ? (
+              <Pressable
+                onPress={onAddShortage}
+                disabled={busy}
+                style={[styles.actionBtn, styles.warnBtn, busy && styles.actionDisabled]}
+              >
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={18}
+                  color={theme.colors.onTertiaryContainer}
+                />
+                <Text style={styles.warnBtnText}>{he.bookDetail.addToShortage}</Text>
+              </Pressable>
+            ) : null}
+            {onMove ? (
+              <Pressable
+                onPress={onMove}
+                disabled={busy}
+                style={[styles.actionBtn, styles.secondaryBtn, busy && styles.actionDisabled]}
+              >
+                <Ionicons
+                  name="swap-horizontal-outline"
+                  size={18}
+                  color={theme.colors.onSurface}
+                />
+                <Text style={styles.secondaryBtnText}>{he.bookDetail.moveLocation}</Text>
+              </Pressable>
+            ) : null}
+
+            <Pressable style={[styles.actionBtn, styles.closeBtn]} onPress={onClose}>
+              <Text style={styles.closeBtnText}>{he.bookDetail.close}</Text>
+            </Pressable>
+          </View>
+        </View>
       </Pressable>
     </Modal>
   );
@@ -223,7 +230,20 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: theme.radius.xl,
     borderTopRightRadius: theme.radius.xl,
     maxHeight: "85%",
+    overflow: "hidden",
     ...theme.shadow.modal,
+  },
+  header: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.lg,
+  },
+  scroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: theme.spacing.lg,
+    paddingBottom: theme.spacing.sm,
   },
   titleRow: {
     flexDirection: "row",
@@ -276,7 +296,9 @@ const styles = StyleSheet.create({
     borderTopColor: theme.colors.outlineVariant,
   },
   actionsCol: {
-    marginTop: theme.spacing.lg,
+    paddingHorizontal: theme.spacing.lg,
+    paddingTop: theme.spacing.sm,
+    paddingBottom: theme.spacing.lg,
     gap: theme.spacing.sm,
   },
   actionBtn: {

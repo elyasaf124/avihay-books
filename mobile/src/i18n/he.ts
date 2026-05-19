@@ -288,7 +288,7 @@ export const he = {
     customerOrderSupplierPickerTitle: "בחירת ספק",
     customerOrderSupplierRowHint: "ניתן לשנות ספק גם אחרי בחירת ספר מהמלאי",
     customerOrderValidationSupplier: "נא לבחור ספק להזמנה",
-    customerOrderManualTitleLabel: "שם הספר1 (חופשי)",
+    customerOrderManualTitleLabel: "שם הספר (חופשי)",
     customerOrderManualTitlePlaceholder: "כפי שנמסר מהלקוח או מהספק",
     customerOrderManualAuthorLabel: "מחבר או הוצאה (אופציונלי)",
     customerOrderManualAuthorPlaceholder: "אם ידוע",
