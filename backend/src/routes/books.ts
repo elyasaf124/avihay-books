@@ -18,7 +18,11 @@ booksRouter.get(
   asyncHandler(async (req, res) => {
     const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
     if (q.length > 0) {
-      res.json(await searchBooks(q));
+      const searchSupplierId =
+        typeof req.query.supplier_id === "string" && req.query.supplier_id.length > 0
+          ? req.query.supplier_id
+          : undefined;
+      res.json(await searchBooks(q, { supplierId: searchSupplierId }));
       return;
     }
     const supplierId =

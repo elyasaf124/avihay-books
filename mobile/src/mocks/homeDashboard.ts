@@ -420,25 +420,44 @@ export const mockHomeStats: HomeStats = {
   shortageSubLabel: "דורש טיפול מיידי",
 };
 
-function countBooksInUnit(u: StoreMapUnit): number {
+function sumFloorCopiesInUnit(u: StoreMapUnit): number {
   let n = 0;
-  for (const shelf of u.shelves) for (const c of shelf.cells) n += c.books.length;
-  for (const side of u.sides)
-    for (const shelf of side.shelves) for (const c of shelf.cells) n += c.books.length;
+  const addShelves = (shelves: StoreMapShelf[]): void => {
+    for (const shelf of shelves) {
+      for (const cell of shelf.cells) {
+        for (const b of cell.books) n += b.quantity_in_cell;
+      }
+    }
+  };
+  addShelves(u.shelves);
+  for (const side of u.sides) addShelves(side.shelves);
   return n;
 }
 
-/** מחשב נתוני סטטיסטיקה מבוססי `/store-map` אמיתי; אם ריק, חוזר ל־mock. */
-export function deriveHomeStats(map: StoreMap | undefined): HomeStats {
-  if (!map || map.units.length === 0) return mockHomeStats;
-  const total = map.units.reduce((sum, u) => sum + countBooksInUnit(u), 0);
-  if (total === 0) return mockHomeStats;
+/** סה״כ עותקים במדף ממפת החנות — סכום `quantity_in_cell` מכל תא וצד ארון. */
+export function sumFloorCopiesFromMap(map: StoreMap | undefined): number | null {
+  if (!map || map.units.length === 0) return null;
+  const total = map.units.reduce((sum, u) => sum + sumFloorCopiesInUnit(u), 0);
+  if (total === 0) return null;
+  return total;
+}
+
+export interface DerivedHomeFloorStock {
+  totalStockFormatted: string;
+  usedRealFloorTotal: boolean;
+}
+
+/** מחשבה מוכנה לכרטיס «מלאי כולל» — ערכי תצוגה או דמה מה־`mockHomeStats`. */
+export function deriveHomeFloorStock(map: StoreMap | undefined): DerivedHomeFloorStock {
+  const summed = sumFloorCopiesFromMap(map);
+  if (summed === null) {
+    return {
+      totalStockFormatted: mockHomeStats.totalStock,
+      usedRealFloorTotal: false,
+    };
+  }
   return {
-    totalStock: total.toLocaleString("he-IL"),
-    stockDeltaLabel: mockHomeStats.stockDeltaLabel,
-    openOrders: mockHomeStats.openOrders,
-    ordersSubLabel: mockHomeStats.ordersSubLabel,
-    shortages: mockHomeStats.shortages,
-    shortageSubLabel: mockHomeStats.shortageSubLabel,
+    totalStockFormatted: summed.toLocaleString("he-IL"),
+    usedRealFloorTotal: true,
   };
 }

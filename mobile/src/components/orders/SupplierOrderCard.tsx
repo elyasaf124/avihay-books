@@ -18,7 +18,7 @@ interface Props {
  * כרטיס לקבוצת הזמנות לפי ספק:
  * - כותרת עם שם הספק וצבע הזיהוי.
  * - רשימת השורות (ספר + כמות + סטטוס) או פרטי לקוח עבור `customer`/`whatsapp`.
- * - שתי פעולות: ייצוא `PDF` ושליחה במייל.
+ * - במלאי: ייצוא `PDF` ושליחה במייל; בלקוח / וואטסאפ: הסרת שורה.
  */
 export function SupplierOrderCard({
   group,
@@ -107,8 +107,8 @@ function OrderLine({
           {order.book_title}
         </Text>
         <Text style={styles.lineMeta} numberOfLines={1}>
-          {order.book_author}
-          {showCustomer && order.customer_name ? ` · ${order.customer_name}` : ""}
+          {(order.book_author?.trim() ? order.book_author : he.orders.authorNotSpecified) +
+            (showCustomer && order.customer_name ? ` · ${order.customer_name}` : "")}
         </Text>
         {showCustomer && order.customer_phone ? (
           <Text style={styles.lineMeta} numberOfLines={1}>

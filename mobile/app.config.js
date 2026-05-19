@@ -1,6 +1,9 @@
 const path = require("path");
 const { loadProjectEnv } = require("@expo/env");
 
+/** שינוי מזהה האפליקציה לפיתוח כדי לא לדרוס את גרסת הייצור בטלפון. שנה ל-false כדי לחזור לפרודקשן בקלות */
+const IS_DEV_PACKAGE = false;
+
 /** מצב טעינת קבצי `.env.*` — מתאים ל־`EAS` (`EAS_BUILD_PROFILE`) או ל־`NODE_ENV` מקומי */
 function getExpoEnvMode() {
   const profile = process.env.EAS_BUILD_PROFILE;
@@ -55,22 +58,37 @@ const hasEasProjectId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
   easProjectId,
 );
 
-module.exports = ({ config }) => ({
-  ...config,
-  runtimeVersion: {
-    policy: "appVersion",
-  },
-  updates: {
-    ...config.updates,
-    checkAutomatically: "ON_LOAD",
-    fallbackToCacheTimeout: 0,
-    ...(hasEasProjectId ? { url: `https://u.expo.dev/${easProjectId}` } : { enabled: false }),
-  },
-  extra: {
-    ...config.extra,
-    apiBaseUrl,
-    apiKey,
-    appEnv,
-    eas: { projectId: easProjectId },
-  },
-});
+module.exports = ({ config }) => {
+  const name = IS_DEV_PACKAGE ? `${config.name}-dev` : config.name;
+  const android = {
+    ...config.android,
+    package: IS_DEV_PACKAGE ? `${config.android?.package ?? "com.avihay.books"}.dev` : (config.android?.package ?? "com.avihay.books"),
+  };
+  const ios = {
+    ...config.ios,
+    bundleIdentifier: IS_DEV_PACKAGE ? `${config.ios?.bundleIdentifier ?? "com.avihay.books"}.dev` : (config.ios?.bundleIdentifier ?? "com.avihay.books"),
+  };
+
+  return {
+    ...config,
+    name,
+    android,
+    ios,
+    runtimeVersion: {
+      policy: "appVersion",
+    },
+    updates: {
+      ...config.updates,
+      checkAutomatically: "ON_LOAD",
+      fallbackToCacheTimeout: 0,
+      ...(hasEasProjectId ? { url: `https://u.expo.dev/${easProjectId}` } : { enabled: false }),
+    },
+    extra: {
+      ...config.extra,
+      apiBaseUrl,
+      apiKey,
+      appEnv,
+      eas: { projectId: easProjectId },
+    },
+  };
+};

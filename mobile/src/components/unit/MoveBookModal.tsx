@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -381,286 +383,291 @@ export function MoveBookModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.sheetHandle} />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        <Pressable style={styles.backdrop} onPress={onClose}>
+          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.sheetHandle} />
 
-          <View style={styles.headerRow}>
-            <Text style={styles.title} numberOfLines={1}>
-              {headerTitle}
-            </Text>
-            <Pressable onPress={onClose} hitSlop={12}>
-              <Ionicons name="close" size={22} color={theme.colors.onSurface} />
-            </Pressable>
-          </View>
-
-          {book ? (
-            <View style={styles.bookCard}>
-              <View style={[styles.bookDot, { backgroundColor: book.supplier_color }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.bookTitle} numberOfLines={1}>
-                  {book.title}
-                </Text>
-                <Text style={styles.bookAuthor} numberOfLines={1}>
-                  {book.author}
-                </Text>
-              </View>
-            </View>
-          ) : placePreview ? (
-            <View style={styles.bookCard}>
-              <View
-                style={[
-                  styles.bookDot,
-                  { backgroundColor: placePreview.supplier_color ?? theme.colors.outline },
-                ]}
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.bookTitle} numberOfLines={1}>
-                  {placePreview.title}
-                </Text>
-                <Text style={styles.bookAuthor} numberOfLines={1}>
-                  {placePreview.author}
-                </Text>
-              </View>
-            </View>
-          ) : null}
-
-          {moveContextBanner ? (
-            <View style={styles.moveContextBanner}>
-              {moveContextBanner.bulkMoves && moveContextBanner.bulkMoves.length > 0 ? (
-                <View style={styles.bulkMovesBlock}>
-                  {moveContextBanner.bulkMoves.map((b) => (
-                    <Pressable
-                      key={b.id}
-                      style={styles.bulkLink}
-                      onPress={b.onPress}
-                      disabled={submitting}
-                    >
-                      <Ionicons name="layers-outline" size={18} color={theme.colors.primary} />
-                      <Text style={styles.bulkLinkText} numberOfLines={3}>
-                        {b.label}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              ) : null}
-              <Text style={styles.moveContextCurrent} numberOfLines={4}>
-                {moveContextBanner.currentLocationText}
+            <View style={styles.headerRow}>
+              <Text style={styles.title} numberOfLines={1}>
+                {headerTitle}
               </Text>
-              {moveContextBanner.slotPicker && moveContextBanner.slotPicker.labels.length > 1 ? (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.slotChipRow}
-                >
-                  {moveContextBanner.slotPicker.labels.map((label, i) => {
-                    const mask = moveContextBanner.slotPicker!.activeMask;
-                    const active = Boolean(mask[i]);
-                    return (
-                      <Pressable
-                        key={`slot-${i}`}
-                        onPress={() => moveContextBanner.slotPicker!.onSelect(i)}
-                        style={[styles.slotChip, active && styles.slotChipActive]}
-                      >
-                        <Text style={[styles.slotChipText, active && styles.slotChipTextActive]}>
-                          {label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
-              ) : null}
-            </View>
-          ) : null}
-
-          <ScrollView contentContainerStyle={{ gap: theme.spacing.md }}>
-            <View style={styles.tabRow}>
-              <Pressable
-                onPress={() => setPickTab("quick")}
-                style={[styles.tabChip, pickTab === "quick" && styles.tabChipActive]}
-              >
-                <Text style={[styles.tabChipText, pickTab === "quick" && styles.tabChipTextActive]}>
-                  {he.addRemove.placementTabByName}
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setPickTab("tree")}
-                style={[styles.tabChip, pickTab === "tree" && styles.tabChipActive]}
-              >
-                <Text style={[styles.tabChipText, pickTab === "tree" && styles.tabChipTextActive]}>
-                  {he.addRemove.placementTabTree}
-                </Text>
+              <Pressable onPress={onClose} hitSlop={12}>
+                <Ionicons name="close" size={22} color={theme.colors.onSurface} />
               </Pressable>
             </View>
 
-            {treatAsNewBook ? (
-              <Text style={styles.placementPolicyHint}>{he.addRemove.placementNewBooksOnlyHint}</Text>
-            ) : book != null && !book.is_new ? (
-              <Text style={styles.placementPolicyHint}>{he.addRemove.placementRegularBooksHint}</Text>
+            {book ? (
+              <View style={styles.bookCard}>
+                <View style={[styles.bookDot, { backgroundColor: book.supplier_color }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bookTitle} numberOfLines={1}>
+                    {book.title}
+                  </Text>
+                  <Text style={styles.bookAuthor} numberOfLines={1}>
+                    {book.author}
+                  </Text>
+                </View>
+              </View>
+            ) : placePreview ? (
+              <View style={styles.bookCard}>
+                <View
+                  style={[
+                    styles.bookDot,
+                    { backgroundColor: placePreview.supplier_color ?? theme.colors.outline },
+                  ]}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bookTitle} numberOfLines={1}>
+                    {placePreview.title}
+                  </Text>
+                  <Text style={styles.bookAuthor} numberOfLines={1}>
+                    {placePreview.author}
+                  </Text>
+                </View>
+              </View>
             ) : null}
 
-            {pickTab === "quick" ? (
-              <View style={{ gap: theme.spacing.sm }}>
-                <Text style={styles.numericLabel}>{he.addRemove.cellNameSearchLabel}</Text>
-                <TextInput
-                  style={styles.quickLookupInputFull}
-                  value={quickQuery}
-                  onChangeText={(t) => {
-                    setQuickQuery(t);
-                    setQuickError(null);
-                  }}
-                  placeholder={he.addRemove.cellNameSearchPlaceholder}
-                  placeholderTextColor={theme.colors.onSurfaceVariant}
-                />
-                <Text style={styles.quickDebouncedHint}>{he.addRemove.cellNameSearchDebouncedHint}</Text>
-                {quickError ? (
-                  quickCandidates.length === 0 ? (
-                    <Text style={styles.error}>{quickError}</Text>
-                  ) : (
-                    <Text style={styles.warn}>{quickError}</Text>
-                  )
-                ) : null}
-
-                {quickCandidates.length > 1 ? (
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={pickerStyles.row}
-                  >
-                    {quickCandidates.map((c) => (
+            {moveContextBanner ? (
+              <View style={styles.moveContextBanner}>
+                {moveContextBanner.bulkMoves && moveContextBanner.bulkMoves.length > 0 ? (
+                  <View style={styles.bulkMovesBlock}>
+                    {moveContextBanner.bulkMoves.map((b) => (
                       <Pressable
-                        key={c.cellId}
-                        onPress={() => {
-                          applyCellRef(c);
-                          setQuickCandidates([]);
-                          setQuickError(null);
-                        }}
-                        style={pickerStyles.chip}
+                        key={b.id}
+                        style={styles.bulkLink}
+                        onPress={b.onPress}
+                        disabled={submitting}
                       >
-                        <Text style={pickerStyles.label} numberOfLines={4}>
-                          {cellRefToSummary(c, cellWordLabel)}
+                        <Ionicons name="layers-outline" size={18} color={theme.colors.primary} />
+                        <Text style={styles.bulkLinkText} numberOfLines={3}>
+                          {b.label}
                         </Text>
                       </Pressable>
                     ))}
-                  </ScrollView>
+                  </View>
                 ) : null}
-
-                {quickResolvedSummary ? (
-                  <Text style={styles.resolvedPath} numberOfLines={4}>
-                    {quickResolvedSummary}
-                  </Text>
+                <Text style={styles.moveContextCurrent} numberOfLines={4}>
+                  {moveContextBanner.currentLocationText}
+                </Text>
+                {moveContextBanner.slotPicker && moveContextBanner.slotPicker.labels.length > 1 ? (
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.slotChipRow}
+                  >
+                    {moveContextBanner.slotPicker.labels.map((label, i) => {
+                      const mask = moveContextBanner.slotPicker!.activeMask;
+                      const active = Boolean(mask[i]);
+                      return (
+                        <Pressable
+                          key={`slot-${i}`}
+                          onPress={() => moveContextBanner.slotPicker!.onSelect(i)}
+                          style={[styles.slotChip, active && styles.slotChipActive]}
+                        >
+                          <Text style={[styles.slotChipText, active && styles.slotChipTextActive]}>
+                            {label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
                 ) : null}
               </View>
             ) : null}
 
-            {pickTab === "tree" ? (
-              <>
-                <SectionPicker
-                  label={he.unit.move.targetUnit}
-                  value={unitId}
-                  options={units.map((u) => ({ id: u.id, label: u.name }))}
-                  onChange={(id) => {
-                    setUnitId(id);
-                    setSideId(null);
-                    setShelfId(null);
-                    setCellId(null);
-                    setQuickCandidates([]);
-                    setQuickError(null);
-                  }}
-                />
+            <ScrollView contentContainerStyle={{ gap: theme.spacing.md }}>
+              <View style={styles.tabRow}>
+                <Pressable
+                  onPress={() => setPickTab("quick")}
+                  style={[styles.tabChip, pickTab === "quick" && styles.tabChipActive]}
+                >
+                  <Text style={[styles.tabChipText, pickTab === "quick" && styles.tabChipTextActive]}>
+                    {he.addRemove.placementTabByName}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setPickTab("tree")}
+                  style={[styles.tabChip, pickTab === "tree" && styles.tabChipActive]}
+                >
+                  <Text style={[styles.tabChipText, pickTab === "tree" && styles.tabChipTextActive]}>
+                    {he.addRemove.placementTabTree}
+                  </Text>
+                </Pressable>
+              </View>
 
-                {selectedUnit?.has_sides ? (
+              {treatAsNewBook ? (
+                <Text style={styles.placementPolicyHint}>{he.addRemove.placementNewBooksOnlyHint}</Text>
+              ) : book != null && !book.is_new ? (
+                <Text style={styles.placementPolicyHint}>{he.addRemove.placementRegularBooksHint}</Text>
+              ) : null}
+
+              {pickTab === "quick" ? (
+                <View style={{ gap: theme.spacing.sm }}>
+                  <Text style={styles.numericLabel}>{he.addRemove.cellNameSearchLabel}</Text>
+                  <TextInput
+                    style={styles.quickLookupInputFull}
+                    value={quickQuery}
+                    onChangeText={(t) => {
+                      setQuickQuery(t);
+                      setQuickError(null);
+                    }}
+                    placeholder={he.addRemove.cellNameSearchPlaceholder}
+                    placeholderTextColor={theme.colors.onSurfaceVariant}
+                  />
+                  <Text style={styles.quickDebouncedHint}>{he.addRemove.cellNameSearchDebouncedHint}</Text>
+                  {quickError ? (
+                    quickCandidates.length === 0 ? (
+                      <Text style={styles.error}>{quickError}</Text>
+                    ) : (
+                      <Text style={styles.warn}>{quickError}</Text>
+                    )
+                  ) : null}
+
+                  {quickCandidates.length > 1 ? (
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={pickerStyles.row}
+                    >
+                      {quickCandidates.map((c) => (
+                        <Pressable
+                          key={c.cellId}
+                          onPress={() => {
+                            applyCellRef(c);
+                            setQuickCandidates([]);
+                            setQuickError(null);
+                          }}
+                          style={pickerStyles.chip}
+                        >
+                          <Text style={pickerStyles.label} numberOfLines={4}>
+                            {cellRefToSummary(c, cellWordLabel)}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  ) : null}
+
+                  {quickResolvedSummary ? (
+                    <Text style={styles.resolvedPath} numberOfLines={4}>
+                      {quickResolvedSummary}
+                    </Text>
+                  ) : null}
+                </View>
+              ) : null}
+
+              {pickTab === "tree" ? (
+                <>
                   <SectionPicker
-                    label={he.unit.move.targetSide}
-                    value={sideId}
-                    options={sides}
+                    label={he.unit.move.targetUnit}
+                    value={unitId}
+                    options={units.map((u) => ({ id: u.id, label: u.name }))}
                     onChange={(id) => {
-                      setSideId(id);
+                      setUnitId(id);
+                      setSideId(null);
                       setShelfId(null);
                       setCellId(null);
                       setQuickCandidates([]);
                       setQuickError(null);
                     }}
                   />
-                ) : null}
 
-                {selectedUnit ? (
-                  <SectionPicker
-                    label={he.unit.move.targetShelf}
-                    value={shelfId}
-                    options={shelfOptions}
-                    onChange={(id) => {
-                      setShelfId(id);
-                      setCellId(null);
-                      setQuickCandidates([]);
-                      setQuickError(null);
-                    }}
-                    disabled={selectedUnit.has_sides && !sideId}
-                  />
-                ) : null}
+                  {selectedUnit?.has_sides ? (
+                    <SectionPicker
+                      label={he.unit.move.targetSide}
+                      value={sideId}
+                      options={sides}
+                      onChange={(id) => {
+                        setSideId(id);
+                        setShelfId(null);
+                        setCellId(null);
+                        setQuickCandidates([]);
+                        setQuickError(null);
+                      }}
+                    />
+                  ) : null}
 
-                {shelfId ? (
-                  <SectionPicker
-                    label={he.unit.move.targetCell}
-                    value={cellId}
-                    options={cellOptions.map((c) => ({
-                      id: c.id,
-                      label: `${cellWordLabel} ${c.name}`,
-                    }))}
-                    onChange={(id) => {
-                      setCellId(id);
-                      setQuickCandidates([]);
-                      setQuickError(null);
-                    }}
-                  />
-                ) : null}
-              </>
-            ) : null}
+                  {selectedUnit ? (
+                    <SectionPicker
+                      label={he.unit.move.targetShelf}
+                      value={shelfId}
+                      options={shelfOptions}
+                      onChange={(id) => {
+                        setShelfId(id);
+                        setCellId(null);
+                        setQuickCandidates([]);
+                        setQuickError(null);
+                      }}
+                      disabled={selectedUnit.has_sides && !sideId}
+                    />
+                  ) : null}
 
-            <View style={styles.numericRow}>
-              <View style={styles.numericBlock}>
-                <Text style={styles.numericLabel}>{he.unit.move.positionInCell}</Text>
-                <TextInput
-                  style={styles.numericInput}
-                  value={position}
-                  onChangeText={(t) => setPosition(t.replace(/[^0-9]/g, ""))}
-                  keyboardType="numeric"
-                  placeholder="1"
-                  placeholderTextColor={theme.colors.onSurfaceVariant}
-                />
-              </View>
-              {!lockQuantity ? (
+                  {shelfId ? (
+                    <SectionPicker
+                      label={he.unit.move.targetCell}
+                      value={cellId}
+                      options={cellOptions.map((c) => ({
+                        id: c.id,
+                        label: `${cellWordLabel} ${c.name}`,
+                      }))}
+                      onChange={(id) => {
+                        setCellId(id);
+                        setQuickCandidates([]);
+                        setQuickError(null);
+                      }}
+                    />
+                  ) : null}
+                </>
+              ) : null}
+
+              <View style={styles.numericRow}>
                 <View style={styles.numericBlock}>
-                  <Text style={styles.numericLabel}>{he.unit.move.quantityInCell}</Text>
+                  <Text style={styles.numericLabel}>{he.unit.move.positionInCell}</Text>
                   <TextInput
                     style={styles.numericInput}
-                    value={quantity}
-                    onChangeText={(t) => setQuantity(t.replace(/[^0-9]/g, ""))}
+                    value={position}
+                    onChangeText={(t) => setPosition(t.replace(/[^0-9]/g, ""))}
                     keyboardType="numeric"
                     placeholder="1"
                     placeholderTextColor={theme.colors.onSurfaceVariant}
                   />
                 </View>
-              ) : (
-                <View style={styles.numericBlock}>
-                  <Text style={styles.numericLabel}>{he.unit.move.quantityInCell}</Text>
-                  <Text style={[styles.numericInput, styles.numericDisabled]}>{quantity}</Text>
-                </View>
-              )}
-            </View>
+                {!lockQuantity ? (
+                  <View style={styles.numericBlock}>
+                    <Text style={styles.numericLabel}>{he.unit.move.quantityInCell}</Text>
+                    <TextInput
+                      style={styles.numericInput}
+                      value={quantity}
+                      onChangeText={(t) => setQuantity(t.replace(/[^0-9]/g, ""))}
+                      keyboardType="numeric"
+                      placeholder="1"
+                      placeholderTextColor={theme.colors.onSurfaceVariant}
+                    />
+                  </View>
+                ) : (
+                  <View style={styles.numericBlock}>
+                    <Text style={styles.numericLabel}>{he.unit.move.quantityInCell}</Text>
+                    <Text style={[styles.numericInput, styles.numericDisabled]}>{quantity}</Text>
+                  </View>
+                )}
+              </View>
 
-            {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-          </ScrollView>
+              {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
+            </ScrollView>
 
-          <Pressable
-            style={[styles.submitBtn, !canSubmit && styles.submitBtnDisabled]}
-            onPress={submit}
-            disabled={!canSubmit}
-          >
-            <Text style={styles.submitBtnText}>{he.unit.move.submit}</Text>
+            <Pressable
+              style={[styles.submitBtn, !canSubmit && styles.submitBtnDisabled]}
+              onPress={submit}
+              disabled={!canSubmit}
+            >
+              <Text style={styles.submitBtnText}>{he.unit.move.submit}</Text>
+            </Pressable>
           </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

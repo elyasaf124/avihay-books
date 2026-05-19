@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { Supplier } from "@avihay-books/shared";
 import { theme } from "../../theme";
@@ -134,100 +134,105 @@ function FilterSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.sheetHandle} />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        <Pressable style={styles.backdrop} onPress={onClose}>
+          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.sheetHandle} />
 
-          <Text style={styles.sheetTitle}>{he.unit.filterTitle}</Text>
+            <Text style={styles.sheetTitle}>{he.unit.filterTitle}</Text>
 
-          <Text style={styles.sectionTitle}>{he.unit.filterSuppliers}</Text>
-          <View style={styles.supplierSearchRow}>
-            <Ionicons name="search-outline" size={18} color={theme.colors.onSurfaceVariant} />
-            <TextInput
-              value={supplierQuery}
-              onChangeText={setSupplierQuery}
-              placeholder={he.picker.searchInList}
-              placeholderTextColor={theme.colors.onSurfaceVariant}
-              style={styles.supplierSearchInput}
-              textAlign="left"
-            />
-          </View>
-          <View style={styles.supplierListViewport}>
-            <FlatList
-              data={filteredSuppliers}
-              keyExtractor={(item) => item.id}
-              style={styles.supplierList}
-              contentContainerStyle={styles.supplierListContent}
-              nestedScrollEnabled
-              keyboardShouldPersistTaps="handled"
-              ItemSeparatorComponent={() => <View style={styles.supplierSep} />}
-              ListEmptyComponent={
-                <Text style={styles.supplierEmpty}>{he.picker.noMatches}</Text>
-              }
-              renderItem={({ item: s }) => {
-                const active = draft.supplierIds.includes(s.id);
-                return (
-                  <Pressable
-                    onPress={() => toggle(s.id)}
-                    style={[styles.supplierRow, active && styles.supplierRowActive]}
-                  >
-                    <View style={styles.supplierRowMain}>
-                      <View
-                        style={[styles.supplierDot, { backgroundColor: s.color_hex ?? theme.colors.outline }]}
+            <Text style={styles.sectionTitle}>{he.unit.filterSuppliers}</Text>
+            <View style={styles.supplierSearchRow}>
+              <Ionicons name="search-outline" size={18} color={theme.colors.onSurfaceVariant} />
+              <TextInput
+                value={supplierQuery}
+                onChangeText={setSupplierQuery}
+                placeholder={he.picker.searchInList}
+                placeholderTextColor={theme.colors.onSurfaceVariant}
+                style={styles.supplierSearchInput}
+                textAlign="left"
+              />
+            </View>
+            <View style={styles.supplierListViewport}>
+              <FlatList
+                data={filteredSuppliers}
+                keyExtractor={(item) => item.id}
+                style={styles.supplierList}
+                contentContainerStyle={styles.supplierListContent}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                ItemSeparatorComponent={() => <View style={styles.supplierSep} />}
+                ListEmptyComponent={
+                  <Text style={styles.supplierEmpty}>{he.picker.noMatches}</Text>
+                }
+                renderItem={({ item: s }) => {
+                  const active = draft.supplierIds.includes(s.id);
+                  return (
+                    <Pressable
+                      onPress={() => toggle(s.id)}
+                      style={[styles.supplierRow, active && styles.supplierRowActive]}
+                    >
+                      <View style={styles.supplierRowMain}>
+                        <View
+                          style={[styles.supplierDot, { backgroundColor: s.color_hex ?? theme.colors.outline }]}
+                        />
+                        <Text style={[styles.supplierRowName, active && styles.supplierRowNameActive]}>
+                          {s.name}
+                        </Text>
+                      </View>
+                      <Ionicons
+                        name={active ? "checkbox" : "square-outline"}
+                        size={22}
+                        color={active ? theme.colors.primary : theme.colors.outlineVariant}
                       />
-                      <Text style={[styles.supplierRowName, active && styles.supplierRowNameActive]}>
-                        {s.name}
-                      </Text>
-                    </View>
-                    <Ionicons
-                      name={active ? "checkbox" : "square-outline"}
-                      size={22}
-                      color={active ? theme.colors.primary : theme.colors.outlineVariant}
-                    />
-                  </Pressable>
-                );
-              }}
-            />
-          </View>
-
-          <Text style={[styles.sectionTitle, { marginTop: theme.spacing.lg }]}>
-            {he.unit.filterPriceRange}
-          </Text>
-          <View style={styles.priceRow}>
-            <View style={styles.priceInputBlock}>
-              <Text style={styles.priceLabel}>מ־{he.unit.pricePrefix}</Text>
-              <TextInput
-                style={styles.priceInput}
-                value={draft.priceMin?.toString() ?? ""}
-                onChangeText={(t) => setPrice("priceMin", t)}
-                keyboardType="numeric"
-                placeholder="0"
-                placeholderTextColor={theme.colors.onSurfaceVariant}
+                    </Pressable>
+                  );
+                }}
               />
             </View>
-            <View style={styles.priceInputBlock}>
-              <Text style={styles.priceLabel}>עד {he.unit.pricePrefix}</Text>
-              <TextInput
-                style={styles.priceInput}
-                value={draft.priceMax?.toString() ?? ""}
-                onChangeText={(t) => setPrice("priceMax", t)}
-                keyboardType="numeric"
-                placeholder="∞"
-                placeholderTextColor={theme.colors.onSurfaceVariant}
-              />
-            </View>
-          </View>
 
-          <View style={styles.actions}>
-            <Pressable style={styles.resetBtn} onPress={reset}>
-              <Text style={styles.resetBtnText}>{he.unit.filterReset}</Text>
-            </Pressable>
-            <Pressable style={styles.applyBtn} onPress={apply}>
-              <Text style={styles.applyBtnText}>{he.generic.confirm}</Text>
-            </Pressable>
-          </View>
+            <Text style={[styles.sectionTitle, { marginTop: theme.spacing.lg }]}>
+              {he.unit.filterPriceRange}
+            </Text>
+            <View style={styles.priceRow}>
+              <View style={styles.priceInputBlock}>
+                <Text style={styles.priceLabel}>מ־{he.unit.pricePrefix}</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  value={draft.priceMin?.toString() ?? ""}
+                  onChangeText={(t) => setPrice("priceMin", t)}
+                  keyboardType="numeric"
+                  placeholder="0"
+                  placeholderTextColor={theme.colors.onSurfaceVariant}
+                />
+              </View>
+              <View style={styles.priceInputBlock}>
+                <Text style={styles.priceLabel}>עד {he.unit.pricePrefix}</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  value={draft.priceMax?.toString() ?? ""}
+                  onChangeText={(t) => setPrice("priceMax", t)}
+                  keyboardType="numeric"
+                  placeholder="∞"
+                  placeholderTextColor={theme.colors.onSurfaceVariant}
+                />
+              </View>
+            </View>
+
+            <View style={styles.actions}>
+              <Pressable style={styles.resetBtn} onPress={reset}>
+                <Text style={styles.resetBtnText}>{he.unit.filterReset}</Text>
+              </Pressable>
+              <Pressable style={styles.applyBtn} onPress={apply}>
+                <Text style={styles.applyBtnText}>{he.generic.confirm}</Text>
+              </Pressable>
+            </View>
+          </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

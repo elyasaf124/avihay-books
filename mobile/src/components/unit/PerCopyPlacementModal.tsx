@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -185,135 +186,140 @@ export function PerCopyPlacementModal({
   return (
     <>
       <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-        <Pressable style={styles.backdrop} onPress={onClose}>
-          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.sheetHandle} />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={{ flex: 1 }}
+        >
+          <Pressable style={styles.backdrop} onPress={onClose}>
+            <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.sheetHandle} />
 
-            <View style={styles.headerRow}>
-              <Text style={styles.title} numberOfLines={2}>
-                {he.addRemove.perCopyModalTitle}
-              </Text>
-              <Pressable onPress={onClose} hitSlop={12}>
-                <Ionicons name="close" size={22} color={theme.colors.onSurface} />
-              </Pressable>
-            </View>
-
-            <View style={styles.bookCard}>
-              <View
-                style={[styles.bookDot, { backgroundColor: preview.supplier_color ?? theme.colors.outline }]}
-              />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.bookTitle} numberOfLines={1}>
-                  {preview.title}
+              <View style={styles.headerRow}>
+                <Text style={styles.title} numberOfLines={2}>
+                  {he.addRemove.perCopyModalTitle}
                 </Text>
-                <Text style={styles.bookAuthor} numberOfLines={1}>
-                  {preview.author}
-                </Text>
-                <Text style={styles.slotsSubtitle}>
-                  {interpolate(he.addRemove.perCopySlotCountHint, { n: String(slotCount) })}
-                </Text>
-                <Text style={styles.slotsOptionalHint}>{he.addRemove.perCopyRowsOptionalHint}</Text>
+                <Pressable onPress={onClose} hitSlop={12}>
+                  <Ionicons name="close" size={22} color={theme.colors.onSurface} />
+                </Pressable>
               </View>
-            </View>
 
-            <Pressable
-              style={[styles.bulkShortcut, submitting && styles.bulkShortcutDisabled]}
-              disabled={submitting}
-              onPress={() => setBulkHierarchyOpen(true)}
-            >
-              <Ionicons name="copy-outline" size={18} color={theme.colors.primary} />
-              <Text style={styles.bulkShortcutText}>{he.addRemove.sameCellForAllCopies}</Text>
-            </Pressable>
-
-            <Text style={styles.cellTypeHint}>{he.addRemove.cellNameSearchDebouncedHint}</Text>
-
-            <ScrollView contentContainerStyle={styles.rowsScroll}>
-              {rows.map((row, idx) => (
-                <View key={`slot-${slotCount}-${idx}`} style={styles.rowBlock}>
-                  <Text style={styles.rowHeading}>
-                    {interpolate(he.addRemove.perCopyRowTitle, { n: String(idx + 1) })}
+              <View style={styles.bookCard}>
+                <View
+                  style={[styles.bookDot, { backgroundColor: preview.supplier_color ?? theme.colors.outline }]}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bookTitle} numberOfLines={1}>
+                    {preview.title}
                   </Text>
-                  <Text style={styles.rowHint}>{he.addRemove.perCopyRowHint}</Text>
-                  <View style={styles.nameRowSingle}>
-                    <TextInput
-                      style={styles.nameInputFull}
-                      value={row.nameDraft}
-                      editable={!submitting}
-                      onChangeText={(t) => {
-                        setRows((prev) => {
-                          const next = [...prev];
-                          next[idx] = {
-                            ...next[idx]!,
-                            nameDraft: t,
-                            lookupError: null,
-                            placement: row.placement,
-                          };
-                          return next;
-                        });
-                        const prevT = lookupDebounceRef.current[idx];
-                        if (prevT) clearTimeout(prevT);
-                        lookupDebounceRef.current[idx] = setTimeout(() => {
-                          lookupNameAtRow(idx, t);
-                          delete lookupDebounceRef.current[idx];
-                        }, 420);
-                      }}
-                      placeholder={he.addRemove.cellNameSearchPlaceholder}
-                      placeholderTextColor={theme.colors.onSurfaceVariant}
-                      textAlign="left"
-                    />
-                  </View>
-
-                  {ambiguousChoices?.rowIdx === idx ? (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.ambRow}>
-                      {ambiguousChoices.choices.map((c) => (
-                        <Pressable
-                          key={`${c.cellId}-${idx}`}
-                          style={styles.ambigChip}
-                          onPress={() => {
-                            applyCellToRow(idx, c);
-                            setAmbiguousChoices(null);
-                          }}
-                        >
-                          <Text style={styles.ambigChipText} numberOfLines={3}>
-                            {cellRefToSummary(c, cellWord)}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  ) : null}
-
-                  {row.lookupError ? <Text style={styles.rowErr}>{row.lookupError}</Text> : null}
-                  {row.placement ? (
-                    <Text style={styles.rowOk} numberOfLines={3}>
-                      {row.placement.summaryLabel}
-                    </Text>
-                  ) : null}
-
-                  <Pressable
-                    style={styles.treeLink}
-                    disabled={submitting}
-                    onPress={() => setDetailRowIdx(idx)}
-                  >
-                    <Ionicons name="layers-outline" size={18} color={theme.colors.primary} />
-                    <Text style={styles.treeLinkText}>{he.addRemove.pickFullHierarchyLink}</Text>
-                  </Pressable>
+                  <Text style={styles.bookAuthor} numberOfLines={1}>
+                    {preview.author}
+                  </Text>
+                  <Text style={styles.slotsSubtitle}>
+                    {interpolate(he.addRemove.perCopySlotCountHint, { n: String(slotCount) })}
+                  </Text>
+                  <Text style={styles.slotsOptionalHint}>{he.addRemove.perCopyRowsOptionalHint}</Text>
                 </View>
-              ))}
-            </ScrollView>
+              </View>
 
-            {errorMessage ? <Text style={styles.sheetError}>{errorMessage}</Text> : null}
+              <Pressable
+                style={[styles.bulkShortcut, submitting && styles.bulkShortcutDisabled]}
+                disabled={submitting}
+                onPress={() => setBulkHierarchyOpen(true)}
+              >
+                <Ionicons name="copy-outline" size={18} color={theme.colors.primary} />
+                <Text style={styles.bulkShortcutText}>{he.addRemove.sameCellForAllCopies}</Text>
+              </Pressable>
 
-            <Pressable
-              style={[styles.submitBtn, !canSubmitInner && styles.submitBtnDisabled]}
-              disabled={!canSubmitInner}
-              onPress={() => {
-                void onSubmit(filledPlacements);
-              }}
-            >
-              <Text style={styles.submitBtnText}>{he.addRemove.perCopySubmit}</Text>
+              <Text style={styles.cellTypeHint}>{he.addRemove.cellNameSearchDebouncedHint}</Text>
+
+              <ScrollView contentContainerStyle={styles.rowsScroll}>
+                {rows.map((row, idx) => (
+                  <View key={`slot-${slotCount}-${idx}`} style={styles.rowBlock}>
+                    <Text style={styles.rowHeading}>
+                      {interpolate(he.addRemove.perCopyRowTitle, { n: String(idx + 1) })}
+                    </Text>
+                    <Text style={styles.rowHint}>{he.addRemove.perCopyRowHint}</Text>
+                    <View style={styles.nameRowSingle}>
+                      <TextInput
+                        style={styles.nameInputFull}
+                        value={row.nameDraft}
+                        editable={!submitting}
+                        onChangeText={(t) => {
+                          setRows((prev) => {
+                            const next = [...prev];
+                            next[idx] = {
+                              ...next[idx]!,
+                              nameDraft: t,
+                              lookupError: null,
+                              placement: row.placement,
+                            };
+                            return next;
+                          });
+                          const prevT = lookupDebounceRef.current[idx];
+                          if (prevT) clearTimeout(prevT);
+                          lookupDebounceRef.current[idx] = setTimeout(() => {
+                            lookupNameAtRow(idx, t);
+                            delete lookupDebounceRef.current[idx];
+                          }, 420);
+                        }}
+                        placeholder={he.addRemove.cellNameSearchPlaceholder}
+                        placeholderTextColor={theme.colors.onSurfaceVariant}
+                        textAlign="left"
+                      />
+                    </View>
+
+                    {ambiguousChoices?.rowIdx === idx ? (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.ambRow}>
+                        {ambiguousChoices.choices.map((c) => (
+                          <Pressable
+                            key={`${c.cellId}-${idx}`}
+                            style={styles.ambigChip}
+                            onPress={() => {
+                              applyCellToRow(idx, c);
+                              setAmbiguousChoices(null);
+                            }}
+                          >
+                            <Text style={styles.ambigChipText} numberOfLines={3}>
+                              {cellRefToSummary(c, cellWord)}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                    ) : null}
+
+                    {row.lookupError ? <Text style={styles.rowErr}>{row.lookupError}</Text> : null}
+                    {row.placement ? (
+                      <Text style={styles.rowOk} numberOfLines={3}>
+                        {row.placement.summaryLabel}
+                      </Text>
+                    ) : null}
+
+                    <Pressable
+                      style={styles.treeLink}
+                      disabled={submitting}
+                      onPress={() => setDetailRowIdx(idx)}
+                    >
+                      <Ionicons name="layers-outline" size={18} color={theme.colors.primary} />
+                      <Text style={styles.treeLinkText}>{he.addRemove.pickFullHierarchyLink}</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </ScrollView>
+
+              {errorMessage ? <Text style={styles.sheetError}>{errorMessage}</Text> : null}
+
+              <Pressable
+                style={[styles.submitBtn, !canSubmitInner && styles.submitBtnDisabled]}
+                disabled={!canSubmitInner}
+                onPress={() => {
+                  void onSubmit(filledPlacements);
+                }}
+              >
+                <Text style={styles.submitBtnText}>{he.addRemove.perCopySubmit}</Text>
+              </Pressable>
             </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       <MoveBookModal

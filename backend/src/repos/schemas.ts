@@ -105,16 +105,49 @@ export const shortageInputSchema = z.object({
 });
 export type ShortageInput = z.infer<typeof shortageInputSchema>;
 
-export const orderInputSchema = z.object({
-  id: uuid.optional(),
-  book_id: uuid,
-  supplier_id: uuid,
-  order_type: z.enum(ORDER_TYPES),
-  quantity: z.number().int().positive(),
-  customer_name: z.string().max(255).nullable().optional(),
-  customer_phone: z.string().max(20).nullable().optional(),
-  status: z.enum(ORDER_STATUSES).default("pending"),
-});
+export const orderInputSchema = z
+  .object({
+    id: uuid.optional(),
+    book_id: uuid.nullable().optional(),
+    supplier_id: uuid,
+    order_type: z.enum(ORDER_TYPES),
+    quantity: z.number().int().positive(),
+    customer_name: z.string().max(255).nullable().optional(),
+    customer_phone: z.string().max(20).nullable().optional(),
+    manual_book_title: z.string().max(500).nullable().optional(),
+    manual_book_author: z.string().max(255).nullable().optional(),
+    status: z.enum(ORDER_STATUSES).default("pending"),
+  })
+  .superRefine((data, ctx) => {
+    const bookId = data.book_id ?? null;
+    const manualTitle = data.manual_book_title?.trim() ?? "";
+
+    if (data.order_type === "inventory") {
+      if (!bookId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["book_id"],
+          message: "inventory_requires_book_id",
+        });
+      }
+      return;
+    }
+
+    if (!bookId && !manualTitle) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["book_id"],
+        message: "customer_or_whatsapp_requires_book_or_manual_title",
+      });
+    }
+    if (bookId && manualTitle) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["manual_book_title"],
+        message: "book_id_xor_manual_title",
+      });
+    }
+  });
 export type OrderInput = z.infer<typeof orderInputSchema>;
 
 export const notificationInputSchema = z.object({

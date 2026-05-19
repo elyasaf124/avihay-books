@@ -1,25 +1,31 @@
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Pressable,
   RefreshControl,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
+import { useNavigation } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import type { OrderListItem, OrderType, OrdersBySupplierGroup } from "@avihay-books/shared";
+import type { OrderListItem, OrderType } from "@avihay-books/shared";
 import { theme } from "../../src/theme";
 import { he } from "../../src/i18n/he";
 import {
+  augmentInventoryGroupsWithCustomerWhatsappTotals,
   mergeOrderLinesForDisplay,
   orderDisplayLineKey,
+  summedCustomerAndWhatsappQtyByBookSupplier,
   useOrdersGroupedBySupplier,
   useOrdersList,
   useRemoveOrderLine,
 } from "../../src/api/orders";
 import { ConfirmDialog } from "../../src/components/ConfirmDialog";
+import { CustomerDemandOrderModal } from "../../src/components/orders/CustomerDemandOrderModal";
 import { mockOrderList } from "../../src/mocks/shortageOrders";
 import { OrderTabs } from "../../src/components/orders/OrderTabs";
 import { SupplierOrderCard } from "../../src/components/orders/SupplierOrderCard";
@@ -28,9 +34,142 @@ import {
   exportSupplierOrdersToPdf,
 } from "../../src/utils/ordersExport";
 
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: theme.colors.background },
+  headerTitleBar: {
+    height: 44,
+  },
+  headerTitleRightSlot: {
+    position: "absolute",
+    /** קצה ימין פיזי — מתאים ל־`RTL` עם כותרת «הזמנות» */
+    right: theme.spacing.marginMobile,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+    maxWidth: "52%",
+    zIndex: 1,
+  },
+  headerTitleRightText: {
+    ...theme.typography.headlineSm,
+    fontFamily: theme.fontFamily.bold,
+    color: theme.colors.primary,
+    textAlign: "right",
+  },
+  headerOrderBtnSlot: {
+    position: "absolute",
+    /** שמאל פיזי + ריווח קל שלא יידבק לשולי המסך */
+    left: theme.spacing.marginMobile + theme.spacing.sm,
+    top: 0,
+    bottom: 0,
+    justifyContent: "center",
+    zIndex: 2,
+  },
+  headerOrderBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.surface,
+  },
+  headerOrderBtnPressed: { opacity: 0.88, backgroundColor: theme.colors.surfaceContainerLow },
+  headerOrderBtnText: {
+    ...theme.typography.labelMd,
+    color: theme.colors.primary,
+    letterSpacing: 0,
+  },
+  offlineBanner: {
+    marginHorizontal: theme.spacing.marginMobile,
+    marginTop: theme.spacing.sm,
+    backgroundColor: theme.colors.errorContainer,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.radius.full,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  offlineText: {
+    ...theme.typography.labelMd,
+    color: theme.colors.onErrorContainer,
+    flex: 1,
+    textAlign: "left",
+  },
+  tabsWrap: {
+    paddingHorizontal: theme.spacing.marginMobile,
+    paddingTop: theme.spacing.md,
+    paddingBottom: theme.spacing.sm,
+  },
+  list: {
+    paddingHorizontal: theme.spacing.marginMobile,
+    paddingBottom: theme.spacing.xl,
+  },
+  sep: { height: theme.spacing.md },
+  loadingBox: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.spacing.sm,
+  },
+  loadingText: {
+    ...theme.typography.bodyMd,
+    color: theme.colors.onSurfaceVariant,
+  },
+  empty: {
+    marginTop: theme.spacing.xl,
+    padding: theme.spacing.lg,
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    backgroundColor: theme.colors.surfaceContainerLowest,
+    borderRadius: theme.radius.xl,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+  },
+  emptyText: {
+    ...theme.typography.bodyMd,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: "center",
+  },
+});
+
+function OrdersTabHeaderTitle({ onCustomerOrder }: { onCustomerOrder: () => void }): JSX.Element {
+  const { width } = useWindowDimensions();
+  return (
+    <View style={[styles.headerTitleBar, { width }]} pointerEvents="box-none">
+      <View style={styles.headerOrderBtnSlot} pointerEvents="box-none">
+        <Pressable
+          onPress={onCustomerOrder}
+          style={({ pressed }) => [styles.headerOrderBtn, pressed && styles.headerOrderBtnPressed]}
+          accessibilityRole="button"
+          accessibilityLabel={he.orders.customerOrderHeaderButtonA11y}
+        >
+          <Text style={styles.headerOrderBtnText}>{he.orders.customerOrderHeaderButton}</Text>
+        </Pressable>
+      </View>
+      <View style={styles.headerTitleRightSlot} pointerEvents="none">
+        <Text style={styles.headerTitleRightText} numberOfLines={1}>
+          {he.tabs.orders}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 export default function OrdersScreen(): JSX.Element {
+  const navigation = useNavigation();
   const [activeTab, setActiveTab] = useState<OrderType>("inventory");
   const [removeOrderTarget, setRemoveOrderTarget] = useState<OrderListItem | null>(null);
+  const [customerOrderOpen, setCustomerOrderOpen] = useState(false);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => null,
+      headerRight: () => null,
+      headerTitle: () => <OrdersTabHeaderTitle onCustomerOrder={() => setCustomerOrderOpen(true)} />,
+      /** מאפשר למדור הכותרת להימתח על כל רוחב המסך כדי ש־`left` על הכפתור יהיה מול השוליים */
+      headerTitleContainerStyle: { position: "absolute", left: 0, right: 0 },
+    });
+  }, [navigation]);
 
   const removeLineMutation = useRemoveOrderLine();
 
@@ -65,7 +204,20 @@ export default function OrdersScreen(): JSX.Element {
         ? customerItems
         : whatsappItems;
 
-  const groups: OrdersBySupplierGroup[] = useOrdersGroupedBySupplier(activeItems, activeTab);
+  const baseGroups = useOrdersGroupedBySupplier(activeItems, activeTab);
+
+  const extraCustomerWhatsappByBookSupplier = useMemo(
+    () => summedCustomerAndWhatsappQtyByBookSupplier([...customerItems, ...whatsappItems]),
+    [customerItems, whatsappItems],
+  );
+
+  const groups = useMemo(() => {
+    if (activeTab !== "inventory") return baseGroups;
+    return augmentInventoryGroupsWithCustomerWhatsappTotals(
+      baseGroups,
+      extraCustomerWhatsappByBookSupplier,
+    );
+  }, [activeTab, baseGroups, extraCustomerWhatsappByBookSupplier]);
 
   const counts: Record<OrderType, number> = useMemo(
     () => ({
@@ -173,62 +325,12 @@ export default function OrdersScreen(): JSX.Element {
         onCancel={() => setRemoveOrderTarget(null)}
         onConfirm={() => void confirmRemoveOrderLine()}
       />
+      <CustomerDemandOrderModal
+        visible={customerOrderOpen}
+        onClose={() => setCustomerOrderOpen(false)}
+        isOffline={isOffline}
+        onCreated={() => setActiveTab("customer")}
+      />
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: theme.colors.background },
-  offlineBanner: {
-    marginHorizontal: theme.spacing.marginMobile,
-    marginTop: theme.spacing.sm,
-    backgroundColor: theme.colors.errorContainer,
-    paddingVertical: theme.spacing.sm,
-    paddingHorizontal: theme.spacing.md,
-    borderRadius: theme.radius.full,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.sm,
-  },
-  offlineText: {
-    ...theme.typography.labelMd,
-    color: theme.colors.onErrorContainer,
-    flex: 1,
-    textAlign: "left",
-  },
-  tabsWrap: {
-    paddingHorizontal: theme.spacing.marginMobile,
-    paddingTop: theme.spacing.md,
-    paddingBottom: theme.spacing.sm,
-  },
-  list: {
-    paddingHorizontal: theme.spacing.marginMobile,
-    paddingBottom: theme.spacing.xl,
-  },
-  sep: { height: theme.spacing.md },
-  loadingBox: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: theme.spacing.sm,
-  },
-  loadingText: {
-    ...theme.typography.bodyMd,
-    color: theme.colors.onSurfaceVariant,
-  },
-  empty: {
-    marginTop: theme.spacing.xl,
-    padding: theme.spacing.lg,
-    alignItems: "center",
-    gap: theme.spacing.sm,
-    backgroundColor: theme.colors.surfaceContainerLowest,
-    borderRadius: theme.radius.xl,
-    borderWidth: 1,
-    borderColor: theme.colors.outlineVariant,
-  },
-  emptyText: {
-    ...theme.typography.bodyMd,
-    color: theme.colors.onSurfaceVariant,
-    textAlign: "center",
-  },
-});

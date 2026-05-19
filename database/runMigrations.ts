@@ -2,7 +2,7 @@ import "../backend/src/config/loadEnv.js";
 import { readFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { postgresSslForUrl } from "@avihay-books/shared";
+import { normalizePostgresConnectionString, postgresSslForUrl } from "@avihay-books/shared";
 import { Pool } from "pg";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -10,11 +10,12 @@ const __dirname = dirname(__filename);
 const MIGRATIONS_DIR = join(__dirname, "migrations");
 
 async function main(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
+  const rawDatabaseUrl = process.env.DATABASE_URL;
+  if (!rawDatabaseUrl) {
     throw new Error("DATABASE_URL is not set. Copy .env.example to backend/.env and fill it in.");
   }
 
+  const databaseUrl = normalizePostgresConnectionString(rawDatabaseUrl);
   const ssl = postgresSslForUrl(databaseUrl);
   const pool = new Pool({
     connectionString: databaseUrl,

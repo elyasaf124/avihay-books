@@ -15,33 +15,35 @@ function buildHtml(group: OrdersBySupplierGroup): string {
           <td>${escapeHtml(o.book_title)}</td>
           <td>${escapeHtml(o.book_author)}</td>
           <td style="text-align:center">${o.quantity}</td>
-          <td style="text-align:left">${he.orders.pricePrefix} ${escapeHtml(o.book_price)}</td>
         </tr>`,
     )
     .join("");
 
   const total = group.orders.reduce((sum, o) => sum + o.quantity, 0);
   const date = new Date().toLocaleDateString("he-IL");
+  const docTitle = escapeHtml(he.orders.pdfDocumentTitle);
 
   return `<!doctype html>
 <html dir="rtl" lang="he">
 <head>
   <meta charset="utf-8" />
-  <title>${he.orders.subjectPdfSafe}</title>
+  <title>${docTitle}</title>
   <style>
     body { font-family: -apple-system, Heebo, Arial, sans-serif; color: #0b1c30; padding: 32px; }
-    h1 { color: #00236f; font-size: 22px; margin: 0 0 4px; }
+    h1 { color: #00236f; font-size: 22px; margin: 0 0 8px; }
+    h2 { color: #00236f; font-size: 18px; margin: 0 0 4px; font-weight: 700; }
     .meta { color: #444651; font-size: 12px; margin-bottom: 24px; }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 10px 8px; border-bottom: 1px solid #c5c5d3; font-size: 13px; }
     th { background: #eff4ff; color: #00236f; text-align: right; }
-    td:first-child, th:first-child { width: 40%; }
+    td:first-child, th:first-child { width: 45%; }
     .summary { margin-top: 18px; font-size: 13px; color: #213145; }
     .accent { display: inline-block; width: 12px; height: 12px; border-radius: 999px; background: ${group.supplier_color}; margin-left: 6px; vertical-align: middle; }
   </style>
 </head>
 <body>
-  <h1><span class="accent"></span>${escapeHtml(group.supplier_name)}</h1>
+  <h1>${docTitle}</h1>
+  <h2><span class="accent"></span>${escapeHtml(group.supplier_name)}</h2>
   <div class="meta">${escapeHtml(group.supplier_email)} · ${date}</div>
   <table>
     <thead>
@@ -49,7 +51,6 @@ function buildHtml(group: OrdersBySupplierGroup): string {
         <th>${he.orders.bookColumn}</th>
         <th>מחבר</th>
         <th>${he.orders.quantityColumn}</th>
-        <th>מחיר ליחידה</th>
       </tr>
     </thead>
     <tbody>${rows}</tbody>
@@ -67,17 +68,125 @@ function escapeHtml(input: string): string {
     .replace(/"/g, "&quot;");
 }
 
+/** בדפדפן `Alert` של `react-native` לעיתים לא מוצג — משתמשים ב־`window.alert`. */
+function showPdfUserMessage(title: string, body?: string): void {
+  if (Platform.OS === "web" && typeof window !== "undefined") {
+    window.alert(body ? `${title}\n\n${body}` : title);
+    return;
+  }
+  if (body) Alert.alert(title, body);
+  else Alert.alert(title);
+}
+
+/**
+ * הדפסה בדפדפן בלי `expo-print` אמיתי:
+ * - `about:blank` + `document.write` לעיתים משאירים לשונית ריקה — לכן טוענים `HTML` מ־`blob:`.
+ * - אם `window.open` נחסם — מנסים `iframe` נסתר באותו דף (בלי לשונית חדשה).
+ */
+function printOrderHtmlInBrowserWindow(html: string): void {
+  if (typeof window === "undefined") return;
+
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const objectUrl = URL.createObjectURL(blob);
+
+  const scheduleRevoke = () => {
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+  };
+
+  let didPrint = false;
+  const invokePrint = (target: Window) => {
+    if (didPrint) return;
+    didPrint = true;
+    try {
+      target.focus();
+      target.print();
+    } catch {
+      showPdfUserMessage(he.orders.pdf.failedTitle, he.orders.pdf.failedMessage);
+    }
+    scheduleRevoke();
+  };
+
+  const printWindow = window.open(objectUrl, "_blank");
+  if (!printWindow) {
+    URL.revokeObjectURL(objectUrl);
+    printOrderHtmlWithHiddenIframe(html);
+    return;
+  }
+
+  printWindow.addEventListener("load", () => invokePrint(printWindow));
+  window.setTimeout(() => {
+    try {
+      if (printWindow.document.readyState === "complete") invokePrint(printWindow);
+    } catch {
+      invokePrint(printWindow);
+    }
+  }, 400);
+  /** אם אירוע `load` לא נורה (דפדפן נדיר) — עדיין מנסים הדפסה */
+  window.setTimeout(() => invokePrint(printWindow), 2_000);
+}
+
+function printOrderHtmlWithHiddenIframe(html: string): void {
+  if (typeof document === "undefined" || !document.body) {
+    showPdfUserMessage(he.orders.pdf.webPopupBlockedTitle, he.orders.pdf.webPopupBlockedMessage);
+    return;
+  }
+
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("title", he.orders.pdfDocumentTitle);
+  iframe.style.cssText =
+    "position:fixed;inset:0;width:100%;height:100%;border:0;opacity:0;pointer-events:none;z-index:-1";
+  iframe.srcdoc = html;
+
+  const cleanup = () => {
+    window.setTimeout(() => {
+      try {
+        iframe.remove();
+      } catch {
+        /* ignore */
+      }
+    }, 120_000);
+  };
+
+  iframe.onload = () => {
+    const win = iframe.contentWindow;
+    if (!win) {
+      iframe.remove();
+      showPdfUserMessage(he.orders.pdf.webPopupBlockedTitle, he.orders.pdf.webPopupBlockedMessage);
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      window.setTimeout(() => {
+        try {
+          win.focus();
+          win.print();
+        } catch {
+          showPdfUserMessage(he.orders.pdf.failedTitle, he.orders.pdf.failedMessage);
+        } finally {
+          cleanup();
+        }
+      }, 100);
+    });
+  };
+
+  document.body.appendChild(iframe);
+}
+
 /**
  * מייצא את הזמנת הספק כקובץ `PDF` באמצעות `expo-print`, ופותח שיתוף ב־`expo-sharing`.
- * ב־`web` אין `Print.printToFileAsync` ולכן אנו נופלים להתראה עם הודעה ידידותית.
  */
 export async function exportSupplierOrdersToPdf(group: OrdersBySupplierGroup): Promise<void> {
+  const html = buildHtml(group);
   if (Platform.OS === "web") {
-    Alert.alert(he.orders.pdf.missingTitle, he.orders.pdf.missingMessage);
+    printOrderHtmlInBrowserWindow(html);
     return;
   }
   try {
-    const { uri } = await Print.printToFileAsync({ html: buildHtml(group), base64: false });
+    const result = await Print.printToFileAsync({ html, base64: false });
+    const uri = result?.uri;
+    if (!uri) {
+      showPdfUserMessage(he.orders.pdf.noPdfUriTitle, he.orders.pdf.noPdfUriMessage);
+      return;
+    }
     const canShare = await Sharing.isAvailableAsync();
     if (canShare) {
       await Sharing.shareAsync(uri, {
@@ -86,10 +195,11 @@ export async function exportSupplierOrdersToPdf(group: OrdersBySupplierGroup): P
         dialogTitle: he.orders.exportPdf,
       });
     } else {
-      Alert.alert(he.orders.exportPdf, uri);
+      showPdfUserMessage(he.orders.exportPdf, uri);
     }
-  } catch {
-    Alert.alert(he.orders.pdf.failedTitle, he.orders.pdf.failedMessage);
+  } catch (e) {
+    console.warn("[exportSupplierOrdersToPdf]", e);
+    showPdfUserMessage(he.orders.pdf.failedTitle, he.orders.pdf.failedMessage);
   }
 }
 
@@ -97,7 +207,7 @@ export async function exportSupplierOrdersToPdf(group: OrdersBySupplierGroup): P
  * פותח קליינט דוא״ל מקומי עם נושא וגוף מוכנים על בסיס קבוצת ההזמנות.
  */
 export async function emailSupplierOrders(group: OrdersBySupplierGroup): Promise<void> {
-  const subject = `${he.orders.mail.subjectPrefix} ${group.supplier_name}`;
+  const subject = he.orders.mail.subjectTemplate.replace("{{supplier}}", group.supplier_name);
   const intro = unescapeNewlines(he.orders.mail.bodyIntro);
   const signoff = unescapeNewlines(he.orders.mail.bodySignoff);
   const lines = group.orders

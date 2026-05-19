@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Book, BookLocation, BookWithLocations, StoreMap } from "@avihay-books/shared";
+import type {
+  Book,
+  BookLocation,
+  BookLocationExpanded,
+  BookWithLocations,
+  StoreMap,
+} from "@avihay-books/shared";
 import axios from "axios";
 import { findStoreMapCellById, resolvePositionForPlacement } from "../utils/storeMapCells";
 import { api } from "./client";
@@ -33,6 +39,115 @@ export function useInventoryBooksBySupplier(supplierId: string | null) {
     enabled: !!supplierId,
     staleTime: 10_000,
     retry: 0,
+  });
+}
+
+function applyOptimisticStockToList(
+  list: BookWithLocations[] | undefined,
+  bookId: string,
+  newStock: number,
+  locationId: string | null,
+  newLocationQty: number | null,
+): BookWithLocations[] | undefined {
+  if (!list) return list;
+  return list.map((b) => {
+    if (b.id !== bookId) return b;
+    const nextLocations =
+      locationId != null && newLocationQty != null
+        ? b.locations.map((l) =>
+            l.id === locationId ? { ...l, quantity_in_cell: newLocationQty } : l,
+          )
+        : b.locations;
+    return { ...b, stock_quantity: newStock, locations: nextLocations };
+  });
+}
+
+function mergeServerStockIntoList(
+  list: BookWithLocations[] | undefined,
+  rowBookId: string,
+  patchedBook: Book,
+  patchedLocation?: BookLocation,
+): BookWithLocations[] | undefined {
+  if (!list) return list;
+  return list.map((b) =>
+    b.id !== rowBookId
+      ? b
+      : ({
+          ...b,
+          ...patchedBook,
+          locations:
+            patchedLocation != null
+              ? b.locations.map((loc) =>
+                  loc.id === patchedLocation.id
+                    ? { ...loc, ...patchedLocation, cell_name: loc.cell_name }
+                    : loc,
+                )
+              : b.locations,
+        } as BookWithLocations),
+  );
+}
+
+export interface AdjustInventoryStockArgs {
+  supplierId: string;
+  bookId: string;
+  newStock: number;
+  selectedLocation: BookLocationExpanded | null;
+}
+
+type AdjustStockMutateCtx = {
+  listKey: readonly ["books", "inventory", string];
+};
+
+/** עדכון מלאי מהיר: תא אם נבחר, ואז ספר — אופטימיסטי, ללא חסימת UI; בשגיאה ריענון מהשרת. */
+export function useAdjustInventoryStock() {
+  const client = useQueryClient();
+  return useMutation<
+    { book: Book; location?: BookLocation },
+    Error,
+    AdjustInventoryStockArgs,
+    AdjustStockMutateCtx
+  >({
+    mutationFn: async (vars): Promise<{ book: Book; location?: BookLocation }> => {
+      let location: BookLocation | undefined;
+      if (vars.selectedLocation) {
+        const { data } = await api.patch<BookLocation>(
+          `/book-locations/${vars.selectedLocation.id}`,
+          vars.selectedLocation,
+        );
+        location = data;
+      }
+      const { data: book } = await api.patch<Book>(`/books/${vars.bookId}`, {
+        stock_quantity: vars.newStock,
+      });
+      return { book, location };
+    },
+    onMutate: async (vars) => {
+      const listKey = [...inventoryBooksPrefix, vars.supplierId] as const;
+      await client.cancelQueries({ queryKey: listKey });
+      client.setQueryData<BookWithLocations[]>(listKey, (prev) =>
+        applyOptimisticStockToList(
+          prev,
+          vars.bookId,
+          vars.newStock,
+          vars.selectedLocation?.id ?? null,
+          vars.selectedLocation?.quantity_in_cell ?? null,
+        ),
+      );
+      return { listKey };
+    },
+    onError: (_e, _v, ctx) => {
+      if (ctx?.listKey != null) {
+        void client.invalidateQueries({ queryKey: [...ctx.listKey] });
+      }
+    },
+    onSuccess: (result, vars, ctx) => {
+      if (!ctx?.listKey) return;
+      client.setQueryData<BookWithLocations[]>(ctx.listKey, (prev) =>
+        mergeServerStockIntoList(prev, vars.bookId, result.book, result.location),
+      );
+      void client.invalidateQueries({ queryKey: STORE_MAP_KEY });
+      void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
+    },
   });
 }
 

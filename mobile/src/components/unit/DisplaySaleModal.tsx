@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -140,56 +142,61 @@ export function DisplaySaleModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable style={styles.backdrop} onPress={onClose}>
-        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-          <View style={styles.handle} />
-          <View style={styles.headerRow}>
-            <Text style={styles.headerTitle} numberOfLines={2}>
-              {he.unit.displaySale.title}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={{ flex: 1 }}
+      >
+        <Pressable style={styles.backdrop} onPress={onClose}>
+          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.handle} />
+            <View style={styles.headerRow}>
+              <Text style={styles.headerTitle} numberOfLines={2}>
+                {he.unit.displaySale.title}
+              </Text>
+              <Pressable onPress={onClose} hitSlop={12}>
+                <Ionicons name="close" size={22} color={theme.colors.onSurface} />
+              </Pressable>
+            </View>
+
+            <Text style={styles.bookLine} numberOfLines={2}>
+              {title}
             </Text>
-            <Pressable onPress={onClose} hitSlop={12}>
-              <Ionicons name="close" size={22} color={theme.colors.onSurface} />
+            <Text style={styles.meta}>
+              {he.unit.displaySale.displayQty}: {displayQty} · {he.unit.displaySale.stock}:{" "}
+              {stock ?? he.home.loading}
+            </Text>
+
+            <Text style={styles.label}>{he.unit.displaySale.soldLabel}</Text>
+            <TextInput
+              style={styles.input}
+              value={soldDraft}
+              onChangeText={(t) => {
+                setSoldDraft(t.replace(/[^0-9]/g, ""));
+                setError(null);
+              }}
+              keyboardType="number-pad"
+              placeholder="1"
+              placeholderTextColor={theme.colors.onSurfaceVariant}
+              textAlign="left"
+            />
+            <Text style={styles.hint}>{he.unit.displaySale.hint}</Text>
+
+            {error ? <Text style={styles.err}>{error}</Text> : null}
+
+            <Pressable
+              style={[styles.primaryBtn, (!aggregate || busy || stock === null) && styles.disabled]}
+              disabled={!aggregate || busy || stock === null}
+              onPress={() => void submit()}
+            >
+              {busy ? (
+                <ActivityIndicator color={theme.colors.onPrimary} />
+              ) : (
+                <Text style={styles.primaryBtnText}>{he.unit.displaySale.submit}</Text>
+              )}
             </Pressable>
-          </View>
-
-          <Text style={styles.bookLine} numberOfLines={2}>
-            {title}
-          </Text>
-          <Text style={styles.meta}>
-            {he.unit.displaySale.displayQty}: {displayQty} · {he.unit.displaySale.stock}:{" "}
-            {stock ?? he.home.loading}
-          </Text>
-
-          <Text style={styles.label}>{he.unit.displaySale.soldLabel}</Text>
-          <TextInput
-            style={styles.input}
-            value={soldDraft}
-            onChangeText={(t) => {
-              setSoldDraft(t.replace(/[^0-9]/g, ""));
-              setError(null);
-            }}
-            keyboardType="number-pad"
-            placeholder="1"
-            placeholderTextColor={theme.colors.onSurfaceVariant}
-            textAlign="left"
-          />
-          <Text style={styles.hint}>{he.unit.displaySale.hint}</Text>
-
-          {error ? <Text style={styles.err}>{error}</Text> : null}
-
-          <Pressable
-            style={[styles.primaryBtn, (!aggregate || busy || stock === null) && styles.disabled]}
-            disabled={!aggregate || busy || stock === null}
-            onPress={() => void submit()}
-          >
-            {busy ? (
-              <ActivityIndicator color={theme.colors.onPrimary} />
-            ) : (
-              <Text style={styles.primaryBtnText}>{he.unit.displaySale.submit}</Text>
-            )}
           </Pressable>
         </Pressable>
-      </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

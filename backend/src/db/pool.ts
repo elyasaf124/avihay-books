@@ -1,14 +1,15 @@
 import { loadBackendEnv } from "../config/loadEnv.js";
-import { postgresSslForUrl } from "@avihay-books/shared";
+import { normalizePostgresConnectionString, postgresSslForUrl } from "@avihay-books/shared";
 import { Pool } from "pg";
 
 loadBackendEnv();
 
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) {
+const rawDatabaseUrl = process.env.DATABASE_URL;
+if (!rawDatabaseUrl) {
   throw new Error("DATABASE_URL is not set. Create backend/.env from backend/.env.example.");
 }
 
+const databaseUrl = normalizePostgresConnectionString(rawDatabaseUrl);
 const ssl = postgresSslForUrl(databaseUrl);
 
 export const pool = new Pool({

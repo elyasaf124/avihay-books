@@ -98,12 +98,16 @@ export interface ShortageItem {
 
 export interface OrderRow {
   id: UUID;
-  book_id: UUID;
+  /** `NULL` כשההזמנה לפי כותרת ידנית (בלי רשומת `books`). */
+  book_id: UUID | null;
   supplier_id: UUID;
   order_type: OrderType;
   quantity: number;
   customer_name: string | null;
   customer_phone: string | null;
+  /** כותרת חופשית כש־`book_id` ריק (הזמנה מחוץ לקטלוג). */
+  manual_book_title: string | null;
+  manual_book_author: string | null;
   status: OrderStatus;
   created_at: ISOTimestamp;
 }
@@ -232,12 +236,14 @@ export interface ShortageListItem {
 /** רשומת הזמנה משולבת עם פרטי הספר והספק. */
 export interface OrderListItem {
   id: UUID;
-  book_id: UUID;
+  book_id: UUID | null;
   supplier_id: UUID;
   order_type: OrderType;
   quantity: number;
   customer_name: string | null;
   customer_phone: string | null;
+  manual_book_title: string | null;
+  manual_book_author: string | null;
   status: OrderStatus;
   created_at: ISOTimestamp;
   book_title: string;

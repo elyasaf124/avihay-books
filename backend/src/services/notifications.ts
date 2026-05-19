@@ -9,7 +9,8 @@ import type { AppNotification } from "@avihay-books/shared";
  * מריץ שלוש בדיקות תקופתיות שיוצרות התראות חדשות ב־`notifications`:
  *
  *   1. `low_stock`              — מלאי נמוך מתחת לסף הזמנה (`stock_quantity <= reorder_threshold`).
- *   2. `remove_from_display`    — ספר חדש שעבר חודש בארון התצוגה (`is_new = TRUE`).
+ *   2. `remove_from_display`    — ספר חדש (`is_new = TRUE`) שעבר את חלון הזמן מאז `added_at`
+ *      (ברירת מחדל חודש; ניתן לעקוף עם `REMOVE_FROM_DISPLAY_AFTER`, למשל `1 minute` לבדיקות).
  *   3. `supplier_reorder_reminder` — לא הוזמן מספק זה כבר שבועיים (`last_order_date < now() - 14d`).
  *
  * כל בדיקה לפני יצירת התראה בודקת שאין כבר התראה «פתוחה» מאותו טיפוס וקישור,
@@ -37,8 +38,19 @@ interface SupplierReorderRow {
 export interface NotificationCheckSummary {
   low_stock_created: number;
   remove_from_display_created: number;
+  /** כמה ספרים עמדו בתנאי הגיל (`is_new`, `added_at`, מחוץ לדה־דופ לרישומים חדשים) */
+  remove_from_display_candidate_count: number;
+  /** ערך ה־Postgres `interval` שבו השתמש השרת (מ־`REMOVE_FROM_DISPLAY_AFTER` או ברירת מחדל) */
+  remove_from_display_after: string;
   supplier_reorder_reminder_created: number;
   ran_at: string;
+}
+
+const DEFAULT_REMOVE_FROM_DISPLAY_AFTER = "1 month";
+
+function removeFromDisplayAfterInterval(): string {
+  const raw = process.env.REMOVE_FROM_DISPLAY_AFTER?.trim();
+  return raw && raw.length > 0 ? raw : DEFAULT_REMOVE_FROM_DISPLAY_AFTER;
 }
 
 async function findLowStockCandidates(): Promise<LowStockRow[]> {
@@ -52,12 +64,14 @@ async function findLowStockCandidates(): Promise<LowStockRow[]> {
 }
 
 async function findRemoveFromDisplayCandidates(): Promise<RemoveFromDisplayRow[]> {
+  const after = removeFromDisplayAfterInterval();
   const { rows } = await pool.query<RemoveFromDisplayRow>(
     `SELECT id AS book_id, title
        FROM books
       WHERE is_active = TRUE
         AND is_new = TRUE
-        AND added_at < now() - INTERVAL '1 month'`,
+        AND added_at < now() - $1::interval`,
+    [after],
   );
   return rows;
 }
@@ -92,9 +106,13 @@ export async function runLowStockJob(): Promise<AppNotification[]> {
   return created;
 }
 
-export async function runRemoveFromDisplayJob(): Promise<AppNotification[]> {
+export async function runRemoveFromDisplayJob(): Promise<{
+  created: AppNotification[];
+  candidateCount: number;
+}> {
+  const candidates = await findRemoveFromDisplayCandidates();
   const created: AppNotification[] = [];
-  for (const row of await findRemoveFromDisplayCandidates()) {
+  for (const row of candidates) {
     const already = await existsOpenNotification({
       type: "remove_from_display",
       book_id: row.book_id,
@@ -110,7 +128,7 @@ export async function runRemoveFromDisplayJob(): Promise<AppNotification[]> {
       }),
     );
   }
-  return created;
+  return { created, candidateCount: candidates.length };
 }
 
 export async function runSupplierReorderReminderJob(): Promise<AppNotification[]> {
@@ -138,6 +156,7 @@ export async function runSupplierReorderReminderJob(): Promise<AppNotification[]
 
 /** מריץ את שלוש הבדיקות ברצף ומחזיר סיכום של כמה התראות נוצרו לכל סוג. */
 export async function runAllNotificationChecks(): Promise<NotificationCheckSummary> {
+  const after = removeFromDisplayAfterInterval();
   const [lowStock, removeFromDisplay, supplierReorder] = await Promise.all([
     runLowStockJob(),
     runRemoveFromDisplayJob(),
@@ -145,7 +164,9 @@ export async function runAllNotificationChecks(): Promise<NotificationCheckSumma
   ]);
   return {
     low_stock_created: lowStock.length,
-    remove_from_display_created: removeFromDisplay.length,
+    remove_from_display_created: removeFromDisplay.created.length,
+    remove_from_display_candidate_count: removeFromDisplay.candidateCount,
+    remove_from_display_after: after,
     supplier_reorder_reminder_created: supplierReorder.length,
     ran_at: new Date().toISOString(),
   };
@@ -173,25 +194,17 @@ export function startNotificationCrons(): void {
   const safeExpression = cron.validate(expression) ? expression : DEFAULT_CRON;
 
   scheduled = cron.schedule(safeExpression, () => {
-    runAllNotificationChecks()
-      .then((summary) => {
-        logger.info({ summary }, "notifications cron tick");
-      })
-      .catch((err: unknown) => {
-        logger.error({ err }, "notifications cron tick failed");
-      });
+    runAllNotificationChecks().catch((err: unknown) => {
+      logger.error({ err }, "notifications cron tick failed");
+    });
   });
 
   logger.info({ expression: safeExpression }, "notifications cron scheduled");
 
   if (process.env.RUN_NOTIFICATION_CHECKS_ON_BOOT === "1") {
-    runAllNotificationChecks()
-      .then((summary) => {
-        logger.info({ summary }, "notifications boot check");
-      })
-      .catch((err: unknown) => {
-        logger.error({ err }, "notifications boot check failed");
-      });
+    runAllNotificationChecks().catch((err: unknown) => {
+      logger.error({ err }, "notifications boot check failed");
+    });
   }
 }
 

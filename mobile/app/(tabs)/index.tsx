@@ -2,24 +2,68 @@ import { useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import type { Book } from "@avihay-books/shared";
+import type { Book, OrderListItem, OrderType } from "@avihay-books/shared";
 import { StoreMap } from "../../src/components/StoreMap";
 import { SearchBar } from "../../src/components/SearchBar";
 import { BookDetailModal } from "../../src/components/BookDetailModal";
 import { useSearchBooks, useStoreMap } from "../../src/api/storeMap";
 import { classifyStoreMapFailure } from "../../src/api/apiDiagnostics";
 import { apiPublicBaseHost } from "../../src/api/client";
+import { mergeOrderLinesForDisplay, useOrdersList } from "../../src/api/orders";
 import { useShortageList } from "../../src/api/shortage";
 import {
-  deriveHomeStats,
+  deriveHomeFloorStock,
   mockCatalogBooks,
+  mockHomeStats,
   mockStoreMap,
 } from "../../src/mocks/homeDashboard";
+import { mockOrderList } from "../../src/mocks/shortageOrders";
 import { theme } from "../../src/theme";
 import { he } from "../../src/i18n/he";
 
 function normalize(s: string): string {
   return s.trim().toLowerCase();
+}
+
+function ordersRowsForDashboard(
+  type: OrderType,
+  items: OrderListItem[] | undefined,
+  allApisOffline: boolean,
+): OrderListItem[] {
+  if (items && items.length > 0) return items;
+  if (allApisOffline) return mockOrderList.filter((o) => o.order_type === type);
+  return items ?? [];
+}
+
+function aggregateOpenOrdersFromMerged(
+  inv: OrderListItem[],
+  cust: OrderListItem[],
+  whats: OrderListItem[],
+): { totalOpen: number; pending: number; sent: number } {
+  const groups: readonly [OrderType, OrderListItem[]][] = [
+    ["inventory", inv],
+    ["customer", cust],
+    ["whatsapp", whats],
+  ];
+  let pending = 0;
+  let sent = 0;
+  for (const [t, rows] of groups) {
+    const merged = mergeOrderLinesForDisplay(rows, t);
+    for (const o of merged) {
+      if (o.status === "completed") continue;
+      if (o.status === "pending") pending += 1;
+      else if (o.status === "sent") sent += 1;
+    }
+  }
+  return { totalOpen: pending + sent, pending, sent };
+}
+
+function ordersDashboardSubtitle(pending: number, sent: number): string {
+  if (pending === 0 && sent === 0) return he.home.statsOrdersSubtitleNonePending;
+  const parts: string[] = [];
+  if (pending > 0) parts.push(he.home.statsOrdersPendingSegment.replace("{{n}}", String(pending)));
+  if (sent > 0) parts.push(he.home.statsOrdersSentSegment.replace("{{n}}", String(sent)));
+  return parts.join(" · ");
 }
 
 export default function HomeScreen(): JSX.Element {
@@ -31,6 +75,9 @@ export default function HomeScreen(): JSX.Element {
   const shortageQuery = useShortageList();
   const trimmed = query.trim();
   const searchQuery = useSearchBooks(trimmed);
+  const inventoryOrdersQuery = useOrdersList("inventory");
+  const customerOrdersQuery = useOrdersList("customer");
+  const whatsappOrdersQuery = useOrdersList("whatsapp");
 
   // Prefer real `/store-map` data; fall back to the demo map when the API is unreachable.
   const isOffline = storeMapQuery.isError;
@@ -56,12 +103,82 @@ export default function HomeScreen(): JSX.Element {
   const offlineHostShown = apiPublicBaseHost();
   const storeMapData =
     storeMapQuery.data != null && !storeMapQuery.isError ? storeMapQuery.data : mockStoreMap;
-  const baseStats = deriveHomeStats(storeMapQuery.data);
-  const liveShortageCount = shortageQuery.data?.length;
-  const stats =
-    typeof liveShortageCount === "number"
-      ? { ...baseStats, shortages: liveShortageCount.toLocaleString("he-IL") }
-      : baseStats;
+  const floorStock = deriveHomeFloorStock(storeMapQuery.data);
+
+  const ordersApisAllOffline =
+    inventoryOrdersQuery.isError && customerOrdersQuery.isError && whatsappOrdersQuery.isError;
+
+  const inventoryOrdersRows = ordersRowsForDashboard(
+    "inventory",
+    inventoryOrdersQuery.data,
+    ordersApisAllOffline,
+  );
+  const customerOrdersRows = ordersRowsForDashboard(
+    "customer",
+    customerOrdersQuery.data,
+    ordersApisAllOffline,
+  );
+  const whatsappOrdersRows = ordersRowsForDashboard(
+    "whatsapp",
+    whatsappOrdersQuery.data,
+    ordersApisAllOffline,
+  );
+
+  const ordersMetricsFetched =
+    inventoryOrdersQuery.isFetched &&
+    customerOrdersQuery.isFetched &&
+    whatsappOrdersQuery.isFetched;
+
+  const stats = useMemo(() => {
+    const openAgg = aggregateOpenOrdersFromMerged(
+      inventoryOrdersRows,
+      customerOrdersRows,
+      whatsappOrdersRows,
+    );
+
+    const openOrdersFormatted = ordersMetricsFetched
+      ? openAgg.totalOpen.toLocaleString("he-IL")
+      : he.home.statsValuePlaceholder;
+    const ordersSubLabelEffective = ordersMetricsFetched
+      ? ordersDashboardSubtitle(openAgg.pending, openAgg.sent)
+      : he.home.loading;
+
+    const liveShortageCount = shortageQuery.data?.length;
+
+    const shortageCountFormatted =
+      typeof liveShortageCount === "number"
+        ? liveShortageCount.toLocaleString("he-IL")
+        : mockHomeStats.shortages;
+
+    const storeMapPendingFirstFetch =
+      storeMapQuery.isLoading && !storeMapQuery.isFetched && storeMapQuery.data == null;
+
+    return {
+      totalStock: storeMapPendingFirstFetch
+        ? he.home.statsValuePlaceholder
+        : floorStock.totalStockFormatted,
+      stockDeltaLabel: storeMapPendingFirstFetch
+        ? he.home.loading
+        : floorStock.usedRealFloorTotal
+          ? he.home.statsFloorStockSubtitle
+          : he.home.statsDemoDataSubtitle,
+      openOrders: openOrdersFormatted,
+      ordersSubLabel: ordersSubLabelEffective,
+      shortages: shortageCountFormatted,
+      shortageSubLabel: mockHomeStats.shortageSubLabel,
+    };
+  }, [
+    customerOrdersRows,
+    floorStock.totalStockFormatted,
+    floorStock.usedRealFloorTotal,
+    inventoryOrdersRows,
+    shortageQuery.data?.length,
+    ordersMetricsFetched,
+    whatsappOrdersRows,
+    storeMapQuery.isFetched,
+    storeMapQuery.isLoading,
+    storeMapQuery.data,
+  ]);
 
   const localMockHits = useMemo(() => {
     if (trimmed.length === 0) return [];
@@ -78,10 +195,19 @@ export default function HomeScreen(): JSX.Element {
   const searchHits = searchOffline ? localMockHits : (searchQuery.data ?? []);
   const searchLoading = trimmed.length > 0 && searchQuery.isLoading && !searchQuery.data;
 
-  const refreshing = storeMapQuery.isFetching && !storeMapQuery.isLoading;
+  const refreshing =
+    (storeMapQuery.isFetching && !storeMapQuery.isLoading) ||
+    (shortageQuery.isFetching && !shortageQuery.isLoading) ||
+    (inventoryOrdersQuery.isFetching && !inventoryOrdersQuery.isLoading) ||
+    (customerOrdersQuery.isFetching && !customerOrdersQuery.isLoading) ||
+    (whatsappOrdersQuery.isFetching && !whatsappOrdersQuery.isLoading);
   const onRefresh = (): void => {
     void storeMapQuery.refetch();
+    void shortageQuery.refetch();
     if (trimmed.length > 0) void searchQuery.refetch();
+    void inventoryOrdersQuery.refetch();
+    void customerOrdersQuery.refetch();
+    void whatsappOrdersQuery.refetch();
   };
 
   return (
@@ -158,23 +284,47 @@ export default function HomeScreen(): JSX.Element {
       </View>
 
       <View style={styles.statsColumn}>
-        <View style={[styles.statCard, styles.statShadow]}>
+        <Pressable
+          onPress={() => router.push("/inventory")}
+          style={({ pressed }) => [
+            styles.statCard,
+            styles.statShadow,
+            pressed && styles.statCardPressed,
+          ]}
+        >
           <View style={styles.statHeading}>
             <Text style={styles.statCardTitle}>{he.home.statsTotalTitle}</Text>
             <Ionicons name="layers-outline" size={22} color={theme.colors.secondary} />
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={theme.colors.onSurfaceVariant}
+            />
           </View>
           <Text style={styles.statValue}>{stats.totalStock}</Text>
           <Text style={styles.statSub}>{stats.stockDeltaLabel}</Text>
-        </View>
+        </Pressable>
 
-        <View style={[styles.statCard, styles.statShadow]}>
+        <Pressable
+          onPress={() => router.push("/orders")}
+          style={({ pressed }) => [
+            styles.statCard,
+            styles.statShadow,
+            pressed && styles.statCardPressed,
+          ]}
+        >
           <View style={styles.statHeading}>
             <Text style={styles.statCardTitle}>{he.home.statsOrdersTitle}</Text>
             <Ionicons name="receipt-outline" size={22} color={theme.colors.primary} />
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={theme.colors.onSurfaceVariant}
+            />
           </View>
           <Text style={styles.statValue}>{stats.openOrders}</Text>
-          <Text style={styles.statSub}>{stats.ordersSubLabel}</Text>
-        </View>
+          {/* <Text style={styles.statSub}>{stats.ordersSubLabel}</Text> */}
+        </Pressable>
 
         <Pressable
           onPress={() => router.push("/shortage")}
