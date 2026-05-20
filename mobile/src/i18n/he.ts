@@ -234,6 +234,8 @@ export const he = {
     },
     completeBtn: "השלמת חוסר",
     confirmResolveTitle: "להשלים ולהסיר מהרשימה?",
+    itemLabel: "«{{title}}»",
+    itemLabelWithCell: "«{{title}}» · תא {{cell}}",
     confirmResolveMessage:
       "לאחר שמילאת את המדף מהמחסן, אישור יסמן את הרשומה כהושלם: היא תיעלם מרשימת החוסרים והטשטוש במפת המדף יבוטל לספר זה.",
     confirmResolveOk: "השלם",
@@ -245,11 +247,18 @@ export const he = {
     },
     confirmRemoveShortageTitle: "להסיר מהחוסרים?",
     confirmRemoveShortageMessage:
-      "להסיר את «{{title}}» מרשימת החוסרים בלי העברת הזמנה? הפעולה אינה ניתנת לביטול.",
+      "להסיר את {{item}} מרשימת החוסרים בלי העברת הזמנה? הפעולה אינה ניתנת לביטול.",
     confirmRemoveShortageOk: "הסרה",
     removeShortageFailed: "ההסרה נכשלה — נסה שוב",
     removeShortageOffline: "אין חיבור לשרת — לא ניתן להסיר כרגע",
     removeShortageA11y: "הסר מרשימת החוסרים",
+    bookSearchPlaceholder: "חיפוש לפי שם הספר…",
+    bookSearchClearA11y: "נקה סינון ספר — הצג את כל החוסרים",
+    bookDropdownShow: "הצג רשימת ספרים",
+    bookDropdownHide: "הסתר רשימת ספרים",
+    bookDropdownNoMatches: "אין התאמות בחיפוש הנוכחי",
+    bookDropdownTruncated: "מוצגות {{shown}} מתוך {{total}} — הקלידו לצמצום",
+    emptyBookFiltered: "אין חוסרים לספר שנבחר",
   },
 
   orders: {
@@ -389,6 +398,10 @@ export const he = {
     addNewBook: "ספר חדש",
     newBookModalTitle: "הוספת ספר חדש",
     newBookFlag: "ספר חדש (יוצג בארון התצוגה)",
+    bookIsNewToggle: "ספר חדש (ארון תצוגה)",
+    toggleIsNewFailed: "לא ניתן לעדכן סטטוס «חדש» — נסה שוב",
+    toggleIsNewHasLocationsHint:
+      "לספר יש מיקומים במפה. לאחר סימון כחדש, שינוי מיקום חדש מותר רק בארון התצוגה — ייתכן שתצטרכו להעביר עותקים.",
     newBookDisplayQty: "עותקים בארון התצוגה (מתוך המלאי)",
     newBookDisplayQtyHint:
       "השאר יישארו כמלאי כללי (מחסן) עד שתמקם אותם. לא חובה למלא את כל המלאי בתצוגה.",
@@ -427,7 +440,8 @@ export const he = {
     mapMoveFailed: "שינוי המיקום במפה נכשל",
     placementNewBooksOnlyHint:
       "ספר מסומן כחדש — ניתן למקם רק בארון התצוגה (חפשו לפי שם תא «תצוגה» או השתמשו בבורר העץ).",
-    placementRegularBooksHint: "ספר רגיל לא ניתן למקם בארון התצוגה.",
+    placementRegularBooksHint:
+      "ספר רגיל לא ניתן למקם בארון התצוגה. הסטנד פתוח לכל ספר.",
     placementServerNewBookInDisplayOnly:
       "השרת דוחה מיקום: ספר חדש חייבלהיות רק בארון התצוגה (הסירו סימון «חדש» להעברה לארון רגיל).",
     placementServerRegularNotInDisplay:
@@ -537,6 +551,31 @@ export const he = {
     save: "שמור",
     delete: "מחק",
     edit: "ערוך",
+  },
+
+  suppliers: {
+    title: "ניהול ספקים",
+    manageButton: "ניהול ספקים",
+    addNew: "ספק חדש",
+    editTitle: "עריכת ספק",
+    newTitle: "הוספת ספק",
+    fieldName: "שם הספק",
+    fieldEmail: "אימייל להזמנות",
+    fieldColor: "צבע זיהוי",
+    colorCustom: "צבע מותאם",
+    empty: "אין ספקים — הוסיפו ספק ראשון",
+    loading: "טוען ספקים…",
+    loadError: "לא ניתן לטעון את רשימת הספקים",
+    saveFailed: "שמירת הספק נכשלה",
+    deleteConfirmTitle: "למחוק את הספק?",
+    deleteConfirmMessage: "«{{name}}» יימחק לצמיתות. לא ניתן לבטל פעולה זו.",
+    deleteFailed: "מחיקת הספק נכשלה",
+    deleteBlockedTitle: "לא ניתן למחוק",
+    deleteBlockedMessage:
+      "לספק «{{name}}» יש {{books}} ספרים ו-{{orders}} הזמנות. יש להעביר או למחוק אותם לפני המחיקה.",
+    validationName: "יש להזין שם ספק",
+    validationEmail: "יש להזין כתובת אימייל תקינה",
+    validationColor: "יש לבחור צבע בפורמט #RRGGBB",
   },
 } as const;
 

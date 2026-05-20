@@ -1,6 +1,12 @@
 import { Router } from "express";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
-import { findAllSuppliers, findSupplierById, upsertSupplier } from "../repos/suppliers.repo.js";
+import {
+  countSupplierDependencies,
+  deleteSupplier,
+  findAllSuppliers,
+  findSupplierById,
+  upsertSupplier,
+} from "../repos/suppliers.repo.js";
 
 export const suppliersRouter = Router();
 
@@ -33,5 +39,25 @@ suppliersRouter.patch(
   asyncHandler(async (req, res) => {
     const row = await upsertSupplier({ ...req.body, id: req.params.id });
     res.json(row);
+  }),
+);
+
+suppliersRouter.delete(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    const id = req.params.id!;
+    const existing = await findSupplierById(id);
+    if (!existing) throw new HttpError(404, "supplier_not_found");
+
+    const deps = await countSupplierDependencies(id);
+    if (deps.book_count > 0 || deps.order_count > 0) {
+      throw new HttpError(409, "supplier_has_dependencies", {
+        book_count: deps.book_count,
+        order_count: deps.order_count,
+      });
+    }
+
+    await deleteSupplier(id);
+    res.status(204).end();
   }),
 );

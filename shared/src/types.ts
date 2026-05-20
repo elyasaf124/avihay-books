@@ -217,6 +217,8 @@ export interface ShortageListItem {
   id: UUID;
   book_id: UUID;
   location_id: UUID | null;
+  /** שם התא בשטח (למשל «5») — לא הנתיב המלא; null אם אין `location_id`. */
+  cell_name: string | null;
   added_at: ISOTimestamp;
   status: ShortageStatus;
   resolved_at: ISOTimestamp | null;

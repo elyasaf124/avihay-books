@@ -72,6 +72,11 @@ export function ShortageRow({
         <Text style={styles.author} numberOfLines={1}>
           {item.book_author} · {item.supplier_name}
         </Text>
+        {item.cell_name ? (
+          <Text style={styles.cellName} numberOfLines={1}>
+            {he.unit.cellLabel} {item.cell_name}
+          </Text>
+        ) : null}
 
         <View style={styles.statsRow}>
           <Stat label={he.shortage.stockShort} value={String(item.book_stock_quantity)} />
@@ -198,6 +203,11 @@ const styles = StyleSheet.create({
   author: {
     ...theme.typography.bodyMd,
     color: theme.colors.onSurfaceVariant,
+    textAlign: "left",
+  },
+  cellName: {
+    ...theme.typography.labelMd,
+    color: theme.colors.primary,
     textAlign: "left",
   },
   statsRow: {

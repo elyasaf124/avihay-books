@@ -27,7 +27,7 @@ async function assertValidBookCellPlacement(bookId: string, cellId: string): Pro
     throw new HttpError(404, "book_or_cell_not_found", { book_id: bookId, cell_id: cellId });
   }
   const pos = row.store_position;
-  if (row.is_new && pos !== "display" && pos !== "stacks") {
+  if (row.is_new && pos !== "display") {
     throw new HttpError(422, "new_book_must_be_in_display", {
       book_id: bookId,
       cell_id: cellId,
