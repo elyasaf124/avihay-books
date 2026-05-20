@@ -52,6 +52,7 @@ export async function deleteShortageById(id: string): Promise<boolean> {
 export async function findAllShortagesExpanded(): Promise<ShortageListItem[]> {
   const { rows } = await pool.query<ShortageListItem>(
     `SELECT sl.id, sl.book_id, sl.location_id, sl.added_at, sl.status, sl.resolved_at,
+            c.cell_name      AS cell_name,
             b.title          AS book_title,
             b.author         AS book_author,
             b.stock_quantity AS book_stock_quantity,
@@ -64,6 +65,8 @@ export async function findAllShortagesExpanded(): Promise<ShortageListItem[]> {
        FROM shortage_list sl
        JOIN books     b ON b.id = sl.book_id
        JOIN suppliers s ON s.id = b.supplier_id
+       LEFT JOIN book_locations bl ON bl.id = sl.location_id
+       LEFT JOIN cells c ON c.id = bl.cell_id
       WHERE sl.status = 'shortage'
       ORDER BY sl.added_at DESC`,
   );

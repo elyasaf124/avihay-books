@@ -36,7 +36,7 @@ interface Props {
   /** כמה רשומות למקם (`quantity_in_cell: 1` לכל סלוט) */
   slotCount: number;
   preview: { title: string; author: string; supplier_color?: string };
-  /** התאמה למדיניות `is_new` — רק תאי ארון התצוגה או בלי התצוגה */
+  /** התאמה למדיניות `is_new` — חדשים רק בארון התצוגה; ישנים — בכל מקום חוץ מתצוגה (כולל סטנד) */
   previewIsNew?: boolean;
   submitting: boolean;
   errorMessage?: string | null;

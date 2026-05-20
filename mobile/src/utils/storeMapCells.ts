@@ -94,7 +94,7 @@ function flattenUnitShelves(
   return out;
 }
 
-/** תאים המותרים למיקום לפי `is_new` (`display`/`stacks` לחדשים; רגילים — לא ב־`display`). */
+/** תאים המותרים למיקום לפי `is_new` (`display` לחדשים; `stacks` — כל ספר; רגילים — לא ב־`display`). */
 export function filterCellRefsForPlacement(
   refs: CellRef[],
   storeMap: StoreMap | null,
@@ -104,9 +104,7 @@ export function filterCellRefsForPlacement(
   const allowedUnitIds = new Set(
     storeMap.units
       .filter((u) =>
-        treatAsNewBook
-          ? u.store_position === "display" || u.store_position === "stacks"
-          : u.store_position !== "display",
+        treatAsNewBook ? u.store_position === "display" : u.store_position !== "display",
       )
       .map((u) => u.id),
   );

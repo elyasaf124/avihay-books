@@ -70,6 +70,12 @@ export function MoveToOrderModal({
           </View>
 
           <Field label={he.shortage.moveModal.bookLabel} value={item.book_title} />
+          {item.cell_name ? (
+            <Field
+              label={he.unit.cellLabel}
+              value={item.cell_name}
+            />
+          ) : null}
           <Field label={he.shortage.moveModal.supplierLabel} value={item.supplier_name} />
           <Field
             label={he.shortage.moveModal.currentStockLabel}

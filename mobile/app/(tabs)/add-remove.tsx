@@ -19,7 +19,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import {
   useAdjustInventoryStock,
   useCreateBook,
@@ -100,6 +100,7 @@ function expandInventoryMoveSlots(
 }
 
 export default function AddRemoveScreen(): JSX.Element {
+  const router = useRouter();
   const suppliers = useSuppliersWithFallback();
   const supplierPickerItems = useMemo(() => suppliersToPickerItems(suppliers), [suppliers]);
   const [supplierId, setSupplierId] = useState<string | null>(null);
@@ -381,6 +382,7 @@ export default function AddRemoveScreen(): JSX.Element {
       locationByBook,
       createLocPending: createBookLocation.isPending,
       movePending: moveBook.isPending,
+      patchBookPending: patchBook.isPending,
       placementReady: placementStoreMap != null,
       storeMapUpdatedAt: storeMapQuery.dataUpdatedAt,
       bookTitleFilterTrimmed,
@@ -393,6 +395,7 @@ export default function AddRemoveScreen(): JSX.Element {
       locationByBook,
       createBookLocation.isPending,
       moveBook.isPending,
+      patchBook.isPending,
       placementStoreMap,
       storeMapQuery.dataUpdatedAt,
       bookTitleFilterTrimmed,
@@ -462,6 +465,23 @@ export default function AddRemoveScreen(): JSX.Element {
       }
     },
     [patchBook, priceDraft],
+  );
+
+  const applyToggleIsNew = useCallback(
+    async (book: BookWithLocations, nextIsNew: boolean) => {
+      if (nextIsNew && book.locations.length > 0) {
+        Alert.alert(he.generic.errorTitle, he.addRemove.toggleIsNewHasLocationsHint);
+      }
+      try {
+        setBusyBookId(book.id);
+        await patchBook.mutateAsync({ id: book.id, patch: { is_new: nextIsNew } });
+      } catch {
+        Alert.alert(he.generic.errorTitle, he.addRemove.toggleIsNewFailed);
+      } finally {
+        setBusyBookId(null);
+      }
+    },
+    [patchBook],
   );
 
   const onSubmitInventoryMoveMap = useCallback(
@@ -645,6 +665,30 @@ export default function AddRemoveScreen(): JSX.Element {
 
   const headerButtons = (
     <View style={styles.topBar}>
+      <View style={styles.topBarActions}>
+        <Pressable
+          style={[styles.headerBtn, styles.secondaryHeaderBtn, styles.topBarActionBtn]}
+          onPress={() => router.push("/suppliers")}
+        >
+          <Ionicons name="people-outline" size={18} color={theme.colors.primary} />
+          <Text style={styles.secondaryHeaderBtnText} numberOfLines={1}>
+            {he.suppliers.manageButton}
+          </Text>
+        </Pressable>
+        <Pressable
+          style={[styles.headerBtn, styles.secondaryHeaderBtn, styles.topBarActionBtn]}
+          onPress={() => {
+            setNewBookPerCopyResult(null);
+            setNewBookPcCtx(null);
+            setNewBookOpen(true);
+          }}
+        >
+          <Ionicons name="add-circle-outline" size={18} color={theme.colors.primary} />
+          <Text style={styles.secondaryHeaderBtnText} numberOfLines={1}>
+            {he.addRemove.addNewBook}
+          </Text>
+        </Pressable>
+      </View>
       <View style={styles.supplierFieldShell}>
         <SearchablePickerField
           compact
@@ -656,17 +700,6 @@ export default function AddRemoveScreen(): JSX.Element {
           emptyListMessage={he.picker.noMatches}
         />
       </View>
-      <Pressable
-        style={[styles.headerBtn, styles.secondaryHeaderBtn]}
-        onPress={() => {
-          setNewBookPerCopyResult(null);
-          setNewBookPcCtx(null);
-          setNewBookOpen(true);
-        }}
-      >
-        <Ionicons name="add-circle-outline" size={18} color={theme.colors.primary} />
-        <Text style={styles.secondaryHeaderBtnText}>{he.addRemove.addNewBook}</Text>
-      </Pressable>
     </View>
   );
 
@@ -858,6 +891,16 @@ export default function AddRemoveScreen(): JSX.Element {
                         >
                           <Ionicons name="trash-outline" size={20} color={theme.colors.error} />
                         </Pressable>
+                      </View>
+
+                      <View style={styles.switchRow}>
+                        <Text style={styles.inputLabel}>{he.addRemove.bookIsNewToggle}</Text>
+                        <Switch
+                          accessibilityLabel={he.addRemove.bookIsNewToggle}
+                          value={book.is_new}
+                          disabled={busyBookId === book.id || patchBook.isPending}
+                          onValueChange={(next) => void applyToggleIsNew(book, next)}
+                        />
                       </View>
 
                       <Text style={styles.sectionLabel}>{he.addRemove.locationLabel}</Text>
@@ -1588,13 +1631,20 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.xs,
   },
   topBar: {
-    flexDirection: "row",
-    alignItems: "stretch",
     gap: theme.spacing.sm,
     paddingHorizontal: theme.spacing.lg,
     marginBottom: theme.spacing.sm,
   },
-  supplierFieldShell: { flex: 1, minWidth: 0, justifyContent: "center" },
+  supplierFieldShell: { width: "100%" },
+  topBarActions: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    gap: theme.spacing.sm,
+  },
+  topBarActionBtn: {
+    flex: 1,
+    justifyContent: "center",
+  },
   headerBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1604,14 +1654,16 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.lg,
   },
   secondaryHeaderBtn: {
-    flexShrink: 0,
-    minWidth: "32%",
-    maxWidth: 160,
     backgroundColor: theme.colors.surfaceContainerHigh,
     borderWidth: 1,
     borderColor: theme.colors.outlineVariant,
   },
-  secondaryHeaderBtnText: { ...theme.typography.labelMd, color: theme.colors.primary, textAlign: "left" },
+  secondaryHeaderBtnText: {
+    ...theme.typography.labelMd,
+    color: theme.colors.primary,
+    textAlign: "left",
+    flexShrink: 1,
+  },
   offlineBanner: {
     flexDirection: "row",
     gap: theme.spacing.sm,

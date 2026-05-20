@@ -1,34 +1,21 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
   BookLocation,
   ShortageItem,
   StoreMap,
   StoreMapUnit,
-  Supplier,
 } from "@avihay-books/shared";
 import { useMemo } from "react";
 import { api } from "./client";
 import { STORE_MAP_KEY } from "./storeMap";
 import { mockSuppliers } from "../mocks/homeDashboard";
+import { useSuppliers } from "./suppliers";
 
 export { STORE_MAP_KEY } from "./storeMap";
-
-const SUPPLIERS_KEY = ["suppliers"] as const;
-
-export function useSuppliers() {
-  return useQuery<Supplier[]>({
-    queryKey: SUPPLIERS_KEY,
-    queryFn: async () => {
-      const { data } = await api.get<Supplier[]>("/suppliers");
-      return data;
-    },
-    staleTime: 60_000,
-    retry: 0,
-  });
-}
+export { useSuppliers } from "./suppliers";
 
 /** מחזיר רשימת ספקים — מה־API אם זמין, אחרת מה־mock. */
-export function useSuppliersWithFallback(): Supplier[] {
+export function useSuppliersWithFallback() {
   const q = useSuppliers();
   if (q.isSuccess && q.data.length > 0) return q.data;
   return mockSuppliers;

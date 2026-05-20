@@ -71,7 +71,7 @@ interface Props {
     /** לכל תא שיש בו יותר מעותק אחד — תמיד גלוי גם כשעוברים לעותק מתא אחר */
     bulkMoves?: { id: string; label: string; onPress: () => void }[];
   };
-  /** כשאין `book`: האם הספר החדש מסומן `is_new` (מגביל לתאי ארון התצוגה). */
+  /** כשאין `book`: האם הספר מסומן `is_new` (מגביל לארון התצוגה בלבד). */
   placePreviewIsNew?: boolean;
   onClose: () => void;
   onSubmit: (target: MapPlacementSubmitTarget) => void | Promise<void>;
@@ -114,9 +114,7 @@ export function MoveBookModal({
   const filteredStoreUnits = useMemo(() => {
     const all = storeMap?.units ?? [];
     if (treatAsNewBook) {
-      return all.filter(
-        (u) => u.store_position === "display" || u.store_position === "stacks",
-      );
+      return all.filter((u) => u.store_position === "display");
     }
     return all.filter((u) => u.store_position !== "display");
   }, [storeMap, treatAsNewBook]);
