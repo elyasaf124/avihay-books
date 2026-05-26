@@ -5,6 +5,7 @@ import { Ionicons } from "@expo/vector-icons";
 import type { Book, BookLocationPath, StoreMapBook } from "@avihay-books/shared";
 import axios from "axios";
 import { api } from "../api/client";
+import { useSuppliersWithFallback } from "../api/unit";
 import { theme } from "../theme";
 import { he } from "../i18n/he";
 import { mockCatalogBooks } from "../mocks/homeDashboard";
@@ -79,19 +80,24 @@ export function BookDetailModal({
     retry: 0,
   });
   const fetchedBook = fullBookQuery.data ?? null;
+  const suppliers = useSuppliersWithFallback();
 
   const display = useMemo(() => {
     const b = book ?? fetchedBook;
+    const supplierId = b?.supplier_id ?? storeMapBook?.supplier_id ?? null;
+    const supplier = supplierId ? suppliers.find((s) => s.id === supplierId) : undefined;
     return {
       title: b?.title ?? storeMapBook?.title ?? "",
       author: b?.author ?? storeMapBook?.author ?? "",
       topic: b?.topic ?? "",
+      supplierName: supplier?.name ?? "",
       price: b?.price ?? storeMapBook?.price ?? null,
       stock: b?.stock_quantity ?? null,
       isNew: (b?.is_new ?? storeMapBook?.is_new) === true,
-      supplierColor: storeMapBook?.supplier_color ?? null,
+      supplierColor:
+        storeMapBook?.supplier_color ?? supplier?.color_hex ?? null,
     };
-  }, [book, fetchedBook, storeMapBook]);
+  }, [book, fetchedBook, storeMapBook, suppliers]);
 
   if (!bookId) return <></>;
 
@@ -124,6 +130,9 @@ export function BookDetailModal({
             showsVerticalScrollIndicator
             keyboardShouldPersistTaps="handled"
           >
+            {display.supplierName ? (
+              <Field label={he.bookDetail.supplier} value={display.supplierName} />
+            ) : null}
             {display.topic ? (
               <Field label={he.bookDetail.topic} value={display.topic} />
             ) : null}

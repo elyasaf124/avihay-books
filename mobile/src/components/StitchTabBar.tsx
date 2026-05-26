@@ -94,10 +94,16 @@ export function StitchTabBar({
 
 /**
  * מסכים מוסתרים: `expo-router` לא תמיד מעביר את `href: null` אל `options` בסרגל מותאם.
- * מסלולי `unit` ו-`suppliers` — מסכים מלאים שמגיעים אליהם רק ממסכים אחרים, לא כטאב בסרגל התחתון.
+ * מסלולי `unit`, `suppliers` ו-`customer-orders-history` — מסכים שמגיעים אליהם רק מניווט, לא כטאב בסרגל התחתון.
  */
 function isTabHidden(routeName: string, options?: BottomTabNavigationOptions): boolean {
-  if (routeName === "unit" || routeName === "suppliers") return true;
+  if (
+    routeName === "unit" ||
+    routeName === "suppliers" ||
+    routeName === "customer-orders-history"
+  ) {
+    return true;
+  }
   return (options as { href?: null } | undefined)?.href === null;
 }
 

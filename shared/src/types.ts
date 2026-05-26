@@ -100,7 +100,7 @@ export interface OrderRow {
   id: UUID;
   /** `NULL` כשההזמנה לפי כותרת ידנית (בלי רשומת `books`). */
   book_id: UUID | null;
-  supplier_id: UUID;
+  supplier_id: UUID | null;
   order_type: OrderType;
   quantity: number;
   customer_name: string | null;
@@ -157,6 +157,8 @@ export interface StoreMapBook {
   is_new: boolean;
   /** מחיר כפי שמוחזר מ־`books.price` (טקסט מ־`numeric` של PG). */
   price: string;
+  /** נושא הספר מ־`books.topic`. */
+  topic: string;
   /** ספר זה סומן כחוסר במדף — עד עדכון סטטוס החוסר ל־`completed`. */
   is_pending_shortage: boolean;
 }
@@ -239,7 +241,7 @@ export interface ShortageListItem {
 export interface OrderListItem {
   id: UUID;
   book_id: UUID | null;
-  supplier_id: UUID;
+  supplier_id: UUID | null;
   order_type: OrderType;
   quantity: number;
   customer_name: string | null;
@@ -251,6 +253,8 @@ export interface OrderListItem {
   book_title: string;
   book_author: string;
   book_price: string;
+  /** ספק הספר בקטלוג (`books.supplier_id`) — לתצוגה גם כש־`supplier_id` בהזמנה ריק. */
+  catalog_supplier_id: UUID | null;
   supplier_name: string;
   supplier_color: string;
   supplier_email: string;
@@ -258,9 +262,16 @@ export interface OrderListItem {
 
 /** קבוצת הזמנות לפי ספק לצורך ייצוא PDF / שליחה במייל. */
 export interface OrdersBySupplierGroup {
-  supplier_id: UUID;
+  supplier_id: UUID | null;
   supplier_name: string;
   supplier_color: string;
   supplier_email: string;
+  orders: OrderListItem[];
+}
+
+/** קבוצת הזמנות לפי לקוח (שם + טלפון) לתצוגה בלשוניות לקוח / וואטסאפ. */
+export interface OrdersByCustomerGroup {
+  customer_name: string;
+  customer_phone: string;
   orders: OrderListItem[];
 }

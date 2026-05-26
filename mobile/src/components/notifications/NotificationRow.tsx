@@ -16,6 +16,7 @@ const TYPE_TO_ICON: Record<NotificationType, keyof typeof Ionicons.glyphMap> = {
   low_stock: "alert-circle",
   remove_from_display: "eye-off",
   supplier_reorder_reminder: "time",
+  orders_without_supplier: "link-outline",
 };
 
 /**
@@ -177,6 +178,8 @@ function typeAccent(type: NotificationType): string {
       return theme.colors.tertiaryContainer;
     case "supplier_reorder_reminder":
       return theme.colors.primary;
+    case "orders_without_supplier":
+      return theme.colors.error;
   }
 }
 
@@ -188,6 +191,8 @@ function tintFor(type: NotificationType): string {
       return theme.colors.tertiaryFixed;
     case "supplier_reorder_reminder":
       return theme.colors.primaryFixed;
+    case "orders_without_supplier":
+      return theme.colors.errorContainer;
   }
 }
 

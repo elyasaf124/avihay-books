@@ -76,6 +76,23 @@ export function useDeleteShortage() {
   });
 }
 
+/** ביטול חוסר במדף לפי `location_id` — מוחק מרשימת החוסרים בלי שינוי מלאי. */
+export function useCancelShelfShortage() {
+  const client = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: async (locationId) => {
+      await api.delete(`/shortage/by-location/${locationId}`);
+    },
+    onSuccess: (_void, locationId) => {
+      client.setQueryData<ShortageListItem[]>(SHORTAGE_KEY, (old) =>
+        old ? old.filter((row) => row.location_id !== locationId) : old,
+      );
+      void client.invalidateQueries({ queryKey: SHORTAGE_KEY });
+      void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
+    },
+  });
+}
+
 export interface UpdateShortageStatusPayload {
   shortageId: string;
   status: ShortageStatus;

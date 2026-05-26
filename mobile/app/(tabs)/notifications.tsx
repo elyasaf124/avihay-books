@@ -118,7 +118,8 @@ export default function NotificationsScreen(): JSX.Element {
       ? 0
       : lastRun.low_stock_created +
         lastRun.remove_from_display_created +
-        lastRun.supplier_reorder_reminder_created;
+        lastRun.supplier_reorder_reminder_created +
+        lastRun.orders_without_supplier_created;
 
   const refreshing = listQuery.isFetching && !listQuery.isLoading;
   const isInitialLoading = listQuery.isLoading && !isOffline;

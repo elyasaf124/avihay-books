@@ -1,5 +1,6 @@
 import axios from "axios";
 import Constants from "expo-constants";
+import { Platform } from "react-native";
 
 type ApiExtra = { apiBaseUrl?: string; apiKey?: string | null } | undefined;
 
@@ -10,6 +11,28 @@ function firstNonBlank(...candidates: (string | null | undefined)[]): string | u
     if (t.length > 0) return t;
   }
   return undefined;
+}
+
+function isPrivateLanHost(hostname: string): boolean {
+  if (hostname === "localhost" || hostname === "127.0.0.1") return false;
+  if (/^10\./.test(hostname)) return true;
+  if (/^192\.168\./.test(hostname)) return true;
+  if (/^172\.(?:1[6-9]|2\d|3[01])\./.test(hostname)) return true;
+  return false;
+}
+
+/** Chrome חוסם בקשות מ־`localhost` (Expo Web) ל־IP ברשת מקומית — Private Network Access. */
+function rewriteLanToLocalhostForWebDev(url: string): string {
+  if (!__DEV__ || Platform.OS !== "web") return url;
+  try {
+    const normalized = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(url) ? url : `http://${url}`;
+    const parsed = new URL(normalized);
+    if (!isPrivateLanHost(parsed.hostname)) return url;
+    parsed.hostname = "localhost";
+    return parsed.toString();
+  } catch {
+    return url;
+  }
 }
 
 const extra = Constants.expoConfig?.extra as ApiExtra;
@@ -25,7 +48,8 @@ const resolvedUrl =
 
 /** בפרודקשן — אם ה־URL נשאר `localhost` (סימן שהסביבה לא נטענה לבילד), נפנה ל־Render */
 const isLocalhost = resolvedUrl.includes("localhost") || resolvedUrl.includes("127.0.0.1");
-export const API_BASE_URL = !__DEV__ && isLocalhost ? PRODUCTION_API_URL : resolvedUrl;
+const afterProdFallback = !__DEV__ && isLocalhost ? PRODUCTION_API_URL : resolvedUrl;
+export const API_BASE_URL = rewriteLanToLocalhostForWebDev(afterProdFallback);
 
 const resolvedKey = firstNonBlank(extra?.apiKey ?? undefined, process.env.EXPO_PUBLIC_API_KEY);
 const apiKey = resolvedKey ?? (!__DEV__ ? PRODUCTION_API_KEY : undefined);

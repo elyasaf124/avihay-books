@@ -120,7 +120,9 @@ npm run start --workspace=@avihay-books/backend
    - קבצים `mobile/.env.development` / `mobile/.env.production` (ראה דוגמאות `.example`) — סקריפטי `npm run eas:build:*` בפרויקט טוענים את הקובץ המתאים לפני `eas build`, והערכים נכנסים ל־[`mobile/eas.json`](../mobile/eas.json) דרך `${EXPO_PUBLIC_*}`.
    - או משתני סביבה בפרויקט תחת `expo.dev` → **Environment variables** עם אותם שמות `EXPO_PUBLIC_*`.
 
-4. בנה `APK` (אנדרואיד):
+4. בנה `APK` (אנדרואיד) — ענן (`EAS`) או מקומי: [`LOCAL_ANDROID_BUILD.md`](LOCAL_ANDROID_BUILD.md).
+
+   ענן:
    ```bash
    npm run eas:build:android:development --workspace=@avihay-books/mobile
    npm run eas:build:android:production --workspace=@avihay-books/mobile

@@ -1,6 +1,7 @@
 import { pool } from "../db/pool.js";
 import { orderInputSchema, type OrderInput } from "./schemas.js";
-import type { OrderListItem, OrderRow, OrderType } from "@avihay-books/shared";
+import type { OrderListItem, OrderRow, OrderStatus, OrderType } from "@avihay-books/shared";
+import type { PoolClient } from "pg";
 
 /**
  * מזמיני מלאי (`inventory`) ללא לקוח: מאחדים לשורת `pending` קיימת (כולל ניקוי כפילויות ישנות),
@@ -81,7 +82,7 @@ export async function upsertOrder(input: OrderInput): Promise<OrderRow> {
   const { rows } = await pool.query<OrderRow>(sql, [
     v.id ?? null,
     bookId,
-    v.supplier_id,
+    v.supplier_id ?? null,
     v.order_type,
     v.quantity,
     v.customer_name ?? null,
@@ -111,7 +112,7 @@ export async function findAllOrders(filter: { type?: OrderType } = {}): Promise<
  */
 export interface OrdersLineMatch {
   book_id: string | null;
-  supplier_id: string;
+  supplier_id: string | null;
   order_type: OrderType;
   customer_name: string | null;
   customer_phone: string | null;
@@ -120,22 +121,96 @@ export interface OrdersLineMatch {
 
 /** מוחק את כל השורות התואמות לשורת תצוגה אחת (לאחר איחוד כפילויות בלקוח). */
 export async function deleteOrdersMatchingLine(match: OrdersLineMatch): Promise<number> {
+  const customerName = match.customer_name?.trim() ?? null;
+  const customerPhone = match.customer_phone?.trim() ?? null;
+  const manualTitle = match.manual_book_title?.trim() ?? null;
   const result = await pool.query(
     `DELETE FROM orders
       WHERE book_id IS NOT DISTINCT FROM $1
-        AND supplier_id = $2
+        AND supplier_id IS NOT DISTINCT FROM $2
         AND order_type = $3
-        AND customer_name IS NOT DISTINCT FROM $4
-        AND customer_phone IS NOT DISTINCT FROM $5
-        AND manual_book_title IS NOT DISTINCT FROM $6`,
+        AND TRIM(COALESCE(customer_name, '')) IS NOT DISTINCT FROM TRIM(COALESCE($4::text, ''))
+        AND TRIM(COALESCE(customer_phone, '')) IS NOT DISTINCT FROM TRIM(COALESCE($5::text, ''))
+        AND TRIM(COALESCE(manual_book_title, '')) IS NOT DISTINCT FROM TRIM(COALESCE($6::text, ''))`,
     [
       match.book_id,
       match.supplier_id,
       match.order_type,
-      match.customer_name,
-      match.customer_phone,
-      match.manual_book_title,
+      customerName,
+      customerPhone,
+      manualTitle,
     ],
+  );
+  return result.rowCount ?? 0;
+}
+
+/** מעביר שורות שהושלמו לארכיון (הסרה מרשימה פעילה, שמירה בהיסטוריה). */
+export async function archiveOrdersMatchingLine(match: OrdersLineMatch): Promise<number> {
+  const customerName = match.customer_name?.trim() ?? null;
+  const customerPhone = match.customer_phone?.trim() ?? null;
+  const manualTitle = match.manual_book_title?.trim() ?? null;
+  const result = await pool.query(
+    `UPDATE orders SET status = 'archived'
+      WHERE book_id IS NOT DISTINCT FROM $1
+        AND supplier_id IS NOT DISTINCT FROM $2
+        AND order_type = $3
+        AND TRIM(COALESCE(customer_name, '')) IS NOT DISTINCT FROM TRIM(COALESCE($4::text, ''))
+        AND TRIM(COALESCE(customer_phone, '')) IS NOT DISTINCT FROM TRIM(COALESCE($5::text, ''))
+        AND TRIM(COALESCE(manual_book_title, '')) IS NOT DISTINCT FROM TRIM(COALESCE($6::text, ''))
+        AND status = 'completed'`,
+    [
+      match.book_id,
+      match.supplier_id,
+      match.order_type,
+      customerName,
+      customerPhone,
+      manualTitle,
+    ],
+  );
+  return result.rowCount ?? 0;
+}
+
+/** מעדכן סטטוס לכל השורות התואמות לשורת תצוגה אחת (לאחר איחוד כפילויות בלקוח). */
+export async function updateOrdersMatchingLineStatus(
+  match: OrdersLineMatch,
+  status: Extract<OrderStatus, "pending" | "sent">,
+): Promise<number> {
+  const customerName = match.customer_name?.trim() ?? null;
+  const customerPhone = match.customer_phone?.trim() ?? null;
+  const manualTitle = match.manual_book_title?.trim() ?? null;
+  const result = await pool.query(
+    `UPDATE orders SET status = $7
+      WHERE book_id IS NOT DISTINCT FROM $1
+        AND supplier_id IS NOT DISTINCT FROM $2
+        AND order_type = $3
+        AND TRIM(COALESCE(customer_name, '')) IS NOT DISTINCT FROM TRIM(COALESCE($4::text, ''))
+        AND TRIM(COALESCE(customer_phone, '')) IS NOT DISTINCT FROM TRIM(COALESCE($5::text, ''))
+        AND TRIM(COALESCE(manual_book_title, '')) IS NOT DISTINCT FROM TRIM(COALESCE($6::text, ''))
+        AND status NOT IN ('completed', 'archived')`,
+    [
+      match.book_id,
+      match.supplier_id,
+      match.order_type,
+      customerName,
+      customerPhone,
+      manualTitle,
+      status,
+    ],
+  );
+  return result.rowCount ?? 0;
+}
+
+/** מעדכן סטטוס לכל הזמנות פתוחות של ספק (מלאi + לקוח + וואטסאפ). */
+export async function updateOrdersBySupplierStatus(
+  supplierId: string | null,
+  status: Extract<OrderStatus, "pending" | "sent">,
+): Promise<number> {
+  const result = await pool.query(
+    `UPDATE orders SET status = $2
+      WHERE supplier_id IS NOT DISTINCT FROM $1
+        AND order_type IN ('inventory', 'customer', 'whatsapp')
+        AND status NOT IN ('completed', 'archived')`,
+    [supplierId, status],
   );
   return result.rowCount ?? 0;
 }
@@ -156,15 +231,54 @@ export async function findAllOrdersExpanded(
             COALESCE(b.title, o.manual_book_title, '') AS book_title,
             COALESCE(b.author, o.manual_book_author, '') AS book_author,
             CASE WHEN o.book_id IS NULL THEN '—' ELSE b.price::text END AS book_price,
-            s.name        AS supplier_name,
-            s.color_hex   AS supplier_color,
-            s.email       AS supplier_email
+            b.supplier_id AS catalog_supplier_id,
+            COALESCE(s.name, '')        AS supplier_name,
+            COALESCE(s.color_hex, '')   AS supplier_color,
+            COALESCE(s.email, '')       AS supplier_email
        FROM orders o
        LEFT JOIN books b ON b.id = o.book_id
-       JOIN suppliers s ON s.id = o.supplier_id
+       LEFT JOIN suppliers s ON s.id = o.supplier_id
        ${where}
        ORDER BY o.created_at DESC`,
     params,
   );
   return rows;
+}
+
+type Queryable = Pick<PoolClient, "query">;
+
+/** הזמנות פתוחות לספר, ממוינות לפי עדיפות מימוש (לקוח → וואטסאפ → מלאi). */
+export async function findOpenOrdersForBook(
+  bookId: string,
+  client: Queryable = pool,
+): Promise<OrderRow[]> {
+  const { rows } = await client.query<OrderRow>(
+    `SELECT * FROM orders
+     WHERE book_id = $1 AND status IN ('pending', 'sent')
+     ORDER BY
+       CASE order_type
+         WHEN 'customer' THEN 0
+         WHEN 'whatsapp' THEN 1
+         ELSE 2
+       END,
+       created_at ASC`,
+    [bookId],
+  );
+  return rows;
+}
+
+export async function completeOrder(id: string, client: Queryable = pool): Promise<void> {
+  await client.query(`UPDATE orders SET status = 'completed' WHERE id = $1`, [id]);
+}
+
+export async function updateOrderQuantity(
+  id: string,
+  quantity: number,
+  client: Queryable = pool,
+): Promise<void> {
+  await client.query(`UPDATE orders SET quantity = $1 WHERE id = $2`, [quantity, id]);
+}
+
+export async function deleteOrderById(id: string, client: Queryable = pool): Promise<void> {
+  await client.query(`DELETE FROM orders WHERE id = $1`, [id]);
 }

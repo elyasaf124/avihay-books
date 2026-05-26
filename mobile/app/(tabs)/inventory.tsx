@@ -50,6 +50,7 @@ const POSITION_LABEL: Record<StorePosition, string> = {
   island: he.units.island,
   display: he.units.display,
   stacks: he.units.stacks,
+  pocket: he.units.pocket,
 };
 
 interface UnitCardModel {

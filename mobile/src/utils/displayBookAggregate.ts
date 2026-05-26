@@ -13,6 +13,42 @@ export interface DisplayBookAggregate {
   totalQuantity: number;
 }
 
+/** סט בודד בארון הסטים — ריבוע אחד בגריד, עם מפתח ייחודי לרינדור. */
+export interface StacksSetItem extends DisplayLocationSpot {
+  /** אינדקס בתוך אותו `location_id` כש־`quantity_in_cell` > 1. */
+  copy_index: number;
+}
+
+export function expandStacksFromShelves(
+  shelves: StoreMapShelf[],
+  cellBooks: Map<string, StoreMapBook[]>,
+): StacksSetItem[] {
+  const items: StacksSetItem[] = [];
+  for (const shelf of shelves) {
+    for (const cell of shelf.cells) {
+      const books = cellBooks.get(cell.id) ?? cell.books;
+      for (const b of books) {
+        const qty = Math.max(0, Math.floor(Number(b.quantity_in_cell)));
+        for (let i = 0; i < qty; i++) {
+          items.push({
+            ...b,
+            quantity_in_cell: 1,
+            cell_id: cell.id,
+            cell_name: cell.cell_name,
+            copy_index: i,
+          });
+        }
+      }
+    }
+  }
+  return items.sort((a, b) =>
+    a.title.localeCompare(b.title, "he") ||
+    a.cell_name.localeCompare(b.cell_name, "he") ||
+    a.location_id.localeCompare(b.location_id) ||
+    a.copy_index - b.copy_index,
+  );
+}
+
 export function aggregateDisplayBooksFromShelves(
   shelves: StoreMapShelf[],
   cellBooks: Map<string, StoreMapBook[]>,

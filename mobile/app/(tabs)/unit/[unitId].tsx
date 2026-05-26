@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { isFlatSurfacePosition, type StoreMapBook, type StoreMapShelf } from "@avihay-books/shared";
@@ -13,22 +13,27 @@ import {
   useUnitFromMap,
 } from "../../../src/api/unit";
 import { mockStoreMap } from "../../../src/mocks/homeDashboard";
+import { useCancelShelfShortage } from "../../../src/api/shortage";
 import { ConfirmDialog } from "../../../src/components/ConfirmDialog";
 import { BookDetailModal } from "../../../src/components/BookDetailModal";
+import { SearchBar } from "../../../src/components/SearchBar";
 import { SideToggle } from "../../../src/components/unit/SideToggle";
 import { DisplayGrid } from "../../../src/components/unit/DisplayGrid";
 import { DisplaySaleModal } from "../../../src/components/unit/DisplaySaleModal";
 import { ShelfRow } from "../../../src/components/unit/ShelfRow";
-import {
-  UnitFilterBar,
-  emptyFilters,
-  type UnitFilterState,
-} from "../../../src/components/unit/UnitFilterBar";
+import { UnitFilterBar } from "../../../src/components/unit/UnitFilterBar";
 import { MoveBookModal } from "../../../src/components/unit/MoveBookModal";
+import { useStoreMapFilters } from "../../../src/context/StoreMapFilterContext";
+import { isUnitFilterActive, passesUnitFilter, passesBookTitleSearch, collectTopicsFromUnit } from "../../../src/utils/unitFilters";
 import {
   aggregateDisplayBooksFromShelves,
+  expandStacksFromShelves,
   type DisplayBookAggregate,
 } from "../../../src/utils/displayBookAggregate";
+
+function isLocationShortaged(book: StoreMapBook, shortagedIds: Set<string>): boolean {
+  return shortagedIds.has(book.location_id) || Boolean(book.is_pending_shortage);
+}
 
 export default function UnitScreen(): JSX.Element {
   const router = useRouter();
@@ -43,21 +48,24 @@ export default function UnitScreen(): JSX.Element {
   const { unit } = useUnitFromMap(unitIdStr ?? undefined, effectiveMap);
 
   const suppliers = useSuppliersWithFallback();
+  const { filters, setFilters } = useStoreMapFilters();
 
   const [activeSideId, setActiveSideId] = useState<string | null>(null);
-  const [filters, setFilters] = useState<UnitFilterState>(emptyFilters);
+  const [bookTitleSearch, setBookTitleSearch] = useState("");
 
-  const [confirmFor, setConfirmFor] = useState<StoreMapBook | null>(null);
   const [detailsFor, setDetailsFor] = useState<StoreMapBook | null>(null);
   const [moveFor, setMoveFor] = useState<StoreMapBook | null>(null);
   const [saleFor, setSaleFor] = useState<DisplayBookAggregate | null>(null);
+  const [undoShortageTargets, setUndoShortageTargets] = useState<StoreMapBook[]>([]);
 
   /** מיקומים (`location_id`) שסומנו אופטימית כחוסר — פר־עותק, לא לפי `book_id`. */
   const [optimisticShortage, setOptimisticShortage] = useState<Set<string>>(new Set());
+  const pendingUndoLocationsRef = useRef<Set<string>>(new Set());
 
   const [moveError, setMoveError] = useState<string | null>(null);
 
   const addShortage = useAddShortage();
+  const cancelShelfShortage = useCancelShelfShortage();
   const moveBook = useMoveBook();
 
   const sideOptions = useMemo(
@@ -76,6 +84,8 @@ export default function UnitScreen(): JSX.Element {
     return unit.shelves;
   }, [unit, effectiveSideId]);
 
+  const unitTopics = useMemo(() => (unit ? collectTopicsFromUnit(unit) : []), [unit]);
+
   /** אחרי השלמת חוסר ממסך אחר / רענון `store-map`: מנקים טשטוש אופטימי אם השרת כבר לא מדווח על חוסר למיקום זה. */
   useEffect(() => {
     setOptimisticShortage((prev) => {
@@ -93,17 +103,9 @@ export default function UnitScreen(): JSX.Element {
   }, [shelves]);
 
   const passesFilter = useCallback(
-    (b: StoreMapBook) => {
-      if (filters.supplierIds.length > 0 && !filters.supplierIds.includes(b.supplier_id))
-        return false;
-      const price = Number(b.price);
-      if (filters.priceMin !== null && !Number.isNaN(price) && price < filters.priceMin)
-        return false;
-      if (filters.priceMax !== null && !Number.isNaN(price) && price > filters.priceMax)
-        return false;
-      return true;
-    },
-    [filters],
+    (b: StoreMapBook) =>
+      passesUnitFilter(b, filters) && passesBookTitleSearch(b, bookTitleSearch),
+    [filters, bookTitleSearch],
   );
 
   /** ספרים פר־תא לאחר סינון; שומר על מבנה גם כשהתוצאה ריקה. */
@@ -136,45 +138,151 @@ export default function UnitScreen(): JSX.Element {
     [shelves, filteredCellBooks],
   );
 
+  const stacksSetsAll = useMemo(
+    () => expandStacksFromShelves(shelves, allCellBooksMap),
+    [shelves, allCellBooksMap],
+  );
+  const stacksSetsFiltered = useMemo(
+    () => expandStacksFromShelves(shelves, filteredCellBooks),
+    [shelves, filteredCellBooks],
+  );
+
+  const isStacksUnit = unit?.store_position === "stacks";
+  const isDisplayUnit = unit?.store_position === "display";
   const isFlatSurface = unit != null && isFlatSurfacePosition(unit.store_position);
-  const gridVariant = unit?.store_position === "stacks" ? "stacks" : "display";
 
   const totalBooks = useMemo(() => {
-    if (isFlatSurface) {
+    if (isStacksUnit) {
+      return stacksSetsAll.length;
+    }
+    if (isDisplayUnit) {
       return displayAggregatesAll.length;
     }
     let count = 0;
     for (const shelf of shelves) for (const cell of shelf.cells) count += cell.books.length;
     return count;
-  }, [isFlatSurface, displayAggregatesAll, shelves]);
+  }, [isStacksUnit, isDisplayUnit, stacksSetsAll, displayAggregatesAll, shelves]);
 
   const matchedBookCount = useMemo(() => {
-    if (isFlatSurface) {
+    if (isStacksUnit) {
+      return stacksSetsFiltered.length;
+    }
+    if (isDisplayUnit) {
       return displayAggregatesFiltered.length;
     }
     let n = 0;
     for (const arr of filteredCellBooks.values()) n += arr.length;
     return n;
-  }, [isFlatSurface, displayAggregatesFiltered, filteredCellBooks]);
+  }, [isStacksUnit, isDisplayUnit, stacksSetsFiltered, displayAggregatesFiltered, filteredCellBooks]);
 
   const filtersActive =
-    filters.supplierIds.length > 0 || filters.priceMin !== null || filters.priceMax !== null;
+    isUnitFilterActive(filters) || bookTitleSearch.trim().length > 0;
 
-  const onConfirmShortage = useCallback(async () => {
-    if (!confirmFor) return;
-    const book = confirmFor;
-    setOptimisticShortage((prev) => new Set(prev).add(book.location_id));
-    setConfirmFor(null);
-    try {
-      await addShortage.mutateAsync({
-        bookId: book.book_id,
-        soldQuantity: 1,
-        locationId: book.location_id,
-      });
-    } catch {
-      // נשארים אופטימיים בתצוגה זו — בייצור אמיתי נציג טוסט שכשל.
-    }
-  }, [confirmFor, addShortage]);
+  const removeOptimisticShortage = useCallback((locationId: string) => {
+    setOptimisticShortage((prev) => {
+      if (!prev.has(locationId)) return prev;
+      const next = new Set(prev);
+      next.delete(locationId);
+      return next;
+    });
+  }, []);
+
+  const clearShortageVisual = useCallback(
+    (locationId: string) => {
+      removeOptimisticShortage(locationId);
+      pendingUndoLocationsRef.current.delete(locationId);
+    },
+    [removeOptimisticShortage],
+  );
+
+  const runUndoShortage = useCallback(
+    async (targets: StoreMapBook[]) => {
+      if (targets.length === 0) return;
+      setUndoShortageTargets([]);
+
+      for (const book of targets) {
+        pendingUndoLocationsRef.current.add(book.location_id);
+        removeOptimisticShortage(book.location_id);
+      }
+
+      let deletedCount = 0;
+      for (const book of targets) {
+        try {
+          await cancelShelfShortage.mutateAsync(book.location_id);
+          clearShortageVisual(book.location_id);
+          deletedCount += 1;
+        } catch (err: unknown) {
+          const status =
+            typeof err === "object" && err !== null && "response" in err
+              ? (err as { response?: { status?: number } }).response?.status
+              : undefined;
+          if (status === 404 && pendingUndoLocationsRef.current.has(book.location_id)) {
+            continue;
+          }
+          const message =
+            status === 404
+              ? he.unit.undoShortageNotFound
+              : status === undefined
+                ? he.unit.undoShortageOffline
+                : he.unit.undoShortageFailed;
+          Alert.alert(he.generic.errorTitle, message);
+          void storeMapQuery.refetch();
+          return;
+        }
+      }
+
+      if (deletedCount === 0) {
+        const awaitingAdd = targets.some((b) =>
+          pendingUndoLocationsRef.current.has(b.location_id),
+        );
+        if (!awaitingAdd) {
+          Alert.alert(he.generic.errorTitle, he.unit.undoShortageNotFound);
+          void storeMapQuery.refetch();
+        }
+      }
+    },
+    [cancelShelfShortage, removeOptimisticShortage, clearShortageVisual, storeMapQuery],
+  );
+
+  const addBookToShortage = useCallback(
+    async (book: StoreMapBook) => {
+      if (isLocationShortaged(book, optimisticShortage)) {
+        setUndoShortageTargets([book]);
+        return;
+      }
+      setOptimisticShortage((prev) => new Set(prev).add(book.location_id));
+      try {
+        await addShortage.mutateAsync({
+          bookId: book.book_id,
+          soldQuantity: 1,
+          locationId: book.location_id,
+        });
+        if (pendingUndoLocationsRef.current.has(book.location_id)) {
+          try {
+            await cancelShelfShortage.mutateAsync(book.location_id);
+          } catch {
+            Alert.alert(he.generic.errorTitle, he.unit.undoShortageFailed);
+          }
+          clearShortageVisual(book.location_id);
+        }
+      } catch {
+        clearShortageVisual(book.location_id);
+      }
+    },
+    [optimisticShortage, addShortage, cancelShelfShortage, clearShortageVisual],
+  );
+
+  const onDisplayBookPress = useCallback(
+    (agg: DisplayBookAggregate) => {
+      const shortedSpots = agg.spots.filter((s) => isLocationShortaged(s, optimisticShortage));
+      if (shortedSpots.length > 0) {
+        setUndoShortageTargets(shortedSpots);
+        return;
+      }
+      setSaleFor(agg);
+    },
+    [optimisticShortage],
+  );
 
   const closeMove = () => {
     setMoveFor(null);
@@ -283,9 +391,18 @@ export default function UnitScreen(): JSX.Element {
               </View>
             ) : null}
 
+            <View style={styles.searchWrap}>
+              <SearchBar
+                value={bookTitleSearch}
+                onChange={setBookTitleSearch}
+                placeholder={he.unit.bookTitleSearchPlaceholder}
+              />
+            </View>
+
             <UnitFilterBar
               filters={filters}
               suppliers={suppliers}
+              topics={unitTopics}
               onChange={setFilters}
             />
 
@@ -301,13 +418,23 @@ export default function UnitScreen(): JSX.Element {
               </View>
             ) : isFlatSurface ? (
               <View style={styles.shelvesCol}>
-                <DisplayGrid
-                  variant={gridVariant}
-                  aggregates={displayAggregatesFiltered}
-                  shortagedIds={optimisticShortage}
-                  onBookPress={(agg) => setSaleFor(agg)}
-                  onBookLongPress={(agg) => setDetailsFor(agg.representative)}
-                />
+                {isStacksUnit ? (
+                  <DisplayGrid
+                    variant="stacks"
+                    setItems={stacksSetsFiltered}
+                    shortagedIds={optimisticShortage}
+                    onSetPress={(item) => void addBookToShortage(item)}
+                    onSetLongPress={(item) => setDetailsFor(item)}
+                  />
+                ) : (
+                  <DisplayGrid
+                    variant="display"
+                    aggregates={displayAggregatesFiltered}
+                    shortagedIds={optimisticShortage}
+                    onAggregatePress={onDisplayBookPress}
+                    onAggregateLongPress={(agg) => setDetailsFor(agg.representative)}
+                  />
+                )}
               </View>
             ) : (
               <View style={styles.shelvesCol}>
@@ -317,7 +444,7 @@ export default function UnitScreen(): JSX.Element {
                     shelf={shelf}
                     cellBooks={filteredCellBooks}
                     shortagedIds={optimisticShortage}
-                    onBookPress={(b) => setConfirmFor(b)}
+                    onBookPress={(b) => void addBookToShortage(b)}
                     onBookLongPress={(b) => setDetailsFor(b)}
                   />
                 ))}
@@ -328,17 +455,19 @@ export default function UnitScreen(): JSX.Element {
       </ScrollView>
 
       <ConfirmDialog
-        visible={confirmFor !== null}
-        title={he.unit.confirmShortageTitle}
+        visible={undoShortageTargets.length > 0}
+        title={he.unit.confirmUndoShortageTitle}
         message={
-          confirmFor
-            ? he.unit.confirmShortageMessage.replace("{{title}}", confirmFor.title)
+          undoShortageTargets[0]
+            ? he.unit.confirmUndoShortageMessage.replace(
+                "{{title}}",
+                undoShortageTargets[0].title,
+              )
             : ""
         }
-        confirmLabel={he.unit.actions.addToShortage}
-        destructive
-        onCancel={() => setConfirmFor(null)}
-        onConfirm={() => void onConfirmShortage()}
+        confirmLabel={he.unit.confirmUndoShortageOk}
+        onCancel={() => setUndoShortageTargets([])}
+        onConfirm={() => void runUndoShortage(undoShortageTargets)}
       />
 
       <BookDetailModal
@@ -346,13 +475,17 @@ export default function UnitScreen(): JSX.Element {
         visible={detailsFor !== null}
         onClose={() => setDetailsFor(null)}
         displayOnDisplayTotal={
-          isFlatSurface && detailsFor
-            ? displayAggregatesAll.find((a) => a.book_id === detailsFor.book_id)?.totalQuantity ??
-              null
+          detailsFor
+            ? isDisplayUnit
+              ? displayAggregatesAll.find((a) => a.book_id === detailsFor.book_id)
+                  ?.totalQuantity ?? null
+              : isStacksUnit
+                ? stacksSetsAll.filter((s) => s.book_id === detailsFor.book_id).length
+                : null
             : null
         }
         onRecordDisplaySale={
-          isFlatSurface
+          isDisplayUnit
             ? () => {
                 const id = detailsFor?.book_id;
                 const agg = id ? displayAggregatesAll.find((a) => a.book_id === id) ?? null : null;
@@ -366,15 +499,17 @@ export default function UnitScreen(): JSX.Element {
             ? () => {
                 const target = detailsFor;
                 setDetailsFor(null);
-                setConfirmFor(target);
+                void addBookToShortage(target);
               }
             : undefined
         }
         onMove={
           detailsFor
             ? () => {
-                const agg = displayAggregatesAll.find((a) => a.book_id === detailsFor.book_id);
-                const target = agg?.spots[0] ?? detailsFor;
+                const target = isDisplayUnit
+                  ? displayAggregatesAll.find((a) => a.book_id === detailsFor.book_id)
+                      ?.spots[0] ?? detailsFor
+                  : detailsFor;
                 setDetailsFor(null);
                 setMoveFor(target);
               }
@@ -458,6 +593,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
   sideToggleWrap: { paddingHorizontal: theme.spacing.marginMobile },
+  searchWrap: { paddingHorizontal: theme.spacing.marginMobile },
   shelvesCol: {
     paddingHorizontal: theme.spacing.marginMobile,
     gap: theme.spacing.lg,

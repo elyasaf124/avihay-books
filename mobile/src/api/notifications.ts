@@ -96,6 +96,7 @@ export interface NotificationCheckSummary {
   remove_from_display_candidate_count: number;
   remove_from_display_after: string;
   supplier_reorder_reminder_created: number;
+  orders_without_supplier_created: number;
   ran_at: string;
 }
 

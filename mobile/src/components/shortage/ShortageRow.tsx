@@ -29,6 +29,7 @@ export function ShortageRow({
 }: Props): JSX.Element {
   const pendingOrder = item.status === "order_pending";
   const blocked = !!(busyMoving || busyCompleting || busyRemoving);
+  const noStock = item.book_stock_quantity <= 0;
 
   return (
     <View style={[styles.row, theme.shadow.inset]}>
@@ -94,16 +95,26 @@ export function ShortageRow({
             onPress={() => onComplete(item)}
             style={({ pressed }) => [
               styles.completeBtn,
-              blocked && styles.actionBtnMuted,
+              (blocked || noStock) && styles.actionBtnMuted,
+              noStock && styles.completeBtnNoStock,
               pressed && !blocked && styles.completeBtnPressed,
             ]}
           >
             <Ionicons
               name="checkmark-done-outline"
               size={18}
-              color={blocked ? theme.colors.onSurfaceVariant : theme.colors.secondary}
+              color={
+                blocked || noStock
+                  ? theme.colors.onSurfaceVariant
+                  : theme.colors.secondary
+              }
             />
-            <Text style={[styles.completeBtnText, blocked && styles.completeBtnTextMuted]}>
+            <Text
+              style={[
+                styles.completeBtnText,
+                (blocked || noStock) && styles.completeBtnTextMuted,
+              ]}
+            >
               {he.shortage.completeBtn}
             </Text>
           </Pressable>
@@ -244,6 +255,9 @@ const styles = StyleSheet.create({
   },
   completeBtnPressed: { opacity: 0.88 },
   actionBtnMuted: { opacity: 0.45 },
+  completeBtnNoStock: {
+    borderColor: theme.colors.outlineVariant,
+  },
   completeBtnText: {
     ...theme.typography.labelMd,
     color: theme.colors.secondary,

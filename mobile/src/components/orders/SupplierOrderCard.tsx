@@ -1,7 +1,12 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import type { OrderListItem, OrderType, OrdersBySupplierGroup } from "@avihay-books/shared";
-import { orderDisplayLineKey } from "../../api/orders";
+import {
+  isSupplierGroupFullyOrdered,
+  orderDisplayLineKey,
+  supplierGroupHasOpenOrders,
+  supplierGroupKey,
+} from "../../api/orders";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
 
@@ -12,15 +17,17 @@ interface Props {
   onSendEmail: (group: OrdersBySupplierGroup) => void;
   onRemoveOrderLine: (order: OrderListItem) => void;
   onEditOrderLine?: (order: OrderListItem) => void;
+  onToggleSupplierOrdered?: (group: OrdersBySupplierGroup) => void;
   removingOrderLineKey: string | null;
   updatingOrderLineKey: string | null;
+  togglingSupplierKey?: string | null;
 }
 
 /**
  * כרטיס לקבוצת הזמנות לפי ספק:
  * - כותרת עם שם הספק וצבע הזיהוי.
  * - רשימת השורות (ספר + כמות + סטטוס) או פרטי לקוח עבור `customer`/`whatsapp`.
- * - במלאי: ייצוא `PDF` ושליחה במייל; בלקוח / וואטסאפ: הסרת שורה.
+ * - במלאi: ייצוא `PDF` ושליחה במייל; בלקוח / וואטסאפ: הסרת שורה.
  */
 export function SupplierOrderCard({
   group,
@@ -29,11 +36,18 @@ export function SupplierOrderCard({
   onSendEmail,
   onRemoveOrderLine,
   onEditOrderLine,
+  onToggleSupplierOrdered,
   removingOrderLineKey,
   updatingOrderLineKey,
+  togglingSupplierKey,
 }: Props): JSX.Element {
   const totalUnits = group.orders.reduce((s, o) => s + o.quantity, 0);
   const isInventory = orderType === "inventory";
+  const canExport = group.supplier_id != null;
+  const groupKey = supplierGroupKey(group.supplier_id);
+  const isOrdered = isSupplierGroupFullyOrdered(group.orders);
+  const hasOpenOrders = supplierGroupHasOpenOrders(group.orders);
+  const isTogglingSupplier = togglingSupplierKey === groupKey;
 
   return (
     <View style={[styles.card, theme.shadow.floating]}>
@@ -41,9 +55,46 @@ export function SupplierOrderCard({
         <View style={styles.headerLeading}>
           <View style={[styles.accent, { backgroundColor: group.supplier_color }]} />
           <View style={styles.headerText}>
-            <Text style={styles.supplier} numberOfLines={1}>
-              {group.supplier_name}
-            </Text>
+            <View style={styles.supplierRow}>
+              <Text style={styles.supplier} numberOfLines={1}>
+                {group.supplier_name}
+              </Text>
+              {isInventory && onToggleSupplierOrdered && hasOpenOrders ? (
+                isTogglingSupplier ? (
+                  <ActivityIndicator size="small" color={theme.colors.primary} />
+                ) : isOrdered ? (
+                  <Pressable
+                    onPress={() => onToggleSupplierOrdered(group)}
+                    style={({ pressed }) => [
+                      styles.truckBtn,
+                      pressed && styles.lineActionPressed,
+                    ]}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={he.orders.orderUnmarkSupplierOrderedA11y}
+                  >
+                    <MaterialCommunityIcons
+                      name="truck"
+                      size={22}
+                      color={theme.colors.primary}
+                    />
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    onPress={() => onToggleSupplierOrdered(group)}
+                    style={({ pressed }) => [
+                      styles.markOrderedBtn,
+                      pressed && styles.lineActionPressed,
+                    ]}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    accessibilityRole="button"
+                    accessibilityLabel={he.orders.orderMarkSupplierOrderedA11y}
+                  >
+                    <Text style={styles.markOrderedText}>{he.orders.markOrderedButton}</Text>
+                  </Pressable>
+                )
+              ) : null}
+            </View>
             <Text style={styles.subline} numberOfLines={1}>
               {group.orders.length} כותרים · {totalUnits} עותקים
             </Text>
@@ -68,7 +119,7 @@ export function SupplierOrderCard({
         })}
       </View>
 
-      {isInventory ? (
+      {isInventory && canExport ? (
         <View style={styles.actions}>
           <Pressable
             onPress={() => onSendEmail(group)}
@@ -192,10 +243,37 @@ const styles = StyleSheet.create({
   },
   accent: { width: 12, height: 36, borderRadius: 6 },
   headerText: { flex: 1, gap: 2 },
+  supplierRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.xs,
+    flex: 1,
+  },
   supplier: {
     ...theme.typography.headlineMd,
     color: theme.colors.primary,
     textAlign: "left",
+    flex: 1,
+  },
+  truckBtn: {
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+    borderRadius: theme.radius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  markOrderedBtn: {
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 4,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceContainerHigh,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+  },
+  markOrderedText: {
+    ...theme.typography.labelMd,
+    color: theme.colors.primary,
+    fontSize: 12,
   },
   subline: {
     ...theme.typography.caption,

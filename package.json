@@ -16,6 +16,8 @@
     "backend:dev": "npm --workspace backend run dev",
     "backend:build": "npm --workspace backend run build",
     "mobile:dev": "npm --workspace mobile run start",
+    "mobile:prebuild:android": "npm run prebuild:android --workspace=@avihay-books/mobile",
+    "mobile:apk:release": "npm run apk:release --workspace=@avihay-books/mobile",
     "compose:up": "docker compose up --build",
     "compose:down": "docker compose down",
     "generate-api-key": "node scripts/generate-api-key.cjs",

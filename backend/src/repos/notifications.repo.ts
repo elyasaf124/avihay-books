@@ -111,3 +111,29 @@ export async function existsOpenNotification(filter: OpenNotificationFilter): Pr
   );
   return rows[0]?.exists ?? false;
 }
+
+/** יוצר התראת `low_stock` פתוחה, או מרענן הודעה קיימת שלא נקראה — כדי שהמסך ישקף מלאי עדכני. */
+export async function upsertOpenLowStockNotification(input: {
+  book_id: string;
+  message: string;
+}): Promise<AppNotification> {
+  const updated = await pool.query<AppNotification>(
+    `UPDATE notifications
+        SET message = $2,
+            created_at = now()
+      WHERE type = 'low_stock'
+        AND book_id = $1
+        AND is_read = FALSE
+      RETURNING *`,
+    [input.book_id, input.message],
+  );
+  if ((updated.rowCount ?? 0) > 0) {
+    return updated.rows[0]!;
+  }
+  return upsertNotification({
+    type: "low_stock",
+    book_id: input.book_id,
+    message: input.message,
+    is_read: false,
+  });
+}

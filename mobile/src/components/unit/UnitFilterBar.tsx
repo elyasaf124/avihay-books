@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { Supplier } from "@avihay-books/shared";
 import { theme } from "../../theme";
@@ -7,30 +7,57 @@ import { he } from "../../i18n/he";
 
 export interface UnitFilterState {
   supplierIds: string[];
+  topics: string[];
   priceMin: number | null;
   priceMax: number | null;
 }
 
 export const emptyFilters: UnitFilterState = {
   supplierIds: [],
+  topics: [],
   priceMin: null,
   priceMax: null,
 };
 
-/** גובה קבוע לאזור הרשימה — הקלט נשאר יציב; הגלילה רק מתוך ה־`FlatList`. */
-const SUPPLIER_LIST_VIEWPORT_HEIGHT = 220;
+/** ממלא שדות חסרים — למקרה של state ישן אחרי hot reload או spread חלקי. */
+export function normalizeUnitFilterState(
+  filters: Partial<UnitFilterState> | UnitFilterState,
+): UnitFilterState {
+  return {
+    supplierIds: filters.supplierIds ?? emptyFilters.supplierIds,
+    topics: filters.topics ?? emptyFilters.topics,
+    priceMin: filters.priceMin ?? emptyFilters.priceMin,
+    priceMax: filters.priceMax ?? emptyFilters.priceMax,
+  };
+}
+
+/** גובה קבוע לאזור הרשימה — הגלילה הכללית של המודל מטפלת ביתר. */
+const LIST_VIEWPORT_HEIGHT = 160;
 
 interface Props {
   filters: UnitFilterState;
   suppliers: Supplier[];
+  /** נושאים זמינים לסינון — רק בדף ארון/מדפים */
+  topics?: string[];
   onChange: (next: UnitFilterState) => void;
+  /** דף ראשי — רק ספקים; מחיר ונושא נשמרים ב-state משותף אך לא מוצגים */
+  suppliersOnly?: boolean;
 }
 
-export function UnitFilterBar({ filters, suppliers, onChange }: Props): JSX.Element {
+export function UnitFilterBar({
+  filters,
+  suppliers,
+  topics = [],
+  onChange,
+  suppliersOnly = false,
+}: Props): JSX.Element {
   const [open, setOpen] = useState(false);
 
-  const activeCount =
-    filters.supplierIds.length + (filters.priceMin !== null || filters.priceMax !== null ? 1 : 0);
+  const activeCount = suppliersOnly
+    ? filters.supplierIds.length
+    : filters.supplierIds.length +
+      filters.topics.length +
+      (filters.priceMin !== null || filters.priceMax !== null ? 1 : 0);
 
   const summaryText = useMemo(() => {
     if (activeCount === 0) return he.unit.filterAllSuppliers;
@@ -41,15 +68,18 @@ export function UnitFilterBar({ filters, suppliers, onChange }: Props): JSX.Elem
             .filter((s) => filters.supplierIds.includes(s.id))
             .map((s) => s.name)
             .join(", ");
+    if (suppliersOnly) return supplierPart ?? he.unit.filterAllSuppliers;
+    const topicPart =
+      filters.topics.length === 0 ? null : filters.topics.join(", ");
     const pricePart =
       filters.priceMin !== null || filters.priceMax !== null
         ? `${he.unit.pricePrefix}${filters.priceMin ?? 0}–${he.unit.pricePrefix}${filters.priceMax ?? "∞"}`
         : null;
-    return [supplierPart, pricePart].filter(Boolean).join("  ·  ");
-  }, [filters, suppliers, activeCount]);
+    return [supplierPart, topicPart, pricePart].filter(Boolean).join("  ·  ");
+  }, [filters, suppliers, activeCount, suppliersOnly]);
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, suppliersOnly && styles.wrapEmbedded]}>
       <Pressable style={styles.bar} onPress={() => setOpen(true)}>
         <Ionicons
           name="options-outline"
@@ -72,7 +102,9 @@ export function UnitFilterBar({ filters, suppliers, onChange }: Props): JSX.Elem
         onClose={() => setOpen(false)}
         filters={filters}
         suppliers={suppliers}
+        topics={topics}
         onChange={onChange}
+        suppliersOnly={suppliersOnly}
       />
     </View>
   );
@@ -88,15 +120,19 @@ function FilterSheet({
   onClose,
   filters,
   suppliers,
+  topics = [],
   onChange,
+  suppliersOnly = false,
 }: SheetProps): JSX.Element {
   const [draft, setDraft] = useState<UnitFilterState>(filters);
   const [supplierQuery, setSupplierQuery] = useState("");
+  const [topicQuery, setTopicQuery] = useState("");
 
   useEffect(() => {
     if (!visible) return;
-    setDraft(filters);
+    setDraft(normalizeUnitFilterState(filters));
     setSupplierQuery("");
+    setTopicQuery("");
   }, [visible, filters]);
 
   const toggle = (id: string) => {
@@ -105,6 +141,15 @@ function FilterSheet({
       supplierIds: d.supplierIds.includes(id)
         ? d.supplierIds.filter((s) => s !== id)
         : [...d.supplierIds, id],
+    }));
+  };
+
+  const toggleTopic = (topic: string) => {
+    setDraft((d) => ({
+      ...d,
+      topics: d.topics.includes(topic)
+        ? d.topics.filter((t) => t !== topic)
+        : [...d.topics, topic],
     }));
   };
 
@@ -122,13 +167,22 @@ function FilterSheet({
     return suppliers.filter((s) => s.name.toLowerCase().includes(q));
   }, [suppliers, supplierQuery]);
 
+  const filteredTopics = useMemo(() => {
+    const q = topicQuery.trim().toLowerCase();
+    if (!q) return topics;
+    return topics.filter((t) => t.toLowerCase().includes(q));
+  }, [topics, topicQuery]);
+
   const apply = () => {
     onChange(draft);
     onClose();
   };
   const reset = () => {
-    setDraft(emptyFilters);
-    onChange(emptyFilters);
+    const cleared = suppliersOnly
+      ? { ...normalizeUnitFilterState(filters), supplierIds: [] }
+      : emptyFilters;
+    setDraft(cleared);
+    onChange(cleared);
     onClose();
   };
 
@@ -144,6 +198,13 @@ function FilterSheet({
 
             <Text style={styles.sheetTitle}>{he.unit.filterTitle}</Text>
 
+            <ScrollView
+              style={styles.sheetScroll}
+              contentContainerStyle={styles.sheetScrollContent}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+              showsVerticalScrollIndicator
+            >
             <Text style={styles.sectionTitle}>{he.unit.filterSuppliers}</Text>
             <View style={styles.supplierSearchRow}>
               <Ionicons name="search-outline" size={18} color={theme.colors.onSurfaceVariant} />
@@ -157,43 +218,104 @@ function FilterSheet({
               />
             </View>
             <View style={styles.supplierListViewport}>
-              <FlatList
-                data={filteredSuppliers}
-                keyExtractor={(item) => item.id}
+              <ScrollView
                 style={styles.supplierList}
                 contentContainerStyle={styles.supplierListContent}
                 nestedScrollEnabled
                 keyboardShouldPersistTaps="handled"
-                ItemSeparatorComponent={() => <View style={styles.supplierSep} />}
-                ListEmptyComponent={
+                showsVerticalScrollIndicator
+              >
+                {filteredSuppliers.length === 0 ? (
                   <Text style={styles.supplierEmpty}>{he.picker.noMatches}</Text>
-                }
-                renderItem={({ item: s }) => {
-                  const active = draft.supplierIds.includes(s.id);
-                  return (
-                    <Pressable
-                      onPress={() => toggle(s.id)}
-                      style={[styles.supplierRow, active && styles.supplierRowActive]}
-                    >
-                      <View style={styles.supplierRowMain}>
-                        <View
-                          style={[styles.supplierDot, { backgroundColor: s.color_hex ?? theme.colors.outline }]}
-                        />
-                        <Text style={[styles.supplierRowName, active && styles.supplierRowNameActive]}>
-                          {s.name}
-                        </Text>
+                ) : (
+                  filteredSuppliers.map((s, index) => {
+                    const active = draft.supplierIds.includes(s.id);
+                    return (
+                      <View key={s.id}>
+                        {index > 0 ? <View style={styles.supplierSep} /> : null}
+                        <Pressable
+                          onPress={() => toggle(s.id)}
+                          style={[styles.supplierRow, active && styles.supplierRowActive]}
+                        >
+                          <View style={styles.supplierRowMain}>
+                            <View
+                              style={[styles.supplierDot, { backgroundColor: s.color_hex ?? theme.colors.outline }]}
+                            />
+                            <Text style={[styles.supplierRowName, active && styles.supplierRowNameActive]}>
+                              {s.name}
+                            </Text>
+                          </View>
+                          <Ionicons
+                            name={active ? "checkbox" : "square-outline"}
+                            size={22}
+                            color={active ? theme.colors.primary : theme.colors.outlineVariant}
+                          />
+                        </Pressable>
                       </View>
-                      <Ionicons
-                        name={active ? "checkbox" : "square-outline"}
-                        size={22}
-                        color={active ? theme.colors.primary : theme.colors.outlineVariant}
-                      />
-                    </Pressable>
-                  );
-                }}
-              />
+                    );
+                  })
+                )}
+              </ScrollView>
             </View>
 
+            {!suppliersOnly ? (
+              <>
+            <Text style={[styles.sectionTitle, { marginTop: theme.spacing.lg }]}>
+              {he.unit.filterTopics}
+            </Text>
+            <View style={styles.supplierSearchRow}>
+              <Ionicons name="search-outline" size={18} color={theme.colors.onSurfaceVariant} />
+              <TextInput
+                value={topicQuery}
+                onChangeText={setTopicQuery}
+                placeholder={he.picker.searchInList}
+                placeholderTextColor={theme.colors.onSurfaceVariant}
+                style={styles.supplierSearchInput}
+                textAlign="left"
+              />
+            </View>
+            <View style={styles.supplierListViewport}>
+              <ScrollView
+                style={styles.supplierList}
+                contentContainerStyle={styles.supplierListContent}
+                nestedScrollEnabled
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator
+              >
+                {filteredTopics.length === 0 ? (
+                  <Text style={styles.supplierEmpty}>{he.unit.filterNoTopics}</Text>
+                ) : (
+                  filteredTopics.map((topic, index) => {
+                    const active = draft.topics.includes(topic);
+                    return (
+                      <View key={topic}>
+                        {index > 0 ? <View style={styles.supplierSep} /> : null}
+                        <Pressable
+                          onPress={() => toggleTopic(topic)}
+                          style={[styles.supplierRow, active && styles.supplierRowActive]}
+                        >
+                          <View style={styles.supplierRowMain}>
+                            <Text style={[styles.supplierRowName, active && styles.supplierRowNameActive]}>
+                              {topic}
+                            </Text>
+                          </View>
+                          <Ionicons
+                            name={active ? "checkbox" : "square-outline"}
+                            size={22}
+                            color={active ? theme.colors.primary : theme.colors.outlineVariant}
+                          />
+                        </Pressable>
+                      </View>
+                    );
+                  })
+                )}
+              </ScrollView>
+            </View>
+              </>
+            ) : null}
+
+            {!suppliersOnly ? (
+              <>
             <Text style={[styles.sectionTitle, { marginTop: theme.spacing.lg }]}>
               {he.unit.filterPriceRange}
             </Text>
@@ -221,6 +343,9 @@ function FilterSheet({
                 />
               </View>
             </View>
+              </>
+            ) : null}
+            </ScrollView>
 
             <View style={styles.actions}>
               <Pressable style={styles.resetBtn} onPress={reset}>
@@ -239,6 +364,7 @@ function FilterSheet({
 
 const styles = StyleSheet.create({
   wrap: { paddingHorizontal: theme.spacing.marginMobile },
+  wrapEmbedded: { paddingHorizontal: 0 },
   bar: {
     flexDirection: "row",
     alignItems: "center",
@@ -277,9 +403,17 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: theme.radius.xl,
     borderTopRightRadius: theme.radius.xl,
     padding: theme.spacing.lg,
-    paddingBottom: theme.spacing.xl,
-    gap: theme.spacing.md,
+    paddingBottom: theme.spacing.lg,
+    maxHeight: "88%",
     ...theme.shadow.modal,
+  },
+  sheetScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  sheetScrollContent: {
+    gap: theme.spacing.md,
+    paddingBottom: theme.spacing.xs,
   },
   sheetHandle: {
     alignSelf: "center",
@@ -319,7 +453,7 @@ const styles = StyleSheet.create({
     minHeight: 36,
   },
   supplierListViewport: {
-    height: SUPPLIER_LIST_VIEWPORT_HEIGHT,
+    height: LIST_VIEWPORT_HEIGHT,
     flexShrink: 0,
     borderWidth: 1,
     borderColor: theme.colors.outlineVariant,
@@ -401,7 +535,8 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: "row",
     gap: theme.spacing.sm,
-    marginTop: theme.spacing.sm,
+    marginTop: theme.spacing.md,
+    flexShrink: 0,
   },
   resetBtn: {
     flex: 1,

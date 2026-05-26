@@ -109,7 +109,7 @@ export const orderInputSchema = z
   .object({
     id: uuid.optional(),
     book_id: uuid.nullable().optional(),
-    supplier_id: uuid,
+    supplier_id: uuid.nullable().optional(),
     order_type: z.enum(ORDER_TYPES),
     quantity: z.number().int().positive(),
     customer_name: z.string().max(255).nullable().optional(),

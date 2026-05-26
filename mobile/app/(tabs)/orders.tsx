@@ -11,25 +11,35 @@ import {
   View,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import type { OrderListItem, OrderType } from "@avihay-books/shared";
+import type { OrderListItem, OrderType, OrdersBySupplierGroup } from "@avihay-books/shared";
 import { theme } from "../../src/theme";
 import { he } from "../../src/i18n/he";
 import {
   augmentInventoryGroupsWithCustomerWhatsappTotals,
   customerOrderBundleKey,
   inventorySupplierBookKey,
+  isOpenOrder,
   mergeOrderLinesForDisplay,
   orderDisplayLineKey,
+  supplierGroupKey,
   summedCustomerAndWhatsappQtyByBookSupplier,
   summedInventoryBaseQtyBySupplierBook,
+  useOrdersGroupedByCustomer,
   useOrdersGroupedBySupplier,
+  filterActiveDemandOrders,
+  isArchivedOrder,
+  useArchiveOrderLine,
   useOrdersList,
   useRemoveOrderLine,
+  useToggleInventorySupplierOrderedStatus,
   useUpdateInventoryOrderQuantity,
 } from "../../src/api/orders";
 import { ConfirmDialog } from "../../src/components/ConfirmDialog";
 import { CustomerDemandOrderModal } from "../../src/components/orders/CustomerDemandOrderModal";
+import { CustomerOrderCard, customerGroupListKey } from "../../src/components/orders/CustomerOrderCard";
+import { InventoryOrderCreateModal } from "../../src/components/orders/InventoryOrderCreateModal";
 import { InventoryOrderQtyModal } from "../../src/components/orders/InventoryOrderQtyModal";
 import { mockOrderList } from "../../src/mocks/shortageOrders";
 import { OrderTabs } from "../../src/components/orders/OrderTabs";
@@ -135,20 +145,67 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     textAlign: "center",
   },
+  historyHeader: {
+    marginBottom: theme.spacing.md,
+  },
+  historyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.spacing.sm,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.surface,
+  },
+  historyBtnPressed: { opacity: 0.88, backgroundColor: theme.colors.surfaceContainerLow },
+  historyBtnText: {
+    ...theme.typography.labelMd,
+    color: theme.colors.primary,
+  },
 });
 
-function OrdersTabHeaderTitle({ onCustomerOrder }: { onCustomerOrder: () => void }): JSX.Element {
+function OrdersTabHeaderTitle({
+  activeTab,
+  onPress,
+}: {
+  activeTab: OrderType;
+  onPress: () => void;
+}): JSX.Element {
   const { width } = useWindowDimensions();
+
+  if (activeTab === "whatsapp") {
+    return (
+      <View style={[styles.headerTitleBar, { width }]} pointerEvents="box-none">
+        <View style={styles.headerTitleRightSlot} pointerEvents="none">
+          <Text style={styles.headerTitleRightText} numberOfLines={1}>
+            {he.tabs.orders}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  const isInventory = activeTab === "inventory";
+  const buttonLabel = isInventory
+    ? he.orders.inventoryOrderHeaderButton
+    : he.orders.customerOrderHeaderButton;
+  const buttonA11y = isInventory
+    ? he.orders.inventoryOrderHeaderButtonA11y
+    : he.orders.customerOrderHeaderButtonA11y;
+
   return (
     <View style={[styles.headerTitleBar, { width }]} pointerEvents="box-none">
       <View style={styles.headerOrderBtnSlot} pointerEvents="box-none">
         <Pressable
-          onPress={onCustomerOrder}
+          onPress={onPress}
           style={({ pressed }) => [styles.headerOrderBtn, pressed && styles.headerOrderBtnPressed]}
           accessibilityRole="button"
-          accessibilityLabel={he.orders.customerOrderHeaderButtonA11y}
+          accessibilityLabel={buttonA11y}
         >
-          <Text style={styles.headerOrderBtnText}>{he.orders.customerOrderHeaderButton}</Text>
+          <Text style={styles.headerOrderBtnText}>{buttonLabel}</Text>
         </Pressable>
       </View>
       <View style={styles.headerTitleRightSlot} pointerEvents="none">
@@ -162,9 +219,15 @@ function OrdersTabHeaderTitle({ onCustomerOrder }: { onCustomerOrder: () => void
 
 export default function OrdersScreen(): JSX.Element {
   const navigation = useNavigation();
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<OrderType>("inventory");
   const [removeOrderTarget, setRemoveOrderTarget] = useState<OrderListItem | null>(null);
+  const [finishOrderTarget, setFinishOrderTarget] = useState<OrderListItem | null>(null);
+  const [toggleSupplierTarget, setToggleSupplierTarget] = useState<OrdersBySupplierGroup | null>(
+    null,
+  );
   const [customerOrderOpen, setCustomerOrderOpen] = useState(false);
+  const [inventoryOrderOpen, setInventoryOrderOpen] = useState(false);
   const [editDemandBundle, setEditDemandBundle] = useState<{
     orderType: "customer" | "whatsapp";
     items: OrderListItem[];
@@ -175,13 +238,26 @@ export default function OrdersScreen(): JSX.Element {
     navigation.setOptions({
       headerLeft: () => null,
       headerRight: () => null,
-      headerTitle: () => <OrdersTabHeaderTitle onCustomerOrder={() => setCustomerOrderOpen(true)} />,
+      headerTitle: () => (
+        <OrdersTabHeaderTitle
+          activeTab={activeTab}
+          onPress={() => {
+            if (activeTab === "inventory") {
+              setInventoryOrderOpen(true);
+            } else if (activeTab === "customer") {
+              setCustomerOrderOpen(true);
+            }
+          }}
+        />
+      ),
       /** מאפשר למדור הכותרת להימתח על כל רוחב המסך כדי ש־`left` על הכפתור יהיה מול השוליים */
       headerTitleContainerStyle: { position: "absolute", left: 0, right: 0 },
     });
-  }, [navigation]);
+  }, [navigation, activeTab]);
 
   const removeLineMutation = useRemoveOrderLine();
+  const archiveLineMutation = useArchiveOrderLine();
+  const toggleSupplierMutation = useToggleInventorySupplierOrderedStatus();
   const updateInventoryQtyMutation = useUpdateInventoryOrderQuantity();
 
   const inventoryQuery = useOrdersList("inventory");
@@ -214,37 +290,57 @@ export default function OrdersScreen(): JSX.Element {
     [rawInventoryItems],
   );
 
-  const activeItems =
-    activeTab === "inventory"
-      ? inventoryItems
-      : activeTab === "customer"
-        ? customerItems
-        : whatsappItems;
 
-  const baseGroups = useOrdersGroupedBySupplier(activeItems, activeTab);
+  const customerItemsActive = useMemo(
+    () => filterActiveDemandOrders(customerItems),
+    [customerItems],
+  );
+  const whatsappItemsActive = useMemo(
+    () => filterActiveDemandOrders(whatsappItems),
+    [whatsappItems],
+  );
+
+  const inventorySupplierGroups = useOrdersGroupedBySupplier(inventoryItems, "inventory");
+  const customerGroups = useOrdersGroupedByCustomer(customerItemsActive, "customer");
+  const whatsappGroups = useOrdersGroupedByCustomer(whatsappItemsActive, "whatsapp");
 
   const extraCustomerWhatsappByBookSupplier = useMemo(
-    () => summedCustomerAndWhatsappQtyByBookSupplier([...customerItems, ...whatsappItems]),
+    () =>
+      summedCustomerAndWhatsappQtyByBookSupplier(
+        [...customerItems, ...whatsappItems].filter(isOpenOrder),
+      ),
     [customerItems, whatsappItems],
   );
 
-  const groups = useMemo(() => {
-    if (activeTab !== "inventory") return baseGroups;
-    const customerWhatsappItems = [...customerItems, ...whatsappItems];
-    return augmentInventoryGroupsWithCustomerWhatsappTotals(
-      baseGroups,
+  const inventoryGroups = useMemo(() => {
+    const openDemandItems = [...customerItems, ...whatsappItems].filter(isOpenOrder);
+    const augmented = augmentInventoryGroupsWithCustomerWhatsappTotals(
+      inventorySupplierGroups,
       extraCustomerWhatsappByBookSupplier,
-      customerWhatsappItems,
+      openDemandItems,
     );
-  }, [activeTab, baseGroups, extraCustomerWhatsappByBookSupplier, customerItems, whatsappItems]);
+    return augmented.map((g) =>
+      g.supplier_id === null
+        ? { ...g, supplier_name: he.orders.unassignedSupplierGroup }
+        : g,
+    );
+  }, [
+    inventorySupplierGroups,
+    extraCustomerWhatsappByBookSupplier,
+    customerItems,
+    whatsappItems,
+  ]);
+
+  const demandGroups =
+    activeTab === "customer" ? customerGroups : whatsappGroups;
 
   const counts: Record<OrderType, number> = useMemo(
     () => ({
       inventory: mergeOrderLinesForDisplay(inventoryItems, "inventory").length,
-      customer: mergeOrderLinesForDisplay(customerItems, "customer").length,
-      whatsapp: mergeOrderLinesForDisplay(whatsappItems, "whatsapp").length,
+      customer: mergeOrderLinesForDisplay(customerItemsActive, "customer").length,
+      whatsapp: mergeOrderLinesForDisplay(whatsappItemsActive, "whatsapp").length,
     }),
-    [inventoryItems, customerItems, whatsappItems],
+    [inventoryItems, customerItemsActive, whatsappItemsActive],
   );
 
   const isLoading = activeQuery.isLoading;
@@ -255,7 +351,33 @@ export default function OrdersScreen(): JSX.Element {
       Alert.alert(he.orders.removeBlockedOffline);
       return;
     }
+    if (order.status === "completed" || order.status === "archived") return;
     setRemoveOrderTarget(order);
+  };
+
+  const askFinishOrderLine = (order: OrderListItem) => {
+    if (isOffline) {
+      Alert.alert(he.orders.removeBlockedOffline);
+      return;
+    }
+    if (order.status !== "completed") return;
+    setFinishOrderTarget(order);
+  };
+
+  const toggleSupplierOrderedStatus = async (group: OrdersBySupplierGroup) => {
+    if (isOffline) {
+      Alert.alert(he.orders.toggleOrderedBlockedOffline);
+      return;
+    }
+    if (toggleSupplierMutation.isPending) return;
+    setToggleSupplierTarget(group);
+    try {
+      await toggleSupplierMutation.mutateAsync(group);
+    } catch {
+      Alert.alert(he.generic.errorTitle, he.orders.toggleOrderedFailed);
+    } finally {
+      setToggleSupplierTarget(null);
+    }
   };
 
   const removingLineKey =
@@ -263,10 +385,31 @@ export default function OrdersScreen(): JSX.Element {
       ? orderDisplayLineKey(removeOrderTarget)
       : null;
 
+  const finishingLineKey =
+    archiveLineMutation.isPending && finishOrderTarget
+      ? orderDisplayLineKey(finishOrderTarget)
+      : null;
+
+  const confirmFinishOrderLine = async () => {
+    if (!finishOrderTarget || archiveLineMutation.isPending) return;
+    try {
+      await archiveLineMutation.mutateAsync(finishOrderTarget);
+      setFinishOrderTarget(null);
+    } catch {
+      Alert.alert(he.generic.errorTitle, he.orders.finishOrderFailed);
+    }
+  };
+
   const confirmRemoveOrderLine = async () => {
     if (!removeOrderTarget || removeLineMutation.isPending) return;
     try {
-      await removeLineMutation.mutateAsync(removeOrderTarget);
+      await removeLineMutation.mutateAsync({
+        order: removeOrderTarget,
+        tab: activeTab,
+        rawInventory: rawInventoryItems,
+        customerItems,
+        whatsappItems,
+      });
       setRemoveOrderTarget(null);
     } catch {
       Alert.alert(he.orders.confirmRemoveTitle, he.orders.removeFailed);
@@ -280,7 +423,9 @@ export default function OrdersScreen(): JSX.Element {
     }
     const key = customerOrderBundleKey(line);
     const source = orderType === "customer" ? customerQuery.data : whatsappQuery.data;
-    const bundle = (source ?? []).filter((o) => customerOrderBundleKey(o) === key);
+    const bundle = (source ?? []).filter(
+      (o) => customerOrderBundleKey(o) === key && !isArchivedOrder(o),
+    );
     if (bundle.length === 0) return;
     setEditDemandBundle({ orderType, items: bundle });
   };
@@ -330,6 +475,11 @@ export default function OrdersScreen(): JSX.Element {
       ? orderDisplayLineKey(editInventoryTarget)
       : null;
 
+  const togglingSupplierKey =
+    toggleSupplierMutation.isPending && toggleSupplierTarget
+      ? supplierGroupKey(toggleSupplierTarget.supplier_id)
+      : null;
+
   return (
     <View style={styles.screen}>
       {isOffline ? (
@@ -352,10 +502,10 @@ export default function OrdersScreen(): JSX.Element {
           <ActivityIndicator color={theme.colors.primary} />
           <Text style={styles.loadingText}>{he.orders.loading}</Text>
         </View>
-      ) : (
+      ) : activeTab === "inventory" ? (
         <FlatList
-          data={groups}
-          keyExtractor={(g) => g.supplier_id}
+          data={inventoryGroups}
+          keyExtractor={(g) => g.supplier_id ?? "__unassigned__"}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
           refreshControl={
@@ -378,13 +528,68 @@ export default function OrdersScreen(): JSX.Element {
           renderItem={({ item }) => (
             <SupplierOrderCard
               group={item}
-              orderType={activeTab}
+              orderType="inventory"
               onExportPdf={(g) => void exportSupplierOrdersToPdf(g)}
               onSendEmail={(g) => void emailSupplierOrders(g)}
               onRemoveOrderLine={askRemoveOrderLine}
               onEditOrderLine={isOffline ? undefined : openEditOrderLine}
+              onToggleSupplierOrdered={isOffline ? undefined : toggleSupplierOrderedStatus}
               removingOrderLineKey={removingLineKey}
               updatingOrderLineKey={updatingOrderLineKey}
+              togglingSupplierKey={togglingSupplierKey}
+            />
+          )}
+        />
+      ) : (
+        <FlatList
+          data={demandGroups}
+          keyExtractor={customerGroupListKey}
+          contentContainerStyle={styles.list}
+          ItemSeparatorComponent={() => <View style={styles.sep} />}
+          ListHeaderComponent={
+            activeTab === "customer" ? (
+              <View style={styles.historyHeader}>
+                <Pressable
+                  onPress={() => router.push("/customer-orders-history")}
+                  style={({ pressed }) => [
+                    styles.historyBtn,
+                    pressed && styles.historyBtnPressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={he.orders.customerHistoryButtonA11y}
+                >
+                  <Ionicons name="time-outline" size={18} color={theme.colors.primary} />
+                  <Text style={styles.historyBtnText}>{he.orders.customerHistoryButton}</Text>
+                </Pressable>
+              </View>
+            ) : null
+          }
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => {
+                void inventoryQuery.refetch();
+                void customerQuery.refetch();
+                void whatsappQuery.refetch();
+              }}
+              tintColor={theme.colors.primary}
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <Ionicons name="cart-outline" size={36} color={theme.colors.primary} />
+              <Text style={styles.emptyText}>{he.orders.emptyTab}</Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <CustomerOrderCard
+              group={item}
+              showOrderedIndicator={activeTab === "customer"}
+              onRemoveOrderLine={isOffline ? undefined : askRemoveOrderLine}
+              onFinishOrderLine={isOffline ? undefined : askFinishOrderLine}
+              onEditOrderLine={isOffline ? undefined : openEditOrderLine}
+              removingOrderLineKey={removingLineKey}
+              finishingOrderLineKey={finishingLineKey}
             />
           )}
         />
@@ -403,11 +608,34 @@ export default function OrdersScreen(): JSX.Element {
         onCancel={() => setRemoveOrderTarget(null)}
         onConfirm={() => void confirmRemoveOrderLine()}
       />
+      <ConfirmDialog
+        visible={finishOrderTarget !== null}
+        title={he.orders.confirmFinishOrderTitle}
+        message={
+          finishOrderTarget
+            ? he.orders.confirmFinishOrderMessage.replace(
+                "{{title}}",
+                finishOrderTarget.book_title,
+              )
+            : ""
+        }
+        confirmLabel={he.orders.confirmFinishOrderConfirm}
+        cancelLabel={he.generic.cancel}
+        onCancel={() => setFinishOrderTarget(null)}
+        onConfirm={() => void confirmFinishOrderLine()}
+      />
       <CustomerDemandOrderModal
         visible={customerOrderOpen}
         onClose={() => setCustomerOrderOpen(false)}
         isOffline={isOffline}
         onCreated={() => setActiveTab("customer")}
+      />
+      <InventoryOrderCreateModal
+        visible={inventoryOrderOpen}
+        onClose={() => setInventoryOrderOpen(false)}
+        isOffline={isOffline}
+        rawInventoryItems={rawInventoryItems}
+        onCreated={() => setActiveTab("inventory")}
       />
       <CustomerDemandOrderModal
         visible={editDemandBundle !== null}

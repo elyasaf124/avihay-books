@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import axios from "axios";
 import {
   ActivityIndicator,
   Alert,
@@ -70,6 +71,16 @@ function shortageItemLabel(item: ShortageListItem): string {
     });
   }
   return interpolate(he.shortage.itemLabel, { title: item.book_title });
+}
+
+function isNoStockError(err: unknown): boolean {
+  return (
+    axios.isAxiosError(err) &&
+    typeof err.response?.data === "object" &&
+    err.response.data !== null &&
+    "error" in err.response.data &&
+    (err.response.data as { error: string }).error === "no_stock"
+  );
 }
 
 export default function ShortageScreen(): JSX.Element {
@@ -232,19 +243,36 @@ export default function ShortageScreen(): JSX.Element {
 
   const confirmResolveShortage = useCallback(async () => {
     if (!resolveTarget || resolveMutation.isPending) return;
+    if (resolveTarget.book_stock_quantity <= 0) {
+      Alert.alert(he.shortage.confirmResolveTitle, he.shortage.resolveNoStock);
+      setResolveTarget(null);
+      return;
+    }
     try {
       await resolveMutation.mutateAsync({
         shortageId: resolveTarget.id,
         status: "completed",
       });
       setResolveTarget(null);
-    } catch {
+    } catch (err) {
       Alert.alert(
         he.shortage.confirmResolveTitle,
-        isOffline ? he.shortage.resolveOffline : he.shortage.resolveFailed,
+        isNoStockError(err)
+          ? he.shortage.resolveNoStock
+          : isOffline
+            ? he.shortage.resolveOffline
+            : he.shortage.resolveFailed,
       );
     }
   }, [resolveTarget, resolveMutation, isOffline]);
+
+  const requestResolveShortage = useCallback((picked: ShortageListItem) => {
+    if (picked.book_stock_quantity <= 0) {
+      Alert.alert(he.shortage.confirmResolveTitle, he.shortage.resolveNoStock);
+      return;
+    }
+    setResolveTarget(picked);
+  }, []);
 
   const requestRemoveShortage = useCallback(
     (_picked: ShortageListItem) => {
@@ -455,7 +483,7 @@ export default function ShortageScreen(): JSX.Element {
                   deleteShortageMutation.isPending && removeShortageTarget?.id === item.id
                 }
                 onMoveToOrder={(picked) => setMoveTarget(picked)}
-                onComplete={(picked) => setResolveTarget(picked)}
+                onComplete={requestResolveShortage}
                 onRemove={requestRemoveShortage}
               />
             )}

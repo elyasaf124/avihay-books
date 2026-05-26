@@ -1,9 +1,11 @@
 import { HttpError } from "../middleware/errorHandler.js";
 import { pool } from "../db/pool.js";
 import { findBookById } from "../repos/books.repo.js";
+import { notifyLowStockAfterBookChange } from "./notifications.js";
 import { appendToPendingInventoryOrder } from "../repos/orders.repo.js";
 import {
   findShortageById,
+  updateShortageStatus,
   updateShortagesWhereBookAndStatus,
 } from "../repos/shortageList.repo.js";
 import type { OrderRow, OrderType, ShortageItem } from "@avihay-books/shared";
@@ -53,6 +55,20 @@ export async function moveShortageToOrder(input: MoveToOrderInput): Promise<Move
   const updated =
     updatedRows.find((r) => r.id === shortage.id) ?? updatedRows[0]!;
   return { shortage: updated, order };
+}
+
+/** סימון חוסר כהושלם — רק כשיש מלאי כללי לספר (מילוי מהמחסן). */
+export async function completeShortage(shortageId: string): Promise<ShortageItem> {
+  const shortage = await findShortageById(shortageId);
+  if (!shortage) throw new HttpError(404, "shortage_not_found");
+
+  const book = await findBookById(shortage.book_id);
+  if (!book) throw new HttpError(404, "book_not_found");
+  if (book.stock_quantity <= 0) throw new HttpError(400, "no_stock");
+
+  const row = await updateShortageStatus(shortageId, "completed");
+  if (!row) throw new HttpError(404, "shortage_not_found");
+  return row;
 }
 
 export interface CreateShortageAfterShelfSaleInput {
@@ -116,6 +132,15 @@ export async function createShortageAfterShelfSale(
     if (!shortage) throw new HttpError(500, "shortage_insert_failed");
 
     await client.query("COMMIT");
+
+    const updatedBook = await findBookById(input.bookId);
+    if (updatedBook) {
+      await notifyLowStockAfterBookChange(
+        { ...updatedBook, stock_quantity: updatedBook.stock_quantity + sold },
+        updatedBook,
+      );
+    }
+
     return shortage;
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {

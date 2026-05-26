@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type {
   Book,
   BookLocation,
@@ -9,6 +9,7 @@ import type {
 import axios from "axios";
 import { findStoreMapCellById, resolvePositionForPlacement } from "../utils/storeMapCells";
 import { api } from "./client";
+import { NOTIFICATIONS_LIST_KEY, NOTIFICATIONS_UNREAD_KEY } from "./notifications";
 import { STORE_MAP_KEY } from "./storeMap";
 
 const BOOK_LOCATION_SLOT_OCCUPIED = "book_location_slot_occupied";
@@ -26,6 +27,11 @@ function isSlotOccupied409(data: unknown): data is {
 }
 
 const inventoryBooksPrefix = ["books", "inventory"] as const;
+
+function invalidateNotifications(client: QueryClient): void {
+  void client.refetchQueries({ queryKey: NOTIFICATIONS_LIST_KEY });
+  void client.refetchQueries({ queryKey: NOTIFICATIONS_UNREAD_KEY });
+}
 
 export function useInventoryBooksBySupplier(supplierId: string | null) {
   return useQuery<BookWithLocations[]>({
@@ -145,8 +151,10 @@ export function useAdjustInventoryStock() {
       client.setQueryData<BookWithLocations[]>(ctx.listKey, (prev) =>
         mergeServerStockIntoList(prev, vars.bookId, result.book, result.location),
       );
+      invalidateNotifications(client);
       void client.invalidateQueries({ queryKey: STORE_MAP_KEY });
       void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
+      void client.invalidateQueries({ queryKey: ["orders"] });
     },
   });
 }
@@ -165,6 +173,7 @@ export function usePatchBook() {
     },
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: inventoryBooksPrefix });
+      invalidateNotifications(client);
       void client.invalidateQueries({ queryKey: STORE_MAP_KEY });
       void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
     },
@@ -177,6 +186,7 @@ export interface CreateBookPayload {
   supplier_id: string;
   price: number;
   stock_quantity: number;
+  reorder_threshold: number;
   topic: string;
   is_new: boolean;
   /** הערות «איפה שמתי בשטח» — אורך מומלץ לפי כמות עותקים. */
@@ -189,7 +199,6 @@ export function useCreateBook() {
     mutationFn: async (body) => {
       const { data } = await api.post<Book>("/books", {
         ...body,
-        reorder_threshold: 0,
         is_active: true,
         copy_placement_notes: body.copy_placement_notes ?? [],
       });
@@ -197,6 +206,7 @@ export function useCreateBook() {
     },
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: inventoryBooksPrefix });
+      invalidateNotifications(client);
       void client.invalidateQueries({ queryKey: STORE_MAP_KEY });
       void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
     },

@@ -6,18 +6,20 @@ import { he } from "../i18n/he";
 interface Props {
   value: string;
   onChange: (v: string) => void;
+  placeholder?: string;
 }
 
-export function SearchBar({ value, onChange }: Props): JSX.Element {
+export function SearchBar({ value, onChange, placeholder = he.home.search }: Props): JSX.Element {
   return (
     <View style={styles.wrap}>
       <TextInput
         style={styles.input}
         value={value}
         onChangeText={onChange}
-        placeholder={he.home.search}
+        placeholder={placeholder}
         placeholderTextColor={theme.colors.onSurfaceVariant}
         textAlign="left"
+        autoCorrect={false}
       />
       <Ionicons name="search" size={20} color={theme.colors.onSurfaceVariant} />
     </View>
