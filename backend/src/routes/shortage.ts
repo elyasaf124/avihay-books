@@ -2,12 +2,14 @@ import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import {
+  deleteActiveShortageByLocationId,
   deleteShortageById,
   findAllShortagesExpanded,
   updateShortageStatus,
   upsertShortage,
 } from "../repos/shortageList.repo.js";
 import {
+  completeShortage,
   createShortageAfterShelfSale,
   moveShortageToOrder,
 } from "../services/shortage.js";
@@ -40,6 +42,18 @@ shortageRouter.post(
     res.status(201).json(row);
   }),
 );
+const locationIdParamSchema = z.object({ locationId: z.string().uuid() });
+
+shortageRouter.delete(
+  "/by-location/:locationId",
+  asyncHandler(async (req, res) => {
+    const { locationId } = locationIdParamSchema.parse(req.params);
+    const ok = await deleteActiveShortageByLocationId(locationId);
+    if (!ok) throw new HttpError(404, "shortage_not_found");
+    res.status(204).send();
+  }),
+);
+
 shortageRouter.delete(
   "/:id",
   asyncHandler(async (req, res) => {
@@ -62,6 +76,10 @@ shortageRouter.patch(
   "/:id/status",
   asyncHandler(async (req, res) => {
     const { status } = statusPatchSchema.parse(req.body);
+    if (status === "completed") {
+      res.json(await completeShortage(req.params.id!));
+      return;
+    }
     const row = await updateShortageStatus(req.params.id!, status);
     if (!row) throw new HttpError(404, "shortage_not_found");
     res.json(row);

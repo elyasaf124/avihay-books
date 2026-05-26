@@ -74,7 +74,7 @@ interface MockUnitSpec {
   unitIdx: number;
   shelves?: MockShelfSpec[];
   /** עבור ה־`אי`: שתי קבוצות מדפים, אחת לכל צד. */
-  sides?: { label: "צד א׳" | "צד ב׳"; shelves: MockShelfSpec[] }[];
+  sides?: { label: "צד ימין" | "צד שמאל"; shelves: MockShelfSpec[] }[];
 }
 
 /** קטלוג ספרים מעובש לצורך חיפוש + מיקום ב־cells. */
@@ -239,7 +239,7 @@ const unitSpecs: MockUnitSpec[] = [
     unitIdx: 4,
     sides: [
       {
-        label: "צד א׳",
+        label: "צד ימין",
         shelves: [
           {
             label: "ספרים חדשים",
@@ -251,7 +251,7 @@ const unitSpecs: MockUnitSpec[] = [
         ],
       },
       {
-        label: "צד ב׳",
+        label: "צד שמאל",
         shelves: [
           {
             label: "מועדפים",
@@ -268,10 +268,10 @@ const unitSpecs: MockUnitSpec[] = [
     unitIdx: 5,
     shelves: [
       {
-        label: "משטח סטנד",
+        label: "משטח סטים",
         cells: [
-          { name: "סטנד 1", capacity: 6, books: [catalog.b3!, catalog.b6!] },
-          { name: "סטנד 2", capacity: 6, books: [catalog.b7!, catalog.b8!] },
+          { name: "סט 1", capacity: 6, books: [catalog.b3!, catalog.b6!] },
+          { name: "סט 2", capacity: 6, books: [catalog.b7!, catalog.b8!] },
         ],
       },
     ],
@@ -285,6 +285,31 @@ const unitSpecs: MockUnitSpec[] = [
           { name: "תצוגה 1", capacity: 6, books: [catalog.b2!] },
           { name: "תצוגה 2", capacity: 6, books: [catalog.b9!] },
         ],
+      },
+    ],
+  },
+  {
+    unitIdx: 7,
+    shelves: [
+      {
+        label: "מדף 1",
+        cells: [{ name: "מדף 1", capacity: 12, books: [catalog.b4!, catalog.b10!] }],
+      },
+      {
+        label: "מדף 2",
+        cells: [{ name: "מדף 2", capacity: 12, books: [catalog.b6!] }],
+      },
+      {
+        label: "מדף 3",
+        cells: [{ name: "מדף 3", capacity: 12, books: [catalog.b11!, catalog.b1!] }],
+      },
+      {
+        label: "מדף 4",
+        cells: [{ name: "מדף 4", capacity: 12, books: [catalog.b8!] }],
+      },
+      {
+        label: "מדף 5",
+        cells: [{ name: "מדף 5", capacity: 12, books: [catalog.b5!, catalog.b7!] }],
       },
     ],
   },
@@ -320,6 +345,7 @@ function buildBook(spec: MockBookSpec, position: number): StoreMapBook {
     quantity_in_cell: spec.qtyInCell ?? 1,
     is_new: spec.isNew ?? false,
     price: spec.price,
+    topic: spec.topic,
     is_pending_shortage: false,
   };
 }
@@ -341,32 +367,28 @@ function buildShelf(s: MockShelfSpec, shelfNumber: number): StoreMapShelf {
 }
 
 function buildUnit(spec: MockUnitSpec): StoreMapUnit {
+  const nameByIdx: Record<number, string> = {
+    1: "ארון חזית",
+    2: "ארון שמאל",
+    3: "ארון ימין",
+    4: "האי",
+    5: "סטים",
+    6: "ארון תצוגה",
+    7: "ספרי כיס",
+  };
+  const positionByIdx: Record<number, StoreMapUnit["store_position"]> = {
+    1: "front",
+    2: "left",
+    3: "right",
+    4: "island",
+    5: "stacks",
+    6: "display",
+    7: "pocket",
+  };
   const base = {
     id: uid(spec.unitIdx),
-    name:
-      spec.unitIdx === 1
-        ? "ארון חזית"
-        : spec.unitIdx === 2
-          ? "ארון שמאל"
-          : spec.unitIdx === 3
-            ? "ארון ימין"
-            : spec.unitIdx === 4
-              ? "האי"
-              : spec.unitIdx === 5
-                ? "סטנד"
-                : "ארון תצוגה",
-    store_position:
-      spec.unitIdx === 1
-        ? ("front" as const)
-        : spec.unitIdx === 2
-          ? ("left" as const)
-          : spec.unitIdx === 3
-            ? ("right" as const)
-            : spec.unitIdx === 4
-              ? ("island" as const)
-              : spec.unitIdx === 5
-                ? ("stacks" as const)
-                : ("display" as const),
+    name: nameByIdx[spec.unitIdx] ?? `יחידה ${spec.unitIdx}`,
+    store_position: positionByIdx[spec.unitIdx] ?? "front",
     has_sides: spec.unitIdx === 4,
     is_display_unit: spec.unitIdx === 5 || spec.unitIdx === 6,
     display_order: spec.unitIdx,

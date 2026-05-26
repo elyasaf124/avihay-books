@@ -6,11 +6,15 @@ import type { Book, OrderListItem, OrderType } from "@avihay-books/shared";
 import { StoreMap } from "../../src/components/StoreMap";
 import { SearchBar } from "../../src/components/SearchBar";
 import { BookDetailModal } from "../../src/components/BookDetailModal";
+import { UnitFilterBar } from "../../src/components/unit/UnitFilterBar";
 import { useSearchBooks, useStoreMap } from "../../src/api/storeMap";
 import { classifyStoreMapFailure } from "../../src/api/apiDiagnostics";
 import { apiPublicBaseHost } from "../../src/api/client";
-import { mergeOrderLinesForDisplay, useOrdersList } from "../../src/api/orders";
+import { isOpenOrder, mergeOrderLinesForDisplay, useOrdersList } from "../../src/api/orders";
 import { useShortageList } from "../../src/api/shortage";
+import { useSuppliersWithFallback } from "../../src/api/unit";
+import { useStoreMapFilters } from "../../src/context/StoreMapFilterContext";
+import { sumFilteredCopiesFromMap } from "../../src/utils/unitFilters";
 import {
   deriveHomeFloorStock,
   mockCatalogBooks,
@@ -50,7 +54,7 @@ function aggregateOpenOrdersFromMerged(
   for (const [t, rows] of groups) {
     const merged = mergeOrderLinesForDisplay(rows, t);
     for (const o of merged) {
-      if (o.status === "completed") continue;
+      if (!isOpenOrder(o)) continue;
       if (o.status === "pending") pending += 1;
       else if (o.status === "sent") sent += 1;
     }
@@ -70,6 +74,8 @@ export default function HomeScreen(): JSX.Element {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
+  const { filters, setFilters } = useStoreMapFilters();
+  const suppliers = useSuppliersWithFallback();
 
   const storeMapQuery = useStoreMap();
   const shortageQuery = useShortageList();
@@ -104,6 +110,12 @@ export default function HomeScreen(): JSX.Element {
   const storeMapData =
     storeMapQuery.data != null && !storeMapQuery.isError ? storeMapQuery.data : mockStoreMap;
   const floorStock = deriveHomeFloorStock(storeMapQuery.data);
+  const supplierFilterActive = filters.supplierIds.length > 0;
+  const filteredFloorCopies = useMemo(() => {
+    if (!supplierFilterActive) return null;
+    const map = storeMapQuery.data != null && !storeMapQuery.isError ? storeMapQuery.data : mockStoreMap;
+    return sumFilteredCopiesFromMap(map, filters);
+  }, [supplierFilterActive, storeMapQuery.data, storeMapQuery.isError, filters]);
 
   const ordersApisAllOffline =
     inventoryOrdersQuery.isError && customerOrdersQuery.isError && whatsappOrdersQuery.isError;
@@ -153,15 +165,27 @@ export default function HomeScreen(): JSX.Element {
     const storeMapPendingFirstFetch =
       storeMapQuery.isLoading && !storeMapQuery.isFetched && storeMapQuery.data == null;
 
-    return {
-      totalStock: storeMapPendingFirstFetch
+    const totalStockFormatted = supplierFilterActive
+      ? storeMapPendingFirstFetch
         ? he.home.statsValuePlaceholder
-        : floorStock.totalStockFormatted,
-      stockDeltaLabel: storeMapPendingFirstFetch
+        : (filteredFloorCopies ?? 0).toLocaleString("he-IL")
+      : storeMapPendingFirstFetch
+        ? he.home.statsValuePlaceholder
+        : floorStock.totalStockFormatted;
+
+    const stockDeltaLabel = supplierFilterActive
+      ? storeMapPendingFirstFetch
+        ? he.home.loading
+        : he.home.statsFilteredBySupplierSubtitle
+      : storeMapPendingFirstFetch
         ? he.home.loading
         : floorStock.usedRealFloorTotal
           ? he.home.statsFloorStockSubtitle
-          : he.home.statsDemoDataSubtitle,
+          : he.home.statsDemoDataSubtitle;
+
+    return {
+      totalStock: totalStockFormatted,
+      stockDeltaLabel,
       openOrders: openOrdersFormatted,
       ordersSubLabel: ordersSubLabelEffective,
       shortages: shortageCountFormatted,
@@ -169,11 +193,13 @@ export default function HomeScreen(): JSX.Element {
     };
   }, [
     customerOrdersRows,
+    filteredFloorCopies,
     floorStock.totalStockFormatted,
     floorStock.usedRealFloorTotal,
     inventoryOrdersRows,
     shortageQuery.data?.length,
     ordersMetricsFetched,
+    supplierFilterActive,
     whatsappOrdersRows,
     storeMapQuery.isFetched,
     storeMapQuery.isLoading,
@@ -235,6 +261,15 @@ export default function HomeScreen(): JSX.Element {
 
       <SearchBar value={query} onChange={setQuery} />
 
+      {suppliers.length > 0 ? (
+        <UnitFilterBar
+          filters={filters}
+          suppliers={suppliers}
+          onChange={setFilters}
+          suppliersOnly
+        />
+      ) : null}
+
       {trimmed.length > 0 && (
         <View style={styles.searchResults}>
           {searchLoading ? (
@@ -277,7 +312,11 @@ export default function HomeScreen(): JSX.Element {
           </View>
         ) : (
           <>
-            <StoreMap data={storeMapData} onUnitPress={(unit) => router.push(`/unit/${unit.id}`)} />
+            <StoreMap
+              data={storeMapData}
+              filters={filters}
+              onUnitPress={(unit) => router.push(`/unit/${unit.id}`)}
+            />
             <Text style={styles.hint}>{he.home.tapToOpen}</Text>
           </>
         )}

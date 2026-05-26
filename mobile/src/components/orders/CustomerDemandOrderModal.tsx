@@ -31,7 +31,7 @@ type BookSourceMode = "catalog" | "manual";
 interface DraftBookLine {
   localId: string;
   sourceMode: BookSourceMode;
-  supplierId: string;
+  supplierId: string | null;
   selectedBook: Book | null;
   manualTitle: string;
   manualAuthor: string;
@@ -44,12 +44,15 @@ function nextLocalId(): string {
   return `draft-${draftLineCounter}-${Date.now()}`;
 }
 
+const DRAFT_QTY_MIN = 1;
+const DRAFT_QTY_MAX = 999;
+
 function stubBookFromOrderItem(item: OrderListItem): Book {
   return {
     id: item.book_id!,
     title: item.book_title,
     author: item.book_author,
-    supplier_id: item.supplier_id,
+    supplier_id: item.catalog_supplier_id ?? item.supplier_id ?? "",
     price: item.book_price,
     stock_quantity: 0,
     reorder_threshold: 0,
@@ -87,7 +90,7 @@ function bundleToBookLines(bundle: OrderListItem[]): DraftBookLine[] {
 
 function draftToLineInput(line: DraftBookLine): CustomerOrderLineInput | null {
   const qty = parseInt(line.quantity.replace(/[^\d]/g, ""), 10);
-  if (!Number.isFinite(qty) || qty < 1 || !line.supplierId) return null;
+  if (!Number.isFinite(qty) || qty < 1) return null;
   if (line.sourceMode === "catalog" && line.selectedBook) {
     return {
       supplier_id: line.supplierId,
@@ -110,7 +113,6 @@ function draftToLineInput(line: DraftBookLine): CustomerOrderLineInput | null {
 }
 
 function draftLineKey(line: DraftBookLine): string | null {
-  if (!line.supplierId) return null;
   if (line.sourceMode === "catalog" && line.selectedBook) {
     return customerOrderLineKey({
       supplier_id: line.supplierId,
@@ -138,6 +140,16 @@ function lineDisplayAuthor(line: DraftBookLine): string {
   return line.manualAuthor.trim();
 }
 
+function catalogSupplierMeta(
+  book: Book | null,
+  suppliers: { id: string; name: string; color_hex: string }[],
+): { name: string; color: string } | null {
+  if (!book) return null;
+  const supplier = suppliers.find((s) => s.id === book.supplier_id);
+  if (!supplier) return null;
+  return { name: supplier.name, color: supplier.color_hex };
+}
+
 interface EditableBookLineCardProps {
   line: DraftBookLine;
   supplierName: string;
@@ -155,6 +167,7 @@ interface EditableBookLineCardProps {
   onCloseSearch: () => void;
   onSearchQueryChange: (q: string) => void;
   onSelectBook: (book: Book) => void;
+  suppliers: { id: string; name: string; color_hex: string }[];
 }
 
 function EditableBookLineCard({
@@ -173,6 +186,7 @@ function EditableBookLineCard({
   onCloseSearch,
   onSearchQueryChange,
   onSelectBook,
+  suppliers,
   lockQuantity = false,
 }: EditableBookLineCardProps): JSX.Element {
   const isCatalog = line.sourceMode === "catalog";
@@ -233,7 +247,7 @@ function EditableBookLineCard({
         <View style={styles.editableRowValueWrap}>
           <View style={[styles.supplierSwatch, { backgroundColor: supplierColor }]} />
           <Text style={styles.editableRowValue} numberOfLines={1}>
-            {supplierName || he.orders.customerOrderPickSupplier}
+            {supplierName || he.orders.customerOrderNoSupplier}
           </Text>
           <Ionicons name="chevron-down-outline" size={18} color={theme.colors.primary} />
         </View>
@@ -308,12 +322,36 @@ function EditableBookLineCard({
             </Pressable>
           )}
           {line.selectedBook ? (
-            <View style={styles.editableRow}>
-              <Text style={styles.editableRowLabel}>{he.addRemove.fieldAuthor}</Text>
-              <Text style={styles.editableRowValueStatic} numberOfLines={1}>
-                {line.selectedBook.author}
-              </Text>
-            </View>
+            <>
+              <View style={styles.editableRow}>
+                <Text style={styles.editableRowLabel}>{he.addRemove.fieldAuthor}</Text>
+                <Text style={styles.editableRowValueStatic} numberOfLines={1}>
+                  {line.selectedBook.author}
+                </Text>
+              </View>
+              {(() => {
+                const catalogSupplier = catalogSupplierMeta(line.selectedBook, suppliers);
+                return catalogSupplier ? (
+                  <View style={styles.editableRow}>
+                    <Text style={styles.editableRowLabel}>{he.orders.customerOrderSupplier}</Text>
+                    <View style={styles.catalogSupplierRow}>
+                      <View
+                        style={[
+                          styles.supplierSwatch,
+                          { backgroundColor: catalogSupplier.color },
+                        ]}
+                      />
+                      <Text style={styles.editableRowValueStatic} numberOfLines={1}>
+                        {he.orders.customerOrderCatalogSupplier.replace(
+                          "{{name}}",
+                          catalogSupplier.name,
+                        )}
+                      </Text>
+                    </View>
+                  </View>
+                ) : null;
+              })()}
+            </>
           ) : null}
         </>
       ) : (
@@ -446,7 +484,7 @@ export function CustomerDemandOrderModal({
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const [manualTitle, setManualTitle] = useState("");
   const [manualAuthor, setManualAuthor] = useState("");
-  const [draftQuantity, setDraftQuantity] = useState("1");
+  const [draftQuantity, setDraftQuantity] = useState(DRAFT_QTY_MIN);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [supplierPickerLineId, setSupplierPickerLineId] = useState<string | null>(null);
@@ -483,7 +521,7 @@ export function CustomerDemandOrderModal({
     setSelectedBook(null);
     setManualTitle("");
     setManualAuthor("");
-    setDraftQuantity("1");
+    setDraftQuantity(DRAFT_QTY_MIN);
   }, []);
 
   const resetAll = useCallback(() => {
@@ -537,15 +575,13 @@ export function CustomerDemandOrderModal({
   }, [customerName, customerPhone]);
 
   const validateDraft = useCallback((): string | null => {
-    if (!supplierId) return he.orders.customerOrderValidationSupplier;
     if (sourceMode === "catalog" && !selectedBook) return he.orders.customerOrderValidationBook;
     if (sourceMode === "manual" && manualTitle.trim().length < 1) {
       return he.orders.customerOrderValidationManualTitle;
     }
-    const q = parseInt(draftQuantity.replace(/[^\d]/g, ""), 10);
-    if (!Number.isFinite(q) || q < 1) return he.orders.customerOrderValidationQty;
+    if (draftQuantity < DRAFT_QTY_MIN) return he.orders.customerOrderValidationQty;
     return null;
-  }, [supplierId, sourceMode, selectedBook, manualTitle, draftQuantity]);
+  }, [sourceMode, selectedBook, manualTitle, draftQuantity]);
 
   const addDraftToList = useCallback(() => {
     const err = validateDraft();
@@ -556,11 +592,11 @@ export function CustomerDemandOrderModal({
     const draft: DraftBookLine = {
       localId: nextLocalId(),
       sourceMode,
-      supplierId: supplierId!,
+      supplierId,
       selectedBook: sourceMode === "catalog" ? selectedBook : null,
       manualTitle,
       manualAuthor,
-      quantity: draftQuantity.replace(/[^\d]/g, "") || "1",
+      quantity: String(draftQuantity),
     };
     const key = draftLineKey(draft);
     if (key && bookLines.some((l) => draftLineKey(l) === key)) {
@@ -597,14 +633,14 @@ export function CustomerDemandOrderModal({
       {
         localId: nextLocalId(),
         sourceMode: "catalog" as const,
-        supplierId: suppliers[0]?.id ?? "",
+        supplierId: null,
         selectedBook: null,
         manualTitle: "",
         manualAuthor: "",
         quantity: "1",
       },
     ]);
-  }, [suppliers]);
+  }, []);
 
   const supplierPickerVisible = supplierPickerOpen || supplierPickerLineId != null;
   const activePickerSupplierId = supplierPickerLineId
@@ -628,10 +664,6 @@ export function CustomerDemandOrderModal({
     const lineInputs: CustomerOrderLineInput[] = [];
     const seenKeys = new Set<string>();
     for (const line of bookLines) {
-      if (!line.supplierId) {
-        Alert.alert(he.generic.errorTitle, he.orders.customerOrderValidationSupplier);
-        return;
-      }
       const input = draftToLineInput(line);
       if (!input) {
         Alert.alert(he.generic.errorTitle, he.orders.customerOrderValidationBook);
@@ -788,10 +820,6 @@ export function CustomerDemandOrderModal({
                       }}
                       onOpenSearch={() => {
                         setSupplierPickerLineId(null);
-                        if (!line.supplierId) {
-                          setSupplierPickerLineId(line.localId);
-                          return;
-                        }
                         setBookSearchLineId(line.localId);
                         setLineBookQuery("");
                       }}
@@ -808,6 +836,7 @@ export function CustomerDemandOrderModal({
                         setBookSearchLineId(null);
                         setLineBookQuery("");
                       }}
+                      suppliers={suppliers}
                     />
                   );
                 })}
@@ -882,7 +911,9 @@ export function CustomerDemandOrderModal({
                         </Text>
                         <Text style={styles.bookLineMeta} numberOfLines={1}>
                           {he.orders.customerOrderSupplier}:{" "}
-                          {supplierNameById.get(line.supplierId) ?? line.supplierId}
+                          {line.supplierId
+                            ? (supplierNameById.get(line.supplierId) ?? line.supplierId)
+                            : he.orders.customerOrderNoSupplier}
                         </Text>
                         <Text style={styles.bookLineQty}>
                           {he.orders.quantity}: ×{line.quantity.replace(/[^\d]/g, "") || "1"}
@@ -962,7 +993,7 @@ export function CustomerDemandOrderModal({
                 ]}
                 numberOfLines={1}
               >
-                {selectedSupplierName || he.orders.customerOrderPickSupplier}
+                {selectedSupplierName || he.orders.customerOrderNoSupplier}
               </Text>
               <Ionicons name="chevron-down-outline" size={20} color={theme.colors.primary} />
             </Pressable>
@@ -979,6 +1010,25 @@ export function CustomerDemandOrderModal({
                     <Text style={styles.selectedMeta}>
                       {he.addRemove.fieldAuthor}: {selectedBook.author}
                     </Text>
+                    {(() => {
+                      const catalogSupplier = catalogSupplierMeta(selectedBook, suppliers);
+                      return catalogSupplier ? (
+                        <View style={styles.catalogSupplierRow}>
+                          <View
+                            style={[
+                              styles.supplierSwatch,
+                              { backgroundColor: catalogSupplier.color },
+                            ]}
+                          />
+                          <Text style={styles.selectedMeta}>
+                            {he.orders.customerOrderCatalogSupplier.replace(
+                              "{{name}}",
+                              catalogSupplier.name,
+                            )}
+                          </Text>
+                        </View>
+                      ) : null;
+                    })()}
                     <Text style={styles.selectedMeta}>
                       {he.orders.customerOrderListPrice}: {he.orders.pricePrefix}
                       {selectedBook.price}
@@ -1084,16 +1134,32 @@ export function CustomerDemandOrderModal({
               </>
             )}
 
-            <Text style={styles.label}>{he.orders.quantity}</Text>
-            <TextInput
-              style={styles.field}
-              value={draftQuantity}
-              onChangeText={setDraftQuantity}
-              keyboardType="number-pad"
-              placeholder="1"
-              placeholderTextColor={theme.colors.onSurfaceVariant}
-              textAlign="left"
-            />
+            <View style={styles.stepper}>
+              <Text style={styles.label}>{he.orders.quantity}</Text>
+              <View style={styles.stepperRow}>
+                <Pressable
+                  onPress={() =>
+                    setDraftQuantity((q) => Math.max(DRAFT_QTY_MIN, q - 1))
+                  }
+                  style={({ pressed }) => [styles.stepBtn, pressed && styles.stepBtnPressed]}
+                  accessibilityRole="button"
+                  accessibilityLabel={he.orders.quantity}
+                >
+                  <Ionicons name="remove" size={20} color={theme.colors.onPrimary} />
+                </Pressable>
+                <Text style={styles.stepValue}>{draftQuantity}</Text>
+                <Pressable
+                  onPress={() =>
+                    setDraftQuantity((q) => Math.min(DRAFT_QTY_MAX, q + 1))
+                  }
+                  style={({ pressed }) => [styles.stepBtn, pressed && styles.stepBtnPressed]}
+                  accessibilityRole="button"
+                  accessibilityLabel={he.orders.quantity}
+                >
+                  <Ionicons name="add" size={20} color={theme.colors.onPrimary} />
+                </Pressable>
+              </View>
+            </View>
 
             <Pressable
               onPress={addDraftToList}
@@ -1149,6 +1215,31 @@ export function CustomerDemandOrderModal({
           <Pressable style={styles.pickerCard} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.pickerTitle}>{he.orders.customerOrderSupplierPickerTitle}</Text>
             <ScrollView style={styles.pickerScroll} keyboardShouldPersistTaps="handled">
+              <Pressable
+                onPress={() => {
+                  if (supplierPickerLineId) {
+                    updateBookLine(supplierPickerLineId, { supplierId: null });
+                    setSupplierPickerLineId(null);
+                  } else {
+                    setSupplierId(null);
+                    setSupplierPickerOpen(false);
+                  }
+                }}
+                style={({ pressed }) => [styles.pickerRow, pressed && styles.resultRowPressed]}
+              >
+                <View
+                  style={[
+                    styles.pickerSwatch,
+                    { backgroundColor: theme.colors.outlineVariant },
+                  ]}
+                />
+                <Text style={styles.pickerRowText} numberOfLines={1}>
+                  {he.orders.customerOrderNoSupplier}
+                </Text>
+                {activePickerSupplierId == null ? (
+                  <Ionicons name="checkmark-circle" size={20} color={theme.colors.primary} />
+                ) : null}
+              </Pressable>
               {suppliers.map((s) => (
                 <Pressable
                   key={s.id}
@@ -1587,6 +1678,11 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     textAlign: "left",
   },
+  catalogSupplierRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
   changeBookBtn: { alignSelf: "flex-start", marginTop: theme.spacing.sm },
   changeBookText: {
     ...theme.typography.labelMd,
@@ -1601,6 +1697,35 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
     color: theme.colors.onSurface,
     fontSize: theme.typography.bodyMd.fontSize,
+  },
+  stepper: {
+    gap: theme.spacing.xs,
+  },
+  stepperRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    backgroundColor: theme.colors.surfaceContainerLow,
+    borderRadius: theme.radius.lg,
+  },
+  stepBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: theme.colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepBtnPressed: { opacity: 0.85 },
+  stepValue: {
+    ...theme.typography.display,
+    fontSize: 28,
+    lineHeight: 32,
+    color: theme.colors.primary,
+    minWidth: 64,
+    textAlign: "center",
   },
   addBookBtn: {
     flexDirection: "row",

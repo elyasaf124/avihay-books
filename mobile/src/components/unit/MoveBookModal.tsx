@@ -868,7 +868,7 @@ const styles = StyleSheet.create({
   },
   placementPolicyHint: {
     ...theme.typography.caption,
-    color: theme.colors.tertiary,
+    color: theme.colors.onTertiaryContainer,
     textAlign: "left",
     backgroundColor: theme.colors.tertiaryContainer,
     padding: theme.spacing.sm,
@@ -890,7 +890,7 @@ const styles = StyleSheet.create({
   tabChipTextActive: { color: theme.colors.onPrimary, fontWeight: "700" },
   resolvedPath: {
     ...theme.typography.bodyMd,
-    color: theme.colors.onSurface,
+    color: theme.colors.onPrimaryContainer,
     textAlign: "left",
     lineHeight: 22,
     backgroundColor: theme.colors.primaryContainer,

@@ -1,6 +1,8 @@
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop, Text as SvgText } from "react-native-svg";
 import type { StoreMap as StoreMapData, StoreMapUnit } from "@avihay-books/shared";
+import { emptyFilters, type UnitFilterState } from "./unit/UnitFilterBar";
+import { sumFilteredCopiesInUnit } from "../utils/unitFilters";
 import { theme } from "../theme";
 import { he } from "../i18n/he";
 
@@ -15,6 +17,7 @@ const webDirLtr: Record<string, unknown> =
 interface Props {
   data: StoreMapData;
   onUnitPress: (unit: StoreMapUnit) => void;
+  filters?: UnitFilterState;
 }
 
 const VB_W = 360;
@@ -28,12 +31,14 @@ interface Rect2 {
 }
 
 const layout: Record<
-  "front" | "left" | "right" | "island" | "display" | "stacks",
+  "front" | "left" | "right" | "pocket" | "island" | "display" | "stacks",
   Rect2
 > = {
   front: { x: 16, y: 12, w: VB_W - 32, h: 78 },
   left: { x: 16, y: 98, w: 72, h: VB_H - 110 },
-  right: { x: VB_W - 88, y: 98, w: 72, h: VB_H - 110 },
+  right: { x: VB_W - 88, y: 98, w: 72, h: 190 },
+  /** ספרי כיס — מתחת לארון ימין */
+  pocket: { x: VB_W - 88, y: 296, w: 72, h: 88 },
   /** משטח תצוגה — מעל האי */
   display: { x: 104, y: 148, w: VB_W - 208, h: 26 },
   island: { x: 104, y: 178, w: VB_W - 208, h: 108 },
@@ -41,11 +46,8 @@ const layout: Record<
   stacks: { x: 104, y: 290, w: VB_W - 208, h: 24 },
 };
 
-function bookCount(u: StoreMapUnit): number {
-  let count = 0;
-  for (const sh of u.shelves) for (const c of sh.cells) count += c.books.length;
-  for (const sd of u.sides) for (const sh of sd.shelves) for (const c of sh.cells) count += c.books.length;
-  return count;
+function copyCount(u: StoreMapUnit, filters: UnitFilterState): number {
+  return sumFilteredCopiesInUnit(u, filters);
 }
 
 function newBookCount(u: StoreMapUnit): number {
@@ -60,14 +62,20 @@ function newBookCount(u: StoreMapUnit): number {
   return n;
 }
 
-export function StoreMap({ data, onUnitPress }: Props): JSX.Element {
+export function StoreMap({ data, onUnitPress, filters = emptyFilters }: Props): JSX.Element {
   const byPos = new Map<string, StoreMapUnit>(data.units.map((u) => [u.store_position, u]));
   const front = byPos.get("front");
   const left = byPos.get("left");
   const right = byPos.get("right");
+  const pocket = byPos.get("pocket");
   const island = byPos.get("island");
   const display = byPos.get("display");
   const stacks = byPos.get("stacks");
+
+  const islandSideRight =
+    island?.sides[0]?.side_label ?? he.home.sideRight;
+  const islandSideLeft =
+    island?.sides[1]?.side_label ?? he.home.sideLeft;
 
   return (
     <View style={styles.ltrGeo} {...webDirLtr}>
@@ -107,6 +115,7 @@ export function StoreMap({ data, onUnitPress }: Props): JSX.Element {
           { pos: "front" as const, unit: front, fill: "url(#wood)" },
           { pos: "left" as const, unit: left, fill: "url(#wood)" },
           { pos: "right" as const, unit: right, fill: "url(#wood)" },
+          { pos: "pocket" as const, unit: pocket, fill: "url(#wood)" },
         ].map(({ pos, unit, fill }) => {
           const r = layout[pos];
           return (
@@ -151,7 +160,7 @@ export function StoreMap({ data, onUnitPress }: Props): JSX.Element {
               fill={theme.colors.secondaryFixed}
               textAnchor="middle"
             >
-              {he.home.sideA}
+              {islandSideRight}
             </SvgText>
             <SvgText
               x={layout.island.x + layout.island.w / 4}
@@ -161,7 +170,7 @@ export function StoreMap({ data, onUnitPress }: Props): JSX.Element {
               fill={theme.colors.secondaryFixed}
               textAnchor="middle"
             >
-              {he.home.sideB}
+              {islandSideLeft}
             </SvgText>
           </>
         )}
@@ -193,7 +202,7 @@ export function StoreMap({ data, onUnitPress }: Props): JSX.Element {
         )}
       </Svg>
 
-      {(["front", "left", "right", "display", "island", "stacks"] as const).map((pos) => {
+      {(["front", "left", "right", "pocket", "display", "island", "stacks"] as const).map((pos) => {
         const unit = byPos.get(pos);
         if (!unit) return null;
         const r = layout[pos];
@@ -216,7 +225,7 @@ export function StoreMap({ data, onUnitPress }: Props): JSX.Element {
             <View style={styles.labelBox} pointerEvents="none">
               <Text style={styles.unitName}>{unit.name}</Text>
               <Text style={styles.unitMeta}>
-                {bookCount(unit)} ספרים
+                {copyCount(unit, filters)} ספרים
                 {showNewHint ? ` · ${he.home.displayHint}` : ""}
               </Text>
             </View>

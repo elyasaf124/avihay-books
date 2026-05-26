@@ -44,6 +44,15 @@ export async function deleteShortageById(id: string): Promise<boolean> {
   return (r.rowCount ?? 0) > 0;
 }
 
+/** ביטול חוסר במדף לפי מיקום — בלי שינוי מלאי (מחיקת רשומה בלבד). */
+export async function deleteActiveShortageByLocationId(locationId: string): Promise<boolean> {
+  const r = await pool.query(
+    `DELETE FROM shortage_list WHERE location_id = $1 AND status = 'shortage'`,
+    [locationId],
+  );
+  return (r.rowCount ?? 0) > 0;
+}
+
 /**
  * רשימת חוסרים משולבת עם פרטי ספר וספק — הבסיס למסך `app/shortage.tsx`.
  * רק מצב `shortage`: פריט שהועבר להזמנה (`order_pending`) או נסגר (`completed`)

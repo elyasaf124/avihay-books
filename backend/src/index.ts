@@ -9,6 +9,12 @@ import { startNotificationCrons } from "./services/notifications.js";
 
 const app = express();
 
+app.use((req, res, next) => {
+  if (req.headers["access-control-request-private-network"] === "true") {
+    res.setHeader("Access-Control-Allow-Private-Network", "true");
+  }
+  next();
+});
 app.use(helmet());
 app.use(
   cors({

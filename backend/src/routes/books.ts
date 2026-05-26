@@ -9,6 +9,8 @@ import {
 } from "../repos/books.repo.js";
 import { findBookLocationsExpandedByBook } from "../repos/bookLocations.repo.js";
 import { getBookLocationPaths } from "../services/bookLocation.js";
+import { notifyLowStockAfterBookChange } from "../services/notifications.js";
+import { reconcileOrdersOnStockArrival } from "../services/orderReconciliation.js";
 import type { BookWithLocations } from "@avihay-books/shared";
 
 export const booksRouter = Router();
@@ -69,6 +71,12 @@ booksRouter.post(
   "/",
   asyncHandler(async (req, res) => {
     const row = await upsertBook(req.body);
+    if (Number(row.stock_quantity) <= Number(row.reorder_threshold)) {
+      await notifyLowStockAfterBookChange(
+        { ...row, stock_quantity: row.stock_quantity + 1 },
+        row,
+      );
+    }
     res.status(201).json(row);
   }),
 );
@@ -79,7 +87,15 @@ booksRouter.patch(
     const existing = await findBookById(req.params.id!);
     if (!existing) throw new HttpError(404, "book_not_found");
     const merged = { ...existing, ...req.body, id: req.params.id };
-    res.json(await upsertBook(merged));
+    const row = await upsertBook(merged);
+    const oldStock = existing.stock_quantity;
+    const newStock = row.stock_quantity;
+    if (newStock > oldStock) {
+      await reconcileOrdersOnStockArrival(req.params.id!, newStock - oldStock);
+    } else {
+      await notifyLowStockAfterBookChange(existing, row);
+    }
+    res.json(row);
   }),
 );
 

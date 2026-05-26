@@ -1,17 +1,24 @@
 import cron, { type ScheduledTask } from "node-cron";
 import { pool } from "../db/pool.js";
-import { existsOpenNotification, upsertNotification } from "../repos/notifications.repo.js";
+import {
+  existsOpenNotification,
+  upsertNotification,
+  upsertOpenLowStockNotification,
+} from "../repos/notifications.repo.js";
 import { logger } from "../utils/logger.js";
-import type { AppNotification } from "@avihay-books/shared";
+import type { AppNotification, Book } from "@avihay-books/shared";
 
 /**
  * שירות התראות (`Phase 5`):
- * מריץ שלוש בדיקות תקופתיות שיוצרות התראות חדשות ב־`notifications`:
  *
- *   1. `low_stock`              — מלאי נמוך מתחת לסף הזמנה (`stock_quantity <= reorder_threshold`).
+ *   `low_stock` — נוצר **מיידית** כשמלאי יורד לסף (`maybeNotifyLowStockForBook`), וגם ב-cron כגיבוי.
+ *   שאר ההתראות — בדיקות תקופתיות שיוצרות רשומות חדשות ב־`notifications`:
+ *
+ *   1. `low_stock`              — `stock_quantity <= reorder_threshold` (cron כגיבוי).
  *   2. `remove_from_display`    — ספר חדש (`is_new = TRUE`) שעבר את חלון הזמן מאז `added_at`
  *      (ברירת מחדל חודש; ניתן לעקוף עם `REMOVE_FROM_DISPLAY_AFTER`, למשל `1 minute` לבדיקות).
  *   3. `supplier_reorder_reminder` — לא הוזמן מספק זה כבר שבועיים (`last_order_date < now() - 14d`).
+ *   4. `orders_without_supplier` — הזמנות `pending` ללא `supplier_id` (יומי ב־08:00).
  *
  * כל בדיקה לפני יצירת התראה בודקת שאין כבר התראה «פתוחה» מאותו טיפוס וקישור,
  * כדי לא להציף את המסך באותה הודעה כל מחזור (`existsOpenNotification`).
@@ -43,6 +50,7 @@ export interface NotificationCheckSummary {
   /** ערך ה־Postgres `interval` שבו השתמש השרת (מ־`REMOVE_FROM_DISPLAY_AFTER` או ברירת מחדל) */
   remove_from_display_after: string;
   supplier_reorder_reminder_created: number;
+  orders_without_supplier_created: number;
   ran_at: string;
 }
 
@@ -61,6 +69,68 @@ async function findLowStockCandidates(): Promise<LowStockRow[]> {
         AND stock_quantity <= reorder_threshold`,
   );
   return rows;
+}
+
+function lowStockMessage(row: LowStockRow): string {
+  return (
+    `מלאי נמוך: "${row.title}" — נשארו ${row.stock_quantity} עותקים ` +
+    `(סף הזמנה: ${row.reorder_threshold})`
+  );
+}
+
+async function createLowStockNotificationIfNeeded(row: LowStockRow): Promise<AppNotification | null> {
+  const already = await existsOpenNotification({ type: "low_stock", book_id: row.book_id });
+  if (already) return null;
+  return upsertOpenLowStockNotification({
+    book_id: row.book_id,
+    message: lowStockMessage(row),
+  });
+}
+
+/**
+ * התראת מלאi נמוך מיידית — אחרי ירידת מלאi, חציית סף, או הורדת סף הזמנה.
+ * לא מופעל בהעלאת מלאi (גם אם עדיין מתחת לסף).
+ */
+export async function notifyLowStockAfterBookChange(
+  before: Book,
+  after: Book,
+): Promise<AppNotification | null> {
+  if (!after.is_active) return null;
+
+  const stock = Number(after.stock_quantity);
+  const threshold = Number(after.reorder_threshold);
+  if (!Number.isFinite(stock) || !Number.isFinite(threshold)) return null;
+  if (stock > threshold) return null;
+
+  const beforeStock = Number(before.stock_quantity);
+  const beforeThreshold = Number(before.reorder_threshold);
+  const stockDecreased = stock < beforeStock;
+  const stockIncreased = stock > beforeStock;
+  const thresholdChanged = threshold !== beforeThreshold;
+  const crossedIntoLow = beforeStock > beforeThreshold && stock <= threshold;
+
+  if (stockIncreased) return null;
+  if (!stockDecreased && !crossedIntoLow && !(thresholdChanged && stock <= threshold)) {
+    return null;
+  }
+
+  return upsertOpenLowStockNotification({
+    book_id: after.id,
+    message: lowStockMessage({
+      book_id: after.id,
+      title: after.title,
+      stock_quantity: stock,
+      reorder_threshold: threshold,
+    }),
+  });
+}
+
+/** @deprecated Use notifyLowStockAfterBookChange — נשמר לתאימות. */
+export async function maybeNotifyLowStockForBook(book: Book): Promise<AppNotification | null> {
+  return notifyLowStockAfterBookChange(
+    { ...book, stock_quantity: book.stock_quantity + 1 },
+    book,
+  );
 }
 
 async function findRemoveFromDisplayCandidates(): Promise<RemoveFromDisplayRow[]> {
@@ -89,19 +159,8 @@ async function findSupplierReorderCandidates(): Promise<SupplierReorderRow[]> {
 export async function runLowStockJob(): Promise<AppNotification[]> {
   const created: AppNotification[] = [];
   for (const row of await findLowStockCandidates()) {
-    const already = await existsOpenNotification({ type: "low_stock", book_id: row.book_id });
-    if (already) continue;
-    const message =
-      `מלאי נמוך: "${row.title}" — נשארו ${row.stock_quantity} עותקים ` +
-      `(סף הזמנה: ${row.reorder_threshold})`;
-    created.push(
-      await upsertNotification({
-        type: "low_stock",
-        book_id: row.book_id,
-        message,
-        is_read: false,
-      }),
-    );
+    const notification = await createLowStockNotificationIfNeeded(row);
+    if (notification) created.push(notification);
   }
   return created;
 }
@@ -131,6 +190,37 @@ export async function runRemoveFromDisplayJob(): Promise<{
   return { created, candidateCount: candidates.length };
 }
 
+async function countPendingOrdersWithoutSupplier(): Promise<number> {
+  const { rows } = await pool.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count
+       FROM orders
+      WHERE supplier_id IS NULL
+        AND status = 'pending'`,
+  );
+  return Number.parseInt(rows[0]!.count, 10);
+}
+
+export async function runOrdersWithoutSupplierJob(): Promise<AppNotification[]> {
+  const count = await countPendingOrdersWithoutSupplier();
+  if (count === 0) return [];
+
+  const already = await existsOpenNotification({ type: "orders_without_supplier" });
+  if (already) return [];
+
+  const message =
+    count === 1
+      ? "יש הזמנה אחת שלא משויכת לספק — יש לשייך ספק לפני שליחה"
+      : `יש ${count} הזמנות שלא משויכות לספק — יש לשייך ספק לפני שליחה`;
+
+  return [
+    await upsertNotification({
+      type: "orders_without_supplier",
+      message,
+      is_read: false,
+    }),
+  ];
+}
+
 export async function runSupplierReorderReminderJob(): Promise<AppNotification[]> {
   const created: AppNotification[] = [];
   for (const row of await findSupplierReorderCandidates()) {
@@ -154,8 +244,10 @@ export async function runSupplierReorderReminderJob(): Promise<AppNotification[]
   return created;
 }
 
-/** מריץ את שלוש הבדיקות ברצף ומחזיר סיכום של כמה התראות נוצרו לכל סוג. */
-export async function runAllNotificationChecks(): Promise<NotificationCheckSummary> {
+/** בדיקות תקופתיות (מלאי, חזית, תזכורת ספק) — ללא הזמנות ללא ספק. */
+async function runPeriodicNotificationChecks(): Promise<
+  Omit<NotificationCheckSummary, "orders_without_supplier_created" | "ran_at">
+> {
   const after = removeFromDisplayAfterInterval();
   const [lowStock, removeFromDisplay, supplierReorder] = await Promise.all([
     runLowStockJob(),
@@ -168,6 +260,18 @@ export async function runAllNotificationChecks(): Promise<NotificationCheckSumma
     remove_from_display_candidate_count: removeFromDisplay.candidateCount,
     remove_from_display_after: after,
     supplier_reorder_reminder_created: supplierReorder.length,
+  };
+}
+
+/** מריץ את כל הבדיקות (כולל הזמנות ללא ספק) — לשימוש ידני ב־`/run-checks`. */
+export async function runAllNotificationChecks(): Promise<NotificationCheckSummary> {
+  const [periodic, ordersWithoutSupplier] = await Promise.all([
+    runPeriodicNotificationChecks(),
+    runOrdersWithoutSupplierJob(),
+  ]);
+  return {
+    ...periodic,
+    orders_without_supplier_created: ordersWithoutSupplier.length,
     ran_at: new Date().toISOString(),
   };
 }
@@ -177,8 +281,10 @@ export async function runAllNotificationChecks(): Promise<NotificationCheckSumma
  * ניתן לכבות ב־`.env` עם `DISABLE_NOTIFICATION_CRON=1` (שימושי בפיתוח/בדיקות).
  */
 const DEFAULT_CRON = "0 8,13,18 * * *";
+const DEFAULT_ORDERS_WITHOUT_SUPPLIER_CRON = "0 8 * * *";
 
 let scheduled: ScheduledTask | null = null;
+let ordersWithoutSupplierScheduled: ScheduledTask | null = null;
 
 export function startNotificationCrons(): void {
   if (process.env.DISABLE_NOTIFICATION_CRON === "1") {
@@ -194,12 +300,35 @@ export function startNotificationCrons(): void {
   const safeExpression = cron.validate(expression) ? expression : DEFAULT_CRON;
 
   scheduled = cron.schedule(safeExpression, () => {
-    runAllNotificationChecks().catch((err: unknown) => {
+    runPeriodicNotificationChecks().catch((err: unknown) => {
       logger.error({ err }, "notifications cron tick failed");
     });
   });
 
   logger.info({ expression: safeExpression }, "notifications cron scheduled");
+
+  const ordersCronExpression =
+    process.env.ORDERS_WITHOUT_SUPPLIER_CRON ?? DEFAULT_ORDERS_WITHOUT_SUPPLIER_CRON;
+  if (!cron.validate(ordersCronExpression)) {
+    logger.warn(
+      { expression: ordersCronExpression },
+      "invalid ORDERS_WITHOUT_SUPPLIER_CRON expression, falling back to default",
+    );
+  }
+  const safeOrdersCron = cron.validate(ordersCronExpression)
+    ? ordersCronExpression
+    : DEFAULT_ORDERS_WITHOUT_SUPPLIER_CRON;
+
+  ordersWithoutSupplierScheduled = cron.schedule(safeOrdersCron, () => {
+    runOrdersWithoutSupplierJob().catch((err: unknown) => {
+      logger.error({ err }, "orders without supplier cron tick failed");
+    });
+  });
+
+  logger.info(
+    { expression: safeOrdersCron },
+    "orders without supplier notification cron scheduled",
+  );
 
   if (process.env.RUN_NOTIFICATION_CHECKS_ON_BOOT === "1") {
     runAllNotificationChecks().catch((err: unknown) => {
@@ -211,4 +340,6 @@ export function startNotificationCrons(): void {
 export function stopNotificationCrons(): void {
   scheduled?.stop();
   scheduled = null;
+  ordersWithoutSupplierScheduled?.stop();
+  ordersWithoutSupplierScheduled = null;
 }

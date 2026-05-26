@@ -2,6 +2,7 @@ import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { StyleSheet, type ViewStyle } from "react-native";
 import { StitchTabBar } from "../../src/components/StitchTabBar";
+import { StoreMapFilterProvider } from "../../src/context/StoreMapFilterContext";
 import { theme } from "../../src/theme";
 import { he } from "../../src/i18n/he";
 import { useUnreadPushNotifier } from "../../src/hooks/useUnreadPushNotifier";
@@ -15,6 +16,7 @@ const tabHeaderStyle: ViewStyle = {
 export default function TabsLayout(): JSX.Element {
   const { unreadCount } = useUnreadPushNotifier();
   return (
+    <StoreMapFilterProvider>
     <Tabs
       tabBar={(props) => <StitchTabBar {...props} />}
       screenOptions={{
@@ -92,6 +94,8 @@ export default function TabsLayout(): JSX.Element {
           tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
         }}
       />
+      <Tabs.Screen name="customer-orders-history" options={{ href: null }} />
     </Tabs>
+    </StoreMapFilterProvider>
   );
 }

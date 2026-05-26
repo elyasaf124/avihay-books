@@ -7,6 +7,7 @@ import type {
 } from "@avihay-books/shared";
 import { useMemo } from "react";
 import { api } from "./client";
+import { NOTIFICATIONS_LIST_KEY, NOTIFICATIONS_UNREAD_KEY } from "./notifications";
 import { STORE_MAP_KEY } from "./storeMap";
 import { mockSuppliers } from "../mocks/homeDashboard";
 import { useSuppliers } from "./suppliers";
@@ -58,6 +59,8 @@ export function useAddShortage() {
     },
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ["shortage"] });
+      void client.refetchQueries({ queryKey: NOTIFICATIONS_LIST_KEY });
+      void client.refetchQueries({ queryKey: NOTIFICATIONS_UNREAD_KEY });
       void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
     },
   });

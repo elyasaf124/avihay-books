@@ -10,7 +10,7 @@ database/          SQL migrations + migration runner
 seed/              Mock data seeders (Phase 1 mock data; Phase 5b → Excel)
 shared/            Types & enums shared between backend and mobile
 mobile/            Expo React Native app (Expo Router, RTL, Stitch theme)
-docs/              DESIGN.md · DEPLOYMENT.md · תוכנית עבודה
+docs/              DESIGN.md · DEPLOYMENT.md · LOCAL_ANDROID_BUILD.md
 Dockerfile          אימג׳ פרודקשן לבקאנד
 docker-compose.yml  `PostgreSQL` + `api` מהירים לשרת/`VPS`
 render.yaml          `Blueprint` ל־`Render` (`Web` + מנה `Docker`)
@@ -94,6 +94,16 @@ docker compose up --build
 4. בניית `APK` אנדרואיד: `npm run eas:build:android:development --workspace=@avihay-books/mobile` או `eas:build:android:production` — הסקריפטים טוענים את קובץ ה־`env` המתאים לפני `eas build`. לאחר הבנייה הורד את ה־`APK` מהדשבורד של `Expo` והתקן על המכשיר.
 5. **אייפון:** `npm run eas:build:ios:development --workspace=@avihay-books/mobile` או `...:production` — נדרש חשבון `Apple Developer` והפצה פנימית או `TestFlight` לפי הגדרות `Apple`.
 
+### מסלול ג׳ — בנייה מקומית (`APK` על המחשב)
+
+1. העתק את הפרויקט ל-`C:\dev\avihay-books-V2` (נתיב קצר; לא `OneDrive` עם נתיב ארוך).
+2. התקן Android SDK + הגדר `ANDROID_HOME` (ראה [`docs/LOCAL_ANDROID_BUILD.md`](docs/LOCAL_ANDROID_BUILD.md)).
+3. הכנה חד-פעמית: `scripts\setup-android-local.bat` (prebuild + `local.properties`).
+4. צור `mobile/.env.production` עם `EXPO_PUBLIC_APP_ENV=production` וכתובת ה-API בפרודקשן.
+5. בניית `APK`: `build-release.bat` מהשורש, או `npm run mobile:apk:release`.
+
+פלט: `mobile\android\app\build\outputs\apk\release\app-release.apk`
+
 ## בדיקות ידניות מהירות
 
 ```bash
@@ -108,4 +118,3 @@ curl http://localhost:4000/api/v1/suppliers
 - מפת חנות בצורת ח: `mobile/src/components/StoreMap.tsx`.
 - RTL נכפה ב־`mobile/app/_layout.tsx` (`I18nManager.forceRTL(true)`).
 - כל כתיבה ל־DB עוברת רק דרך `backend/src/repos/*.ts` (ה־seed וגם ה־Excel importer של פאזה 5b).
-"# avihay-books" 

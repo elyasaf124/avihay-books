@@ -50,6 +50,7 @@ interface LocationRow {
   is_new: boolean;
   supplier_color: string;
   price: string;
+  topic: string;
   is_pending_shortage: boolean;
 }
 
@@ -62,6 +63,7 @@ export async function getStoreMap(): Promise<StoreMap> {
     pool.query<LocationRow>(
       `SELECT bl.id, bl.cell_id, bl.book_id, bl.position_in_cell, bl.quantity_in_cell,
               b.title, b.author, b.supplier_id, b.is_new, b.price::text AS price,
+              b.topic,
               s.color_hex AS supplier_color,
               EXISTS (
                 SELECT 1
@@ -91,6 +93,7 @@ export async function getStoreMap(): Promise<StoreMap> {
       quantity_in_cell: l.quantity_in_cell,
       is_new: l.is_new,
       price: l.price,
+      topic: l.topic ?? "",
       is_pending_shortage: Boolean(l.is_pending_shortage),
     });
     booksByCell.set(l.cell_id, arr);

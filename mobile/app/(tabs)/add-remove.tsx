@@ -80,6 +80,7 @@ function toStoreMapBook(
     quantity_in_cell: loc.quantity_in_cell,
     is_new: book.is_new,
     price: String(book.price),
+    topic: book.topic,
     is_pending_shortage: false,
   };
 }
@@ -1291,6 +1292,7 @@ interface NewBookFormState {
   supplier_id: string;
   price: string;
   stock_quantity: string;
+  reorder_threshold: string;
   topic: string;
   is_new: boolean;
   display_quantity: string;
@@ -1329,6 +1331,7 @@ function NewBookModal({
     supplier_id: string;
     price: number;
     stock_quantity: number;
+    reorder_threshold: number;
     topic: string;
     is_new: boolean;
     display_quantity?: number;
@@ -1343,6 +1346,7 @@ function NewBookModal({
     supplier_id: fallbackSupplier,
     price: "",
     stock_quantity: "0",
+    reorder_threshold: "2",
     topic: "",
     is_new: false,
     display_quantity: "0",
@@ -1356,6 +1360,7 @@ function NewBookModal({
       supplier_id: defaultSupplierId ?? fallbackSupplier,
       price: "",
       stock_quantity: "0",
+      reorder_threshold: "2",
       topic: "",
       is_new: false,
       display_quantity: "0",
@@ -1455,6 +1460,14 @@ function NewBookModal({
                   setForm((s) => ({ ...s, stock_quantity }))
                 }
               />
+              <LabeledInput
+                label={he.addRemove.fieldReorderThreshold}
+                value={form.reorder_threshold}
+                keyboardType="number-pad"
+                onChangeText={(reorder_threshold) =>
+                  setForm((s) => ({ ...s, reorder_threshold }))
+                }
+              />
 
               <Text style={[styles.dimLabel, styles.mapHintNb]}>{he.addRemove.mapPlacementHint}</Text>
               {mapPlacementBlockedMessage ? (
@@ -1544,6 +1557,7 @@ function NewBookModal({
                   onPress={() => {
                     const priceNum = Number(String(form.price).replace(",", "."));
                     const stockNum = Number.parseInt(form.stock_quantity, 10);
+                    const reorderNum = Number.parseInt(form.reorder_threshold, 10);
                     const titleClean = form.title.trim();
                     const authorClean = form.author.trim();
                     const topicClean = form.topic.trim();
@@ -1559,7 +1573,9 @@ function NewBookModal({
                       !form.supplier_id ||
                       Number.isNaN(priceNum) ||
                       Number.isNaN(stockNum) ||
-                      stockNum < 0
+                      Number.isNaN(reorderNum) ||
+                      stockNum < 0 ||
+                      reorderNum < 0
                     ) {
                       return;
                     }
@@ -1573,6 +1589,7 @@ function NewBookModal({
                       supplier_id: form.supplier_id,
                       price: priceNum,
                       stock_quantity: stockNum,
+                      reorder_threshold: reorderNum,
                       topic: topicClean,
                       is_new: form.is_new,
                       display_quantity: displayQty,
