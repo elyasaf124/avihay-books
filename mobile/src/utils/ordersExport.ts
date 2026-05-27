@@ -1,14 +1,21 @@
 import { Alert, Linking, Platform } from "react-native";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
-import type { OrdersBySupplierGroup } from "@avihay-books/shared";
+import type { OrderListItem, OrdersBySupplierGroup } from "@avihay-books/shared";
+import { isOpenOrder } from "../api/orders";
 import { he } from "../i18n/he";
+
+/** שורות שעדיין לא סומנו כהוזמנו — לייצוא ומייל. */
+function unorderedSupplierLines(group: OrdersBySupplierGroup): OrderListItem[] {
+  return group.orders.filter((o) => isOpenOrder(o) && o.status !== "sent");
+}
 
 /**
  * עיצוב HTML פשוט להזמנת ספק, מתאים ל־`Print` (A4, RTL).
  */
 function buildHtml(group: OrdersBySupplierGroup): string {
-  const rows = group.orders
+  const lines = unorderedSupplierLines(group);
+  const rows = lines
     .map(
       (o) => `
         <tr>
@@ -19,7 +26,7 @@ function buildHtml(group: OrdersBySupplierGroup): string {
     )
     .join("");
 
-  const total = group.orders.reduce((sum, o) => sum + o.quantity, 0);
+  const total = lines.reduce((sum, o) => sum + o.quantity, 0);
   const date = new Date().toLocaleDateString("he-IL");
   const docTitle = escapeHtml(he.orders.pdfDocumentTitle);
 
@@ -55,7 +62,7 @@ function buildHtml(group: OrdersBySupplierGroup): string {
     </thead>
     <tbody>${rows}</tbody>
   </table>
-  <p class="summary">סך הכול: ${group.orders.length} כותרים · ${total} עותקים</p>
+  <p class="summary">סך הכול: ${lines.length} כותרים · ${total} עותקים</p>
 </body>
 </html>`;
 }
@@ -175,7 +182,12 @@ function printOrderHtmlWithHiddenIframe(html: string): void {
  * מייצא את הזמנת הספק כקובץ `PDF` באמצעות `expo-print`, ופותח שיתוף ב־`expo-sharing`.
  */
 export async function exportSupplierOrdersToPdf(group: OrdersBySupplierGroup): Promise<void> {
-  const html = buildHtml(group);
+  const lines = unorderedSupplierLines(group);
+  if (lines.length === 0) {
+    showPdfUserMessage(he.orders.mail.allOrderedTitle, he.orders.mail.allOrderedMessage);
+    return;
+  }
+  const html = buildHtml({ ...group, orders: lines });
   if (Platform.OS === "web") {
     printOrderHtmlInBrowserWindow(html);
     return;
@@ -207,10 +219,15 @@ export async function exportSupplierOrdersToPdf(group: OrdersBySupplierGroup): P
  * פותח קליינט דוא״ל מקומי עם נושא וגוף מוכנים על בסיס קבוצת ההזמנות.
  */
 export async function emailSupplierOrders(group: OrdersBySupplierGroup): Promise<void> {
+  const lines = unorderedSupplierLines(group);
+  if (lines.length === 0) {
+    Alert.alert(he.orders.mail.allOrderedTitle, he.orders.mail.allOrderedMessage);
+    return;
+  }
   const subject = he.orders.mail.subjectTemplate.replace("{{supplier}}", group.supplier_name);
   const intro = unescapeNewlines(he.orders.mail.bodyIntro);
   const signoff = unescapeNewlines(he.orders.mail.bodySignoff);
-  const lines = group.orders
+  const bodyLines = lines
     .map((o) =>
       he.orders.mail.bodyLine
         .replace("{{title}}", o.book_title)
@@ -218,7 +235,7 @@ export async function emailSupplierOrders(group: OrdersBySupplierGroup): Promise
         .replace("{{quantity}}", String(o.quantity)),
     )
     .join("\n");
-  const body = `${intro}\n\n${lines}\n\n${signoff}`;
+  const body = `${intro}\n\n${bodyLines}\n\n${signoff}`;
   const mailto = `mailto:${group.supplier_email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   const canOpen = Platform.OS === "web" ? true : await Linking.canOpenURL(mailto);
   if (canOpen) await Linking.openURL(mailto);

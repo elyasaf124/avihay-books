@@ -1,4 +1,3 @@
-import { useEffect } from "react";
 import { I18nManager, Platform } from "react-native";
 import { Stack } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -12,6 +11,7 @@ import {
   Heebo_700Bold,
   useFonts,
 } from "@expo-google-fonts/heebo";
+import { AppBootstrap } from "../src/components/AppBootstrap";
 import { ForceUpdateGate } from "../src/components/ForceUpdateGate";
 import { useOtaUpdates } from "../src/hooks/useOtaUpdates";
 import { theme } from "../src/theme";
@@ -55,35 +55,31 @@ export default function RootLayout(): JSX.Element {
     "Heebo-Bold": Heebo_700Bold,
   });
 
-  const ready = fontsLoaded || fontError !== null;
-
-  useEffect(() => {
-    if (ready) void SplashScreen.hideAsync().catch(() => undefined);
-  }, [ready]);
-
-  if (!ready && Platform.OS !== "web") return <></>;
+  const fontsReady = fontsLoaded || fontError !== null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
-          <ForceUpdateGate>
-            <StatusBar style="dark" />
-            <Stack
-              screenOptions={{
-                headerStyle: { backgroundColor: theme.colors.surface },
-                headerTintColor: theme.colors.primary,
-                headerTitleStyle: {
-                  fontWeight: "700",
-                  color: theme.colors.primary,
-                  fontFamily: theme.fontFamily.bold,
-                },
-                contentStyle: { backgroundColor: theme.colors.background },
-              }}
-            >
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            </Stack>
-          </ForceUpdateGate>
+          <AppBootstrap fontsReady={fontsReady}>
+            <ForceUpdateGate>
+              <StatusBar style="dark" />
+              <Stack
+                screenOptions={{
+                  headerStyle: { backgroundColor: theme.colors.surface },
+                  headerTintColor: theme.colors.primary,
+                  headerTitleStyle: {
+                    fontWeight: "700",
+                    color: theme.colors.primary,
+                    fontFamily: theme.fontFamily.bold,
+                  },
+                  contentStyle: { backgroundColor: theme.colors.background },
+                }}
+              >
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              </Stack>
+            </ForceUpdateGate>
+          </AppBootstrap>
         </QueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

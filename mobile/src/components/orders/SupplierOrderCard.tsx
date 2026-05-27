@@ -2,6 +2,7 @@ import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-nati
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import type { OrderListItem, OrderType, OrdersBySupplierGroup } from "@avihay-books/shared";
 import {
+  isOpenOrder,
   isSupplierGroupFullyOrdered,
   orderDisplayLineKey,
   supplierGroupHasOpenOrders,
@@ -18,9 +19,11 @@ interface Props {
   onRemoveOrderLine: (order: OrderListItem) => void;
   onEditOrderLine?: (order: OrderListItem) => void;
   onToggleSupplierOrdered?: (group: OrdersBySupplierGroup) => void;
+  onToggleLineOrdered?: (order: OrderListItem) => void;
   removingOrderLineKey: string | null;
   updatingOrderLineKey: string | null;
   togglingSupplierKey?: string | null;
+  togglingLineKey?: string | null;
 }
 
 /**
@@ -37,9 +40,11 @@ export function SupplierOrderCard({
   onRemoveOrderLine,
   onEditOrderLine,
   onToggleSupplierOrdered,
+  onToggleLineOrdered,
   removingOrderLineKey,
   updatingOrderLineKey,
   togglingSupplierKey,
+  togglingLineKey,
 }: Props): JSX.Element {
   const totalUnits = group.orders.reduce((s, o) => s + o.quantity, 0);
   const isInventory = orderType === "inventory";
@@ -111,9 +116,17 @@ export function SupplierOrderCard({
               order={o}
               showCustomer={!isInventory}
               showEdit={onEditOrderLine != null}
-              busy={removingOrderLineKey === lineKey || updatingOrderLineKey === lineKey}
+              showOrderedToggle={isInventory && onToggleLineOrdered != null && isOpenOrder(o)}
+              busy={
+                removingOrderLineKey === lineKey ||
+                updatingOrderLineKey === lineKey ||
+                togglingLineKey === lineKey
+              }
               onRemove={() => onRemoveOrderLine(o)}
               onEdit={onEditOrderLine ? () => onEditOrderLine(o) : undefined}
+              onToggleOrdered={
+                onToggleLineOrdered ? () => onToggleLineOrdered(o) : undefined
+              }
             />
           );
         })}
@@ -153,17 +166,23 @@ function OrderLine({
   order,
   showCustomer,
   showEdit,
+  showOrderedToggle,
   busy,
   onRemove,
   onEdit,
+  onToggleOrdered,
 }: {
   order: OrderListItem;
   showCustomer: boolean;
   showEdit: boolean;
+  showOrderedToggle: boolean;
   busy: boolean;
   onRemove: () => void;
   onEdit?: () => void;
+  onToggleOrdered?: () => void;
 }): JSX.Element {
+  const isOrdered = order.status === "sent";
+
   return (
     <View style={styles.lineRow}>
       <View style={styles.lineLeft}>
@@ -182,9 +201,27 @@ function OrderLine({
       </View>
       <View style={styles.lineRight}>
         <Text style={styles.qty}>×{order.quantity}</Text>
-        <Text style={styles.statusText}>
-          {he.orders.statusLabels[order.status]}
-        </Text>
+        {showOrderedToggle && onToggleOrdered ? (
+          <Pressable
+            onPress={onToggleOrdered}
+            style={({ pressed }) => [styles.lineOrderedToggle, pressed && styles.lineActionPressed]}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isOrdered ? he.orders.orderUnmarkOrderedA11y : he.orders.orderMarkOrderedA11y
+            }
+          >
+            <MaterialCommunityIcons
+              name={isOrdered ? "truck" : "clock-outline"}
+              size={18}
+              color={isOrdered ? theme.colors.primary : theme.colors.onSurfaceVariant}
+            />
+          </Pressable>
+        ) : (
+          <Text style={styles.statusText}>
+            {he.orders.statusLabels[order.status]}
+          </Text>
+        )}
       </View>
       {busy ? (
         <ActivityIndicator style={styles.lineActionWrap} color={theme.colors.primary} />
@@ -313,6 +350,11 @@ const styles = StyleSheet.create({
     ...theme.typography.labelMd,
     color: theme.colors.onSurfaceVariant,
     fontSize: 11,
+  },
+  lineOrderedToggle: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 2,
   },
   lineActions: {
     flexDirection: "row",

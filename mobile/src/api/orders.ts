@@ -141,6 +141,35 @@ export function useOrdersGroupedByCustomer(
   }, [items, orderType]);
 }
 
+function normalizeOrderSearchText(text: string): string {
+  return text.normalize("NFKC").toLocaleLowerCase("und");
+}
+
+function orderBookTitleForSearch(o: Pick<OrderListItem, "book_title" | "manual_book_title">): string {
+  return (o.manual_book_title ?? o.book_title ?? "").trim();
+}
+
+/** מסנן קבוצות הזמנות לפי שם לקוח או כותרת ספר (חיפוש מקומי). */
+export function filterCustomerOrderGroupsBySearch(
+  groups: OrdersByCustomerGroup[],
+  query: string,
+): OrdersByCustomerGroup[] {
+  const trimmed = query.trim();
+  if (trimmed.length === 0) return groups;
+
+  const normalizedQuery = normalizeOrderSearchText(trimmed);
+  const matches = (text: string) => normalizeOrderSearchText(text).includes(normalizedQuery);
+
+  return groups
+    .map((group) => {
+      if (matches(group.customer_name)) return group;
+      const filteredOrders = group.orders.filter((o) => matches(orderBookTitleForSearch(o)));
+      if (filteredOrders.length === 0) return null;
+      return { ...group, orders: filteredOrders };
+    })
+    .filter((g): g is OrdersByCustomerGroup => g !== null);
+}
+
 /** הופך מערך הזמנות לקבוצות מאוחדות לפי ספק (לתצוגה ולייצוא PDF). */
 export function useOrdersGroupedBySupplier(
   items: OrderListItem[],
@@ -431,6 +460,56 @@ export function useToggleInventorySupplierOrderedStatus() {
   const client = useQueryClient();
   return useMutation<void, Error, OrdersBySupplierGroup>({
     mutationFn: toggleInventorySupplierOrderedStatus,
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
+    },
+  });
+}
+
+export interface ToggleInventoryLineParams {
+  order: OrderListItem;
+  rawInventory: OrderListItem[];
+  rawCustomer: OrderListItem[];
+  rawWhatsapp: OrderListItem[];
+}
+
+/** מסמן/מבטל «הוזמן» לשורת ספר בכרטיסיית ספק — כולל ביקוש לקוח/וואטסאפ לאותו ספר. */
+export async function toggleInventoryLineOrderedStatus({
+  order,
+  rawInventory,
+  rawCustomer,
+  rawWhatsapp,
+}: ToggleInventoryLineParams): Promise<void> {
+  const nextStatus: Extract<OrderStatus, "pending" | "sent"> =
+    order.status === "sent" ? "pending" : "sent";
+  const bookKey = orderBookLineKey(order);
+  const supplierId = order.supplier_id;
+
+  const matching = [...rawInventory, ...rawCustomer, ...rawWhatsapp].filter(
+    (o) =>
+      isOpenOrder(o) &&
+      o.supplier_id === supplierId &&
+      orderBookLineKey(o) === bookKey,
+  );
+
+  if (matching.length === 0) {
+    await postSetOrderLineStatus(order, nextStatus);
+    return;
+  }
+
+  const updatedKeys = new Set<string>();
+  for (const row of matching) {
+    const key = orderDisplayLineKey(row);
+    if (updatedKeys.has(key)) continue;
+    updatedKeys.add(key);
+    await postSetOrderLineStatus(row, nextStatus);
+  }
+}
+
+export function useToggleInventoryLineOrderedStatus() {
+  const client = useQueryClient();
+  return useMutation<void, Error, ToggleInventoryLineParams>({
+    mutationFn: toggleInventoryLineOrderedStatus,
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
     },

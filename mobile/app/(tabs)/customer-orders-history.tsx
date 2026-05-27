@@ -32,6 +32,8 @@ import {
 
   filterCompletedOrders,
 
+  filterCustomerOrderGroupsBySearch,
+
   orderDisplayLineKey,
 
   useOrdersGroupedByCustomer,
@@ -43,6 +45,8 @@ import {
 } from "../../src/api/orders";
 
 import { ConfirmDialog } from "../../src/components/ConfirmDialog";
+
+import { SearchBar } from "../../src/components/SearchBar";
 
 import {
 
@@ -174,6 +178,8 @@ const styles = StyleSheet.create({
 
   headerBackBtnPressed: { opacity: 0.72 },
 
+  searchHeader: { marginBottom: theme.spacing.md },
+
 });
 
 
@@ -187,6 +193,8 @@ export default function CustomerOrdersHistoryScreen(): JSX.Element {
   const removeHistoryMutation = useRemoveHistoryOrderLine();
 
   const [removeTarget, setRemoveTarget] = useState<OrderListItem | null>(null);
+
+  const [searchQuery, setSearchQuery] = useState("");
 
   const isOffline = customerQuery.isError;
 
@@ -218,7 +226,12 @@ export default function CustomerOrdersHistoryScreen(): JSX.Element {
 
   const historyGroups = useOrdersGroupedByCustomer(historyItems, "customer");
 
+  const filteredHistoryGroups = useMemo(
+    () => filterCustomerOrderGroupsBySearch(historyGroups, searchQuery),
+    [historyGroups, searchQuery],
+  );
 
+  const isSearchActive = searchQuery.trim().length > 0;
 
   const isLoading = customerQuery.isLoading;
 
@@ -362,13 +375,23 @@ export default function CustomerOrdersHistoryScreen(): JSX.Element {
 
           <FlatList
 
-            data={historyGroups}
+            data={filteredHistoryGroups}
 
             keyExtractor={customerGroupListKey}
 
             contentContainerStyle={styles.list}
 
             ItemSeparatorComponent={() => <View style={styles.sep} />}
+
+            ListHeaderComponent={
+              <View style={styles.searchHeader}>
+                <SearchBar
+                  value={searchQuery}
+                  onChange={setSearchQuery}
+                  placeholder={he.orders.customerHistorySearchPlaceholder}
+                />
+              </View>
+            }
 
             refreshControl={
 
@@ -388,9 +411,17 @@ export default function CustomerOrdersHistoryScreen(): JSX.Element {
 
               <View style={styles.empty}>
 
-                <Ionicons name="time-outline" size={36} color={theme.colors.primary} />
+                <Ionicons
+                  name={isSearchActive ? "search-outline" : "time-outline"}
+                  size={36}
+                  color={theme.colors.primary}
+                />
 
-                <Text style={styles.emptyText}>{he.orders.customerHistoryEmpty}</Text>
+                <Text style={styles.emptyText}>
+                  {isSearchActive
+                    ? he.orders.customerHistorySearchEmpty
+                    : he.orders.customerHistoryEmpty}
+                </Text>
 
               </View>
 

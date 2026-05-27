@@ -3,7 +3,7 @@
  * MUST come from this file — never hard-coded in components.
  */
 export const he = {
-  appName: "ספרי אביחי",
+  appName: "נועם הספר",
 
   tabs: {
     home: "דף ראשי",
@@ -384,6 +384,8 @@ export const he = {
     customerHistoryTitle: "היסטוריית הזמנות לקוחות",
     customerHistoryBack: "הזמנות",
     customerHistoryEmpty: "אין הזמנות לקוח שהושלמו",
+    customerHistorySearchPlaceholder: "חיפוש לפי שם לקוח או שם ספר…",
+    customerHistorySearchEmpty: "אין תוצאות לחיפוש",
     customerOrderManualTitleLabel: "שם הספר (חופשי)",
     customerOrderManualTitlePlaceholder: "כפי שנמסר מהלקוח או מהספק",
     customerOrderManualAuthorLabel: "מחבר או הוצאה (אופציונלי)",
@@ -439,6 +441,8 @@ export const he = {
       bodyIntro: "שלום,\\nמצורפת רשימת הזמנה:",
       bodyLine: "• {{title}} — {{author}} · {{quantity}} עותקים",
       bodySignoff: "תודה,\\nנועם הספר - עלי",
+      allOrderedTitle: "הכל כבר הוזמן",
+      allOrderedMessage: "אין ספרים שלא סומנו כהוזמנו — אין מה לשלוח.",
     },
   },
 
@@ -577,7 +581,7 @@ export const he = {
     mockBanner: "מציג נתוני דמה — אין התראות מהשרת",
     summaryRefreshed: "הבדיקה הסתיימה: {{count}} התראות חדשות",
     summaryNothingNew: "הבדיקה הסתיימה — אין התראות חדשות",
-    pushTitle: "התראה חדשה — ספרי אביחי",
+    pushTitle: "התראה חדשה — נועם הספר",
     pushBody: "{{count}} התראות חדשות ממתינות במסך ההתראות",
     relativeTime: {
       now: "לפני רגע",

@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
-import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
 import * as Application from "expo-application";
 import Constants from "expo-constants";
 import { useAppConfig } from "../api/appConfig";
+import { SplashLoadingView } from "./SplashLoadingView";
 import { theme } from "../theme";
 
 interface ForceUpdateGateProps {
@@ -38,12 +39,7 @@ export function ForceUpdateGate({ children }: ForceUpdateGateProps): JSX.Element
   const config = useAppConfig();
 
   if (config.isLoading) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator color={theme.colors.primary} />
-        <Text style={styles.body}>בודק עדכונים...</Text>
-      </View>
-    );
+    return <SplashLoadingView />;
   }
 
   if (!config.data) return <>{children}</>;

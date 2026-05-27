@@ -33,6 +33,7 @@ import {
   useArchiveOrderLine,
   useOrdersList,
   useRemoveOrderLine,
+  useToggleInventoryLineOrderedStatus,
   useToggleInventorySupplierOrderedStatus,
   useUpdateInventoryOrderQuantity,
 } from "../../src/api/orders";
@@ -226,6 +227,7 @@ export default function OrdersScreen(): JSX.Element {
   const [toggleSupplierTarget, setToggleSupplierTarget] = useState<OrdersBySupplierGroup | null>(
     null,
   );
+  const [toggleLineTarget, setToggleLineTarget] = useState<OrderListItem | null>(null);
   const [customerOrderOpen, setCustomerOrderOpen] = useState(false);
   const [inventoryOrderOpen, setInventoryOrderOpen] = useState(false);
   const [editDemandBundle, setEditDemandBundle] = useState<{
@@ -258,6 +260,7 @@ export default function OrdersScreen(): JSX.Element {
   const removeLineMutation = useRemoveOrderLine();
   const archiveLineMutation = useArchiveOrderLine();
   const toggleSupplierMutation = useToggleInventorySupplierOrderedStatus();
+  const toggleLineMutation = useToggleInventoryLineOrderedStatus();
   const updateInventoryQtyMutation = useUpdateInventoryOrderQuantity();
 
   const inventoryQuery = useOrdersList("inventory");
@@ -380,6 +383,27 @@ export default function OrdersScreen(): JSX.Element {
     }
   };
 
+  const toggleLineOrderedStatus = async (order: OrderListItem) => {
+    if (isOffline) {
+      Alert.alert(he.orders.toggleOrderedBlockedOffline);
+      return;
+    }
+    if (toggleLineMutation.isPending) return;
+    setToggleLineTarget(order);
+    try {
+      await toggleLineMutation.mutateAsync({
+        order,
+        rawInventory: rawInventoryItems,
+        rawCustomer: customerItems,
+        rawWhatsapp: whatsappItems,
+      });
+    } catch {
+      Alert.alert(he.generic.errorTitle, he.orders.toggleOrderedFailed);
+    } finally {
+      setToggleLineTarget(null);
+    }
+  };
+
   const removingLineKey =
     removeLineMutation.isPending && removeOrderTarget
       ? orderDisplayLineKey(removeOrderTarget)
@@ -480,6 +504,11 @@ export default function OrdersScreen(): JSX.Element {
       ? supplierGroupKey(toggleSupplierTarget.supplier_id)
       : null;
 
+  const togglingLineKey =
+    toggleLineMutation.isPending && toggleLineTarget
+      ? orderDisplayLineKey(toggleLineTarget)
+      : null;
+
   return (
     <View style={styles.screen}>
       {isOffline ? (
@@ -534,9 +563,11 @@ export default function OrdersScreen(): JSX.Element {
               onRemoveOrderLine={askRemoveOrderLine}
               onEditOrderLine={isOffline ? undefined : openEditOrderLine}
               onToggleSupplierOrdered={isOffline ? undefined : toggleSupplierOrderedStatus}
+              onToggleLineOrdered={isOffline ? undefined : toggleLineOrderedStatus}
               removingOrderLineKey={removingLineKey}
               updatingOrderLineKey={updatingOrderLineKey}
               togglingSupplierKey={togglingSupplierKey}
+              togglingLineKey={togglingLineKey}
             />
           )}
         />

@@ -1,11 +1,13 @@
 @echo off
-setlocal
+setlocal EnableExtensions
 
-set "MOBILE_DIR=C:\dev\avihay-books-V2\mobile"
+call "%~dp0scripts\resolve-android-env.bat"
+
+REM Run from repo root (e.g. C:\dev\avihay-books-V2\build-release.bat)
+set "MOBILE_DIR=%~dp0mobile"
 
 if not exist "%MOBILE_DIR%" (
-    echo ERROR: Expected project at %MOBILE_DIR%
-    echo Copy the repo to C:\dev\avihay-books-V2 and run scripts\setup-android-local.bat first.
+    echo ERROR: mobile\ not found under %~dp0
     exit /b 1
 )
 
@@ -30,14 +32,16 @@ set "NODE_ENV=production"
 set "EXPO_ENV_MODE=production"
 set "EXPO_NO_METRO_WORKSPACE_ROOT=1"
 
-echo === Building release APK from %MOBILE_DIR% ===
+echo === Building release APK ===
+echo Repo: %~dp0
+echo Mobile: %MOBILE_DIR%
 call npx dotenv -e .env.production -- npx expo run:android --variant release --no-install
 
 echo === Done ===
 if exist "android\app\build\outputs\apk\release\app-release.apk" (
     echo.
     echo ========================================
-    echo APK ready: %MOBILE_DIR%\android\app\build\outputs\apk\release\app-release.apk
+    echo APK ready: %MOBILE_DIR%android\app\build\outputs\apk\release\app-release.apk
     echo ========================================
 ) else (
     echo Build may have failed - check output above

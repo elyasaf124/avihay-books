@@ -1,11 +1,5 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
-import type {
-  Book,
-  BookLocation,
-  BookLocationExpanded,
-  BookWithLocations,
-  StoreMap,
-} from "@avihay-books/shared";
+import type { Book, BookLocation, BookWithLocations, StoreMap } from "@avihay-books/shared";
 import axios from "axios";
 import { findStoreMapCellById, resolvePositionForPlacement } from "../utils/storeMapCells";
 import { api } from "./client";
@@ -48,24 +42,56 @@ export function useInventoryBooksBySupplier(supplierId: string | null) {
   });
 }
 
-function applyOptimisticStockToList(
+function applyOptimisticStockDeltaToList(
   list: BookWithLocations[] | undefined,
   bookId: string,
-  newStock: number,
+  delta: number,
   locationId: string | null,
-  newLocationQty: number | null,
 ): BookWithLocations[] | undefined {
   if (!list) return list;
   return list.map((b) => {
     if (b.id !== bookId) return b;
+    const newStock = Math.max(0, b.stock_quantity + delta);
     const nextLocations =
-      locationId != null && newLocationQty != null
+      locationId != null
         ? b.locations.map((l) =>
-            l.id === locationId ? { ...l, quantity_in_cell: newLocationQty } : l,
+            l.id === locationId
+              ? { ...l, quantity_in_cell: Math.max(0, l.quantity_in_cell + delta) }
+              : l,
           )
         : b.locations;
     return { ...b, stock_quantity: newStock, locations: nextLocations };
   });
+}
+
+const bookStockMutationChains = new Map<string, Promise<unknown>>();
+/** מספר mutations ממתינות לספר — מונע מ-onSuccess ביניים לדרוס optimistic. */
+const pendingStockMutationsByBook = new Map<string, number>();
+
+function trackPendingStockMutation(bookId: string): void {
+  pendingStockMutationsByBook.set(bookId, (pendingStockMutationsByBook.get(bookId) ?? 0) + 1);
+}
+
+function releasePendingStockMutation(bookId: string): number {
+  const pending = pendingStockMutationsByBook.get(bookId) ?? 0;
+  const next = pending - 1;
+  if (next <= 0) {
+    pendingStockMutationsByBook.delete(bookId);
+    return 0;
+  }
+  pendingStockMutationsByBook.set(bookId, next);
+  return next;
+}
+function enqueueBookStockMutation<T>(bookId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = bookStockMutationChains.get(bookId) ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  bookStockMutationChains.set(bookId, next);
+  void next.finally(() => {
+    if (bookStockMutationChains.get(bookId) === next) {
+      bookStockMutationChains.delete(bookId);
+    }
+  });
+  return next;
 }
 
 function mergeServerStockIntoList(
@@ -96,15 +122,16 @@ function mergeServerStockIntoList(
 export interface AdjustInventoryStockArgs {
   supplierId: string;
   bookId: string;
-  newStock: number;
-  selectedLocation: BookLocationExpanded | null;
+  delta: number;
+  locationId: string | null;
 }
 
 type AdjustStockMutateCtx = {
   listKey: readonly ["books", "inventory", string];
+  previousList: BookWithLocations[] | undefined;
 };
 
-/** עדכון מלאי מהיר: תא אם נבחר, ואז ספר — אופטימיסטי, ללא חסימת UI; בשגיאה ריענון מהשרת. */
+/** עדכון מלאי מהיר: תא אם נבחר, ואז ספר — אופטימיסטי לפי דלתא; תור סידורי לשרת; rollback בשגיאה. */
 export function useAdjustInventoryStock() {
   const client = useQueryClient();
   return useMutation<
@@ -113,48 +140,79 @@ export function useAdjustInventoryStock() {
     AdjustInventoryStockArgs,
     AdjustStockMutateCtx
   >({
-    mutationFn: async (vars): Promise<{ book: Book; location?: BookLocation }> => {
-      let location: BookLocation | undefined;
-      if (vars.selectedLocation) {
-        const { data } = await api.patch<BookLocation>(
-          `/book-locations/${vars.selectedLocation.id}`,
-          vars.selectedLocation,
-        );
-        location = data;
-      }
-      const { data: book } = await api.patch<Book>(`/books/${vars.bookId}`, {
-        stock_quantity: vars.newStock,
-      });
-      return { book, location };
-    },
+    mutationFn: async (vars): Promise<{ book: Book; location?: BookLocation }> =>
+      enqueueBookStockMutation(vars.bookId, async () => {
+        const { data: currentBook } = await api.get<Book>(`/books/${vars.bookId}`);
+        const newStock = Math.max(0, currentBook.stock_quantity + vars.delta);
+
+        let location: BookLocation | undefined;
+        if (vars.locationId) {
+          const { data: locations } = await api.get<BookLocation[]>(
+            `/book-locations/book/${vars.bookId}`,
+          );
+          const loc = locations.find((l) => l.id === vars.locationId);
+          if (loc) {
+            const newQtyCell = Math.max(0, loc.quantity_in_cell + vars.delta);
+            const { data } = await api.patch<BookLocation>(`/book-locations/${loc.id}`, {
+              ...loc,
+              quantity_in_cell: newQtyCell,
+            });
+            location = data;
+          }
+        }
+
+        const { data: book } = await api.patch<Book>(`/books/${vars.bookId}`, {
+          stock_quantity: newStock,
+        });
+        return { book, location };
+      }),
     onMutate: async (vars) => {
+      trackPendingStockMutation(vars.bookId);
       const listKey = [...inventoryBooksPrefix, vars.supplierId] as const;
       await client.cancelQueries({ queryKey: listKey });
+      const previousList = client.getQueryData<BookWithLocations[]>(listKey);
       client.setQueryData<BookWithLocations[]>(listKey, (prev) =>
-        applyOptimisticStockToList(
-          prev,
-          vars.bookId,
-          vars.newStock,
-          vars.selectedLocation?.id ?? null,
-          vars.selectedLocation?.quantity_in_cell ?? null,
-        ),
+        applyOptimisticStockDeltaToList(prev, vars.bookId, vars.delta, vars.locationId),
       );
-      return { listKey };
+      return { listKey, previousList };
     },
-    onError: (_e, _v, ctx) => {
-      if (ctx?.listKey != null) {
-        void client.invalidateQueries({ queryKey: [...ctx.listKey] });
+    onError: (_e, vars, ctx) => {
+      if (ctx?.listKey == null) return;
+      const { listKey, previousList } = ctx;
+      const current = client.getQueryData<BookWithLocations[]>(listKey);
+      if (current != null) {
+        const rolled = applyOptimisticStockDeltaToList(
+          current,
+          vars.bookId,
+          -vars.delta,
+          vars.locationId,
+        );
+        if (rolled != null) {
+          client.setQueryData(listKey, rolled);
+          return;
+        }
       }
+      if (previousList != null) {
+        client.setQueryData(listKey, previousList);
+        return;
+      }
+      void client.invalidateQueries({ queryKey: [...listKey] });
     },
     onSuccess: (result, vars, ctx) => {
       if (!ctx?.listKey) return;
-      client.setQueryData<BookWithLocations[]>(ctx.listKey, (prev) =>
-        mergeServerStockIntoList(prev, vars.bookId, result.book, result.location),
-      );
-      invalidateNotifications(client);
-      void client.invalidateQueries({ queryKey: STORE_MAP_KEY });
-      void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
-      void client.invalidateQueries({ queryKey: ["orders"] });
+      const pending = pendingStockMutationsByBook.get(vars.bookId) ?? 0;
+      if (pending <= 1) {
+        client.setQueryData<BookWithLocations[]>(ctx.listKey, (prev) =>
+          mergeServerStockIntoList(prev, vars.bookId, result.book, result.location),
+        );
+        invalidateNotifications(client);
+        void client.invalidateQueries({ queryKey: STORE_MAP_KEY });
+        void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
+        void client.invalidateQueries({ queryKey: ["orders"] });
+      }
+    },
+    onSettled: (_result, _error, vars) => {
+      releasePendingStockMutation(vars.bookId);
     },
   });
 }

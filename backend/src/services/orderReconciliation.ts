@@ -4,7 +4,7 @@ import {
   completeOrder,
   deleteOrderById,
   findOpenOrdersForBook,
-  updateOrderQuantity,
+  updateOrderQuantityAndResetPending,
 } from "../repos/orders.repo.js";
 
 /**
@@ -36,7 +36,7 @@ export async function reconcileOrdersOnStockArrival(
       } else if (action.action === "delete") {
         await deleteOrderById(action.id, client);
       } else {
-        await updateOrderQuantity(action.id, action.newQuantity, client);
+        await updateOrderQuantityAndResetPending(action.id, action.newQuantity, client);
       }
     }
 

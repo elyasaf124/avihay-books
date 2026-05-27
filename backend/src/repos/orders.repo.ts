@@ -279,6 +279,18 @@ export async function updateOrderQuantity(
   await client.query(`UPDATE orders SET quantity = $1 WHERE id = $2`, [quantity, id]);
 }
 
+/** מפחית כמות ומאפס סימון «הוזמן» — לשימוש בריקונסיליאציית מלאi חלקית. */
+export async function updateOrderQuantityAndResetPending(
+  id: string,
+  quantity: number,
+  client: Queryable = pool,
+): Promise<void> {
+  await client.query(`UPDATE orders SET quantity = $1, status = 'pending' WHERE id = $2`, [
+    quantity,
+    id,
+  ]);
+}
+
 export async function deleteOrderById(id: string, client: Queryable = pool): Promise<void> {
   await client.query(`DELETE FROM orders WHERE id = $1`, [id]);
 }

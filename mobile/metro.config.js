@@ -6,6 +6,7 @@ const { getDefaultConfig } = require("expo/metro-config");
  * לפי workspaces ב־`package.json`; אל תדרוס אותן — זה מאכזב את `expo-doctor`.
  *
  * רק על Windows: מסנני stubs אופציונליים של `@esbuild/linux-*` שגורמים ל־Metro ENOENT בטעימה.
+ * גם: `android/build` ו־`ios/build` בתוך `node_modules` (שאריות מבניית native) — לא רלוונטיים ל־Metro.
  */
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, "..");
@@ -18,18 +19,23 @@ const config = getDefaultConfig(projectRoot);
  */
 config.watchFolders = [...new Set([...(config.watchFolders ?? []), monorepoRoot, sharedRoot])];
 
-const esbuildExtras =
-  process.platform === "win32"
-    ? [/node_modules[/\\]@esbuild[/\\](?!win32).*$/]
-    : [];
+/** Native build output inside packages — not needed for JS bundling; stale paths cause ENOENT on Windows. */
+const metroBlockExtras = [
+  /node_modules[/\\][^/\\]+[/\\]android[/\\]build[/\\].*/,
+  /node_modules[/\\][^/\\]+[/\\]ios[/\\]build[/\\].*/,
+];
 
-if (esbuildExtras.length > 0 && config.resolver) {
+if (process.platform === "win32") {
+  metroBlockExtras.push(/node_modules[/\\]@esbuild[/\\](?!win32).*$/);
+}
+
+if (metroBlockExtras.length > 0 && config.resolver) {
   const existing = Array.isArray(config.resolver.blockList)
     ? config.resolver.blockList
     : config.resolver.blockList != null
       ? [config.resolver.blockList]
       : [];
-  config.resolver.blockList = [...existing, ...esbuildExtras];
+  config.resolver.blockList = [...existing, ...metroBlockExtras];
 }
 
 module.exports = config;

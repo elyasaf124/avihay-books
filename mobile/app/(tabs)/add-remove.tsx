@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import type { BookLocation, BookWithLocations, StoreMapBook, Supplier } from "@avihay-books/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ActivityIndicator,
   Alert,
@@ -102,6 +103,7 @@ function expandInventoryMoveSlots(
 
 export default function AddRemoveScreen(): JSX.Element {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const suppliers = useSuppliersWithFallback();
   const supplierPickerItems = useMemo(() => suppliersToPickerItems(suppliers), [suppliers]);
   const [supplierId, setSupplierId] = useState<string | null>(null);
@@ -407,31 +409,31 @@ export default function AddRemoveScreen(): JSX.Element {
     (book: BookWithLocations, delta: number) => {
       if (!supplierId) return;
       const selId = locationByBook[book.id] ?? null;
+      const cachedList = queryClient.getQueryData<BookWithLocations[]>([
+        "books",
+        "inventory",
+        supplierId,
+      ]);
+      const cachedBook = cachedList?.find((b) => b.id === book.id) ?? book;
       const selectedLoc =
-        selId === null ? null : book.locations.find((loc) => loc.id === selId) ?? null;
-      const newStock = Math.max(0, book.stock_quantity + delta);
-      if (delta < 0 && book.stock_quantity <= 0) return;
-      if (delta < 0 && selectedLoc && selectedLoc.quantity_in_cell <= 0) return;
+        selId === null ? null : cachedBook.locations.find((loc) => loc.id === selId) ?? null;
 
-      let selectedExpanded: BookWithLocations["locations"][number] | null = null;
-      if (selectedLoc) {
-        const newQtyCell = Math.max(0, selectedLoc.quantity_in_cell + delta);
-        selectedExpanded = { ...selectedLoc, quantity_in_cell: newQtyCell };
-      }
+      if (delta < 0 && cachedBook.stock_quantity <= 0) return;
+      if (delta < 0 && selectedLoc && selectedLoc.quantity_in_cell <= 0) return;
 
       adjustInventoryStock.mutate(
         {
           supplierId,
           bookId: book.id,
-          newStock,
-          selectedLocation: selectedExpanded,
+          delta,
+          locationId: selId,
         },
         {
           onError: () => Alert.alert(he.generic.errorTitle, he.addRemove.stockAdjustFailed),
         },
       );
     },
-    [supplierId, locationByBook, adjustInventoryStock],
+    [supplierId, locationByBook, adjustInventoryStock, queryClient],
   );
 
   /** הוספת מלאי מהשדה «כמה להוסיף»: מחרוזת מספר שלם חיובי. */

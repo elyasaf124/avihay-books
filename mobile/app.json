@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "avihay-books",
+    "name": "נועם הספר",
     "slug": "avihay-books",
     "version": "0.1.0",
     "orientation": "portrait",
@@ -14,9 +14,9 @@
       "fallbackToCacheTimeout": 0
     },
     "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#fffadf"
+      "image": "./assets/splash.png",
+      "resizeMode": "cover",
+      "backgroundColor": "#3d2817"
     },
     "ios": {
       "supportsTablet": true,
@@ -33,9 +33,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#fffadf",
-          "image": "./assets/splash-icon.png",
-          "imageWidth": 200
+          "backgroundColor": "#3d2817",
+          "image": "./assets/splash.png",
+          "resizeMode": "cover"
         }
       ],
       "expo-font",
