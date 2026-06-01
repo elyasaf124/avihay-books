@@ -78,14 +78,47 @@ export function useMarkAllNotificationsRead() {
   });
 }
 
+interface DeleteNotificationContext {
+  previousList?: NotificationListItem[];
+  previousUnread?: number;
+}
+
 export function useDeleteNotification() {
   const client = useQueryClient();
-  return useMutation<void, Error, string>({
+  return useMutation<void, Error, string, DeleteNotificationContext>({
     mutationFn: async (id: string) => {
       await api.delete(`/notifications/${id}`);
     },
-    onSuccess: async () => {
-      await refetchNotificationsQueries(client);
+    onMutate: async (id) => {
+      await Promise.all([
+        client.cancelQueries({ queryKey: NOTIFICATIONS_LIST_KEY }),
+        client.cancelQueries({ queryKey: NOTIFICATIONS_UNREAD_KEY }),
+      ]);
+
+      const previousList = client.getQueryData<NotificationListItem[]>(NOTIFICATIONS_LIST_KEY);
+      const previousUnread = client.getQueryData<number>(NOTIFICATIONS_UNREAD_KEY);
+      const deleted = previousList?.find((n) => n.id === id);
+
+      client.setQueryData<NotificationListItem[]>(NOTIFICATIONS_LIST_KEY, (prev) =>
+        prev?.filter((n) => n.id !== id),
+      );
+
+      if (deleted != null && !deleted.is_read && typeof previousUnread === "number") {
+        client.setQueryData<number>(NOTIFICATIONS_UNREAD_KEY, Math.max(0, previousUnread - 1));
+      }
+
+      return { previousList, previousUnread };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.previousList != null) {
+        client.setQueryData(NOTIFICATIONS_LIST_KEY, ctx.previousList);
+      }
+      if (ctx?.previousUnread != null) {
+        client.setQueryData(NOTIFICATIONS_UNREAD_KEY, ctx.previousUnread);
+      }
+    },
+    onSettled: () => {
+      void refetchNotificationsQueries(client);
     },
   });
 }

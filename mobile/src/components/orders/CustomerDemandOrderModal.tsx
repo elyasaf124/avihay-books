@@ -1,15 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -23,8 +22,10 @@ import {
 } from "../../api/orders";
 import { useSearchBooks } from "../../api/storeMap";
 import { useSuppliersWithFallback } from "../../api/unit";
+import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
 import { he } from "../../i18n/he";
 import { theme } from "../../theme";
+import { keyboardAwareMaxHeight } from "../../utils/keyboardLayout";
 
 type BookSourceMode = "catalog" | "manual";
 
@@ -168,6 +169,8 @@ interface EditableBookLineCardProps {
   onSearchQueryChange: (q: string) => void;
   onSelectBook: (book: Book) => void;
   suppliers: { id: string; name: string; color_hex: string }[];
+  searchResultsMaxHeight?: number;
+  onSearchFocus?: () => void;
 }
 
 function EditableBookLineCard({
@@ -188,6 +191,8 @@ function EditableBookLineCard({
   onSelectBook,
   suppliers,
   lockQuantity = false,
+  searchResultsMaxHeight = 220,
+  onSearchFocus,
 }: EditableBookLineCardProps): JSX.Element {
   const isCatalog = line.sourceMode === "catalog";
 
@@ -268,6 +273,7 @@ function EditableBookLineCard({
                   autoFocus
                   textAlign="left"
                   autoCorrect={false}
+                  onFocus={onSearchFocus}
                 />
                 <Pressable onPress={onCloseSearch} hitSlop={8}>
                   <Ionicons name="close" size={20} color={theme.colors.onSurfaceVariant} />
@@ -284,20 +290,26 @@ function EditableBookLineCard({
                     : he.orders.customerOrderSearchEmpty}
                 </Text>
               ) : (
-                searchResults.slice(0, 5).map((book) => (
-                  <Pressable
-                    key={book.id}
-                    onPress={() => onSelectBook(book)}
-                    style={({ pressed }) => [styles.searchResultRow, pressed && styles.editableRowPressed]}
-                  >
-                    <Text style={styles.searchResultTitle} numberOfLines={2}>
-                      {book.title}
-                    </Text>
-                    <Text style={styles.searchResultAuthor} numberOfLines={1}>
-                      {book.author}
-                    </Text>
-                  </Pressable>
-                ))
+                <ScrollView
+                  nestedScrollEnabled
+                  keyboardShouldPersistTaps="handled"
+                  style={{ maxHeight: searchResultsMaxHeight }}
+                >
+                  {searchResults.slice(0, 5).map((book) => (
+                    <Pressable
+                      key={book.id}
+                      onPress={() => onSelectBook(book)}
+                      style={({ pressed }) => [styles.searchResultRow, pressed && styles.editableRowPressed]}
+                    >
+                      <Text style={styles.searchResultTitle} numberOfLines={2}>
+                        {book.title}
+                      </Text>
+                      <Text style={styles.searchResultAuthor} numberOfLines={1}>
+                        {book.author}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
               )}
             </View>
           ) : (
@@ -472,6 +484,19 @@ export function CustomerDemandOrderModal({
   initialBundle,
 }: CustomerDemandOrderModalProps): JSX.Element {
   const isEdit = mode === "edit";
+  const keyboardHeight = useKeyboardHeight();
+  const { height: windowH } = useWindowDimensions();
+  const scrollRef = useRef<ScrollView>(null);
+  const lineScrollYRef = useRef<Map<string, number>>(new Map());
+  const createSearchScrollYRef = useRef(0);
+
+  const resultsMaxH = keyboardAwareMaxHeight(windowH, keyboardHeight, 280, 120);
+
+  const scrollToSearchY = useCallback((y: number) => {
+    setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: Math.max(0, y - 16), animated: true });
+    }, 80);
+  }, []);
 
   const [bookLines, setBookLines] = useState<DraftBookLine[]>([]);
   const [originalBundle, setOriginalBundle] = useState<OrderListItem[]>([]);
@@ -749,10 +774,7 @@ export function CustomerDemandOrderModal({
       onRequestClose={onClose}
     >
       <SafeAreaView style={styles.safe} edges={["top", "bottom"]}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.flex}
-        >
+        <View style={styles.flex}>
           <View style={styles.header}>
             <Text style={styles.headerTitle}>{headerTitle}</Text>
             <Pressable
@@ -767,8 +789,12 @@ export function CustomerDemandOrderModal({
           </View>
 
           <ScrollView
+            ref={scrollRef}
             style={styles.flex}
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[
+              styles.scrollContent,
+              { paddingBottom: keyboardHeight + theme.spacing.xl },
+            ]}
             keyboardShouldPersistTaps="handled"
           >
             {isOffline ? (
@@ -797,47 +823,60 @@ export function CustomerDemandOrderModal({
                 {bookLines.map((line) => {
                   const supplier = suppliers.find((s) => s.id === line.supplierId);
                   return (
-                    <EditableBookLineCard
+                    <View
                       key={line.localId}
-                      line={line}
-                      supplierName={supplier?.name ?? ""}
-                      supplierColor={supplier?.color_hex ?? theme.colors.outlineVariant}
-                      searchOpen={bookSearchLineId === line.localId}
-                      searchQuery={bookSearchLineId === line.localId ? lineBookQuery : ""}
-                      searchResults={
-                        bookSearchLineId === line.localId ? (lineSearchQuery.data ?? []) : []
-                      }
-                      searchLoading={
-                        bookSearchLineId === line.localId && lineSearchQuery.isFetching
-                      }
-                      searchError={bookSearchLineId === line.localId && lineSearchQuery.isError}
-                      onUpdate={(patch) => updateBookLine(line.localId, patch)}
-                      onRemove={() => removeFromList(line.localId)}
-                      onOpenSupplierPicker={() => {
-                        setBookSearchLineId(null);
-                        setLineBookQuery("");
-                        setSupplierPickerLineId(line.localId);
+                      onLayout={(e) => {
+                        lineScrollYRef.current.set(line.localId, e.nativeEvent.layout.y);
                       }}
-                      onOpenSearch={() => {
-                        setSupplierPickerLineId(null);
-                        setBookSearchLineId(line.localId);
-                        setLineBookQuery("");
-                      }}
-                      onCloseSearch={() => {
-                        setBookSearchLineId(null);
-                        setLineBookQuery("");
-                      }}
-                      onSearchQueryChange={setLineBookQuery}
-                      onSelectBook={(book) => {
-                        updateBookLine(line.localId, {
-                          selectedBook: book,
-                          supplierId: book.supplier_id,
-                        });
-                        setBookSearchLineId(null);
-                        setLineBookQuery("");
-                      }}
-                      suppliers={suppliers}
-                    />
+                    >
+                      <EditableBookLineCard
+                        line={line}
+                        supplierName={supplier?.name ?? ""}
+                        supplierColor={supplier?.color_hex ?? theme.colors.outlineVariant}
+                        searchOpen={bookSearchLineId === line.localId}
+                        searchQuery={bookSearchLineId === line.localId ? lineBookQuery : ""}
+                        searchResults={
+                          bookSearchLineId === line.localId ? (lineSearchQuery.data ?? []) : []
+                        }
+                        searchLoading={
+                          bookSearchLineId === line.localId && lineSearchQuery.isFetching
+                        }
+                        searchError={bookSearchLineId === line.localId && lineSearchQuery.isError}
+                        searchResultsMaxHeight={resultsMaxH}
+                        onUpdate={(patch) => updateBookLine(line.localId, patch)}
+                        onRemove={() => removeFromList(line.localId)}
+                        onOpenSupplierPicker={() => {
+                          setBookSearchLineId(null);
+                          setLineBookQuery("");
+                          setSupplierPickerLineId(line.localId);
+                        }}
+                        onOpenSearch={() => {
+                          setSupplierPickerLineId(null);
+                          setBookSearchLineId(line.localId);
+                          setLineBookQuery("");
+                          const y = lineScrollYRef.current.get(line.localId) ?? 0;
+                          scrollToSearchY(y);
+                        }}
+                        onCloseSearch={() => {
+                          setBookSearchLineId(null);
+                          setLineBookQuery("");
+                        }}
+                        onSearchQueryChange={setLineBookQuery}
+                        onSearchFocus={() => {
+                          const y = lineScrollYRef.current.get(line.localId) ?? 0;
+                          scrollToSearchY(y);
+                        }}
+                        onSelectBook={(book) => {
+                          updateBookLine(line.localId, {
+                            selectedBook: book,
+                            supplierId: book.supplier_id,
+                          });
+                          setBookSearchLineId(null);
+                          setLineBookQuery("");
+                        }}
+                        suppliers={suppliers}
+                      />
+                    </View>
                   );
                 })}
 
@@ -1000,7 +1039,11 @@ export function CustomerDemandOrderModal({
             <Text style={styles.microHint}>{he.orders.customerOrderSupplierRowHint}</Text>
 
             {sourceMode === "catalog" ? (
-              <>
+              <View
+                onLayout={(e) => {
+                  createSearchScrollYRef.current = e.nativeEvent.layout.y;
+                }}
+              >
                 <Text style={styles.label}>{he.orders.customerOrderBookSearchLabel}</Text>
                 {selectedBook ? (
                   <View style={styles.selectedCard}>
@@ -1058,10 +1101,11 @@ export function CustomerDemandOrderModal({
                         returnKeyType="search"
                         textAlign="left"
                         autoCorrect={false}
+                        onFocus={() => scrollToSearchY(createSearchScrollYRef.current)}
                       />
                     </View>
                     {showResultList ? (
-                      <View style={styles.resultsBox}>
+                      <View style={[styles.resultsBox, { maxHeight: resultsMaxH }]}>
                         {searchQuery.isFetching ? (
                           <View style={styles.resultsLoading}>
                             <ActivityIndicator color={theme.colors.primary} />
@@ -1081,7 +1125,7 @@ export function CustomerDemandOrderModal({
                           <ScrollView
                             nestedScrollEnabled
                             keyboardShouldPersistTaps="handled"
-                            style={styles.resultsScroll}
+                            style={[styles.resultsScroll, { maxHeight: resultsMaxH }]}
                           >
                             {searchResults.map((item) => (
                               <Pressable
@@ -1110,7 +1154,7 @@ export function CustomerDemandOrderModal({
                     ) : null}
                   </>
                 )}
-              </>
+              </View>
             ) : (
               <>
                 <Text style={styles.label}>{he.orders.customerOrderManualTitleLabel}</Text>
@@ -1193,7 +1237,7 @@ export function CustomerDemandOrderModal({
               </>
             )}
           </ScrollView>
-        </KeyboardAvoidingView>
+        </View>
       </SafeAreaView>
 
       <Modal

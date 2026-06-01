@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,6 +16,7 @@ import type {
   StoreMapShelf,
   StoreMapUnit,
 } from "@avihay-books/shared";
+import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
 import {
@@ -109,6 +108,7 @@ export function MoveBookModal({
   onClose,
   onSubmit,
 }: Props): JSX.Element {
+  const keyboardHeight = useKeyboardHeight();
   const treatAsNewBook = book != null ? book.is_new : Boolean(placePreviewIsNew);
 
   const filteredStoreUnits = useMemo(() => {
@@ -385,13 +385,9 @@ export function MoveBookModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
-      >
-        <Pressable style={styles.backdrop} onPress={onClose}>
-          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.sheetHandle} />
+      <Pressable style={styles.backdrop} onPress={onClose}>
+        <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+          <View style={styles.sheetHandle} />
 
             <View style={styles.headerRow}>
               <Text style={styles.title} numberOfLines={1}>
@@ -481,7 +477,7 @@ export function MoveBookModal({
               </View>
             ) : null}
 
-            <ScrollView contentContainerStyle={{ gap: theme.spacing.md }}>
+            <ScrollView style={styles.sheetScroll} contentContainerStyle={{ gap: theme.spacing.md }}>
               <View style={styles.tabRow}>
                 <Pressable
                   onPress={() => setPickTab("quick")}
@@ -661,7 +657,11 @@ export function MoveBookModal({
             </ScrollView>
 
             <Pressable
-              style={[styles.submitBtn, !canSubmit && styles.submitBtnDisabled]}
+              style={[
+                styles.submitBtn,
+                !canSubmit && styles.submitBtnDisabled,
+                { marginBottom: keyboardHeight },
+              ]}
               onPress={submit}
               disabled={!canSubmit}
             >
@@ -669,7 +669,6 @@ export function MoveBookModal({
             </Pressable>
           </Pressable>
         </Pressable>
-      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -750,6 +749,8 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   sheet: {
+    flex: 1,
+    flexDirection: "column",
     backgroundColor: theme.colors.surface,
     borderTopLeftRadius: theme.radius.xl,
     borderTopRightRadius: theme.radius.xl,
@@ -758,6 +759,11 @@ const styles = StyleSheet.create({
     gap: theme.spacing.md,
     maxHeight: "90%",
     ...theme.shadow.modal,
+  },
+  sheetScroll: {
+    flex: 1,
+    flexShrink: 1,
+    minHeight: 0,
   },
   sheetHandle: {
     alignSelf: "center",

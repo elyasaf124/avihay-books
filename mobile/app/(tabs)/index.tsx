@@ -14,7 +14,11 @@ import { isOpenOrder, mergeOrderLinesForDisplay, useOrdersList } from "../../src
 import { useShortageList } from "../../src/api/shortage";
 import { useSuppliersWithFallback } from "../../src/api/unit";
 import { useStoreMapFilters } from "../../src/context/StoreMapFilterContext";
-import { sumFilteredCopiesFromMap } from "../../src/utils/unitFilters";
+import {
+  collectTopicsFromMap,
+  isUnitFilterActive,
+  sumFilteredCopiesFromMap,
+} from "../../src/utils/unitFilters";
 import {
   deriveHomeFloorStock,
   mockCatalogBooks,
@@ -110,12 +114,13 @@ export default function HomeScreen(): JSX.Element {
   const storeMapData =
     storeMapQuery.data != null && !storeMapQuery.isError ? storeMapQuery.data : mockStoreMap;
   const floorStock = deriveHomeFloorStock(storeMapQuery.data);
-  const supplierFilterActive = filters.supplierIds.length > 0;
+  const mapTopics = useMemo(() => collectTopicsFromMap(storeMapData), [storeMapData]);
+  const filterActive = isUnitFilterActive(filters);
   const filteredFloorCopies = useMemo(() => {
-    if (!supplierFilterActive) return null;
+    if (!filterActive) return null;
     const map = storeMapQuery.data != null && !storeMapQuery.isError ? storeMapQuery.data : mockStoreMap;
     return sumFilteredCopiesFromMap(map, filters);
-  }, [supplierFilterActive, storeMapQuery.data, storeMapQuery.isError, filters]);
+  }, [filterActive, storeMapQuery.data, storeMapQuery.isError, filters]);
 
   const ordersApisAllOffline =
     inventoryOrdersQuery.isError && customerOrdersQuery.isError && whatsappOrdersQuery.isError;
@@ -165,7 +170,7 @@ export default function HomeScreen(): JSX.Element {
     const storeMapPendingFirstFetch =
       storeMapQuery.isLoading && !storeMapQuery.isFetched && storeMapQuery.data == null;
 
-    const totalStockFormatted = supplierFilterActive
+    const totalStockFormatted = filterActive
       ? storeMapPendingFirstFetch
         ? he.home.statsValuePlaceholder
         : (filteredFloorCopies ?? 0).toLocaleString("he-IL")
@@ -173,10 +178,10 @@ export default function HomeScreen(): JSX.Element {
         ? he.home.statsValuePlaceholder
         : floorStock.totalStockFormatted;
 
-    const stockDeltaLabel = supplierFilterActive
+    const stockDeltaLabel = filterActive
       ? storeMapPendingFirstFetch
         ? he.home.loading
-        : he.home.statsFilteredBySupplierSubtitle
+        : he.home.statsFilteredSubtitle
       : storeMapPendingFirstFetch
         ? he.home.loading
         : floorStock.usedRealFloorTotal
@@ -199,7 +204,7 @@ export default function HomeScreen(): JSX.Element {
     inventoryOrdersRows,
     shortageQuery.data?.length,
     ordersMetricsFetched,
-    supplierFilterActive,
+    filterActive,
     whatsappOrdersRows,
     storeMapQuery.isFetched,
     storeMapQuery.isLoading,
@@ -265,8 +270,10 @@ export default function HomeScreen(): JSX.Element {
         <UnitFilterBar
           filters={filters}
           suppliers={suppliers}
+          topics={mapTopics}
           onChange={setFilters}
-          suppliersOnly
+          embedded
+          noTopicsLabel={he.home.filterNoTopics}
         />
       ) : null}
 

@@ -25,7 +25,7 @@ const TYPE_TO_ICON: Record<NotificationType, keyof typeof Ionicons.glyphMap> = {
  * - הודעה + מטא־דאטה של ספר/ספק.
  * - נקודת «טרם נקרא» אדומה כאשר `is_read = false`.
  * - `Swipeable`: החלקה שמאלה חושפת «סמן כנקרא» כשהתראה טרם נקראה; החלקה ימינה
- *   חושפת «מחק» בכל מצב. הקשה על התראה שלא נקראה מסמנת כנקראה.
+ *   מוחקת. הקשה על התראה שלא נקראה מסמנת כנקראה.
  */
 export function NotificationRow({ notification, onMarkRead, onDelete }: Props): JSX.Element {
   const swipeableRef = useRef<Swipeable | null>(null);
@@ -56,16 +56,14 @@ export function NotificationRow({ notification, onMarkRead, onDelete }: Props): 
     return (
       <Animated.View
         style={[styles.swipeActionDelete, styles.swipeActionDeleteFromLeft, { transform: [{ translateX: translate }] }]}
+        accessible
+        accessibilityRole="button"
+        accessibilityLabel={he.notifications.deleteOne}
       >
-        <Pressable
-          onPress={handleDelete}
-          style={({ pressed }) => [styles.swipeDeleteInner, pressed && { opacity: 0.85 }]}
-          accessibilityRole="button"
-          accessibilityLabel={he.notifications.deleteOne}
-        >
+        <View style={styles.swipeDeleteInner}>
           <Ionicons name="trash-outline" size={22} color={theme.colors.onErrorContainer} />
           <Text style={styles.swipeActionDeleteText}>{he.notifications.deleteOne}</Text>
-        </Pressable>
+        </View>
       </Animated.View>
     );
   };
@@ -94,7 +92,8 @@ export function NotificationRow({ notification, onMarkRead, onDelete }: Props): 
       renderLeftActions={renderLeftActions}
       renderRightActions={renderRightActions}
       onSwipeableOpen={(direction) => {
-        if (direction === "right" && isUnread) handleMarkRead();
+        if (direction === "left") handleDelete();
+        else if (direction === "right" && isUnread) handleMarkRead();
       }}
       overshootLeft={false}
       overshootRight={false}

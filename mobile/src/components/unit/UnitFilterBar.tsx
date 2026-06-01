@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import type { Supplier } from "@avihay-books/shared";
+import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
 
@@ -33,15 +35,19 @@ export function normalizeUnitFilterState(
 
 /** גובה קבוע לאזור הרשימה — הגלילה הכללית של המודל מטפלת ביתר. */
 const LIST_VIEWPORT_HEIGHT = 160;
+/** אזור מעל הגיליון — לחיצה סוגרת את המודל */
+const DISMISS_STRIP_HEIGHT = 72;
 
 interface Props {
   filters: UnitFilterState;
   suppliers: Supplier[];
-  /** נושאים זמינים לסינון — רק בדף ארון/מדפים */
+  /** נושאים זמינים לסינון */
   topics?: string[];
   onChange: (next: UnitFilterState) => void;
-  /** דף ראשי — רק ספקים; מחיר ונושא נשמרים ב-state משותף אך לא מוצגים */
-  suppliersOnly?: boolean;
+  /** דף ראשי — ללא padding אופקי על שורת הסינון */
+  embedded?: boolean;
+  /** הודעה כשאין נושאים ברשימה (ברירת מחדל: ארון בודד) */
+  noTopicsLabel?: string;
 }
 
 export function UnitFilterBar({
@@ -49,18 +55,18 @@ export function UnitFilterBar({
   suppliers,
   topics = [],
   onChange,
-  suppliersOnly = false,
+  embedded = false,
+  noTopicsLabel = he.unit.filterNoTopics,
 }: Props): JSX.Element {
   const [open, setOpen] = useState(false);
 
-  const activeCount = suppliersOnly
-    ? filters.supplierIds.length
-    : filters.supplierIds.length +
-      filters.topics.length +
-      (filters.priceMin !== null || filters.priceMax !== null ? 1 : 0);
+  const activeCount =
+    filters.supplierIds.length +
+    filters.topics.length +
+    (filters.priceMin !== null || filters.priceMax !== null ? 1 : 0);
 
   const summaryText = useMemo(() => {
-    if (activeCount === 0) return he.unit.filterAllSuppliers;
+    if (activeCount === 0) return he.unit.filterBarPlaceholder;
     const supplierPart =
       filters.supplierIds.length === 0
         ? null
@@ -68,7 +74,6 @@ export function UnitFilterBar({
             .filter((s) => filters.supplierIds.includes(s.id))
             .map((s) => s.name)
             .join(", ");
-    if (suppliersOnly) return supplierPart ?? he.unit.filterAllSuppliers;
     const topicPart =
       filters.topics.length === 0 ? null : filters.topics.join(", ");
     const pricePart =
@@ -76,10 +81,10 @@ export function UnitFilterBar({
         ? `${he.unit.pricePrefix}${filters.priceMin ?? 0}–${he.unit.pricePrefix}${filters.priceMax ?? "∞"}`
         : null;
     return [supplierPart, topicPart, pricePart].filter(Boolean).join("  ·  ");
-  }, [filters, suppliers, activeCount, suppliersOnly]);
+  }, [filters, suppliers, activeCount]);
 
   return (
-    <View style={[styles.wrap, suppliersOnly && styles.wrapEmbedded]}>
+    <View style={[styles.wrap, embedded && styles.wrapEmbedded]}>
       <Pressable style={styles.bar} onPress={() => setOpen(true)}>
         <Ionicons
           name="options-outline"
@@ -104,7 +109,7 @@ export function UnitFilterBar({
         suppliers={suppliers}
         topics={topics}
         onChange={onChange}
-        suppliersOnly={suppliersOnly}
+        noTopicsLabel={noTopicsLabel}
       />
     </View>
   );
@@ -122,8 +127,9 @@ function FilterSheet({
   suppliers,
   topics = [],
   onChange,
-  suppliersOnly = false,
+  noTopicsLabel = he.unit.filterNoTopics,
 }: SheetProps): JSX.Element {
+  const keyboardHeight = useKeyboardHeight();
   const [draft, setDraft] = useState<UnitFilterState>(filters);
   const [supplierQuery, setSupplierQuery] = useState("");
   const [topicQuery, setTopicQuery] = useState("");
@@ -178,186 +184,183 @@ function FilterSheet({
     onClose();
   };
   const reset = () => {
-    const cleared = suppliersOnly
-      ? { ...normalizeUnitFilterState(filters), supplierIds: [] }
-      : emptyFilters;
-    setDraft(cleared);
-    onChange(cleared);
+    setDraft(emptyFilters);
+    onChange(emptyFilters);
     onClose();
   };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
-      >
-        <Pressable style={styles.backdrop} onPress={onClose}>
-          <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
-            <View style={styles.sheetHandle} />
+      <View style={styles.modalRoot}>
+        <View style={styles.backdrop}>
+          <Pressable
+            style={styles.dismissStrip}
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel={he.generic.cancel}
+          />
+          <SafeAreaView style={styles.sheetSafe} edges={["top"]}>
+            <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.sheetHandle} />
 
-            <Text style={styles.sheetTitle}>{he.unit.filterTitle}</Text>
+              <Text style={styles.sheetTitle}>{he.unit.filterTitle}</Text>
 
-            <ScrollView
-              style={styles.sheetScroll}
-              contentContainerStyle={styles.sheetScrollContent}
-              keyboardShouldPersistTaps="handled"
-              nestedScrollEnabled
-              showsVerticalScrollIndicator
-            >
-            <Text style={styles.sectionTitle}>{he.unit.filterSuppliers}</Text>
-            <View style={styles.supplierSearchRow}>
-              <Ionicons name="search-outline" size={18} color={theme.colors.onSurfaceVariant} />
-              <TextInput
-                value={supplierQuery}
-                onChangeText={setSupplierQuery}
-                placeholder={he.picker.searchInList}
-                placeholderTextColor={theme.colors.onSurfaceVariant}
-                style={styles.supplierSearchInput}
-                textAlign="left"
-              />
-            </View>
-            <View style={styles.supplierListViewport}>
               <ScrollView
-                style={styles.supplierList}
-                contentContainerStyle={styles.supplierListContent}
-                nestedScrollEnabled
+                style={styles.sheetScroll}
+                contentContainerStyle={[
+                  styles.sheetScrollContent,
+                  keyboardHeight > 0 && { paddingBottom: theme.spacing.sm },
+                ]}
                 keyboardShouldPersistTaps="handled"
+                nestedScrollEnabled
                 showsVerticalScrollIndicator
               >
-                {filteredSuppliers.length === 0 ? (
-                  <Text style={styles.supplierEmpty}>{he.picker.noMatches}</Text>
-                ) : (
-                  filteredSuppliers.map((s, index) => {
-                    const active = draft.supplierIds.includes(s.id);
-                    return (
-                      <View key={s.id}>
-                        {index > 0 ? <View style={styles.supplierSep} /> : null}
-                        <Pressable
-                          onPress={() => toggle(s.id)}
-                          style={[styles.supplierRow, active && styles.supplierRowActive]}
-                        >
-                          <View style={styles.supplierRowMain}>
-                            <View
-                              style={[styles.supplierDot, { backgroundColor: s.color_hex ?? theme.colors.outline }]}
-                            />
-                            <Text style={[styles.supplierRowName, active && styles.supplierRowNameActive]}>
-                              {s.name}
-                            </Text>
+                <Text style={styles.sectionTitle}>{he.unit.filterSuppliers}</Text>
+                <View style={styles.supplierSearchRow}>
+                  <Ionicons name="search-outline" size={18} color={theme.colors.onSurfaceVariant} />
+                  <TextInput
+                    value={supplierQuery}
+                    onChangeText={setSupplierQuery}
+                    placeholder={he.picker.searchInList}
+                    placeholderTextColor={theme.colors.onSurfaceVariant}
+                    style={styles.supplierSearchInput}
+                    textAlign="left"
+                  />
+                </View>
+                <View style={styles.supplierListViewport}>
+                  <ScrollView
+                    style={styles.supplierList}
+                    contentContainerStyle={styles.supplierListContent}
+                    nestedScrollEnabled
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator
+                  >
+                    {filteredSuppliers.length === 0 ? (
+                      <Text style={styles.supplierEmpty}>{he.picker.noMatches}</Text>
+                    ) : (
+                      filteredSuppliers.map((s, index) => {
+                        const active = draft.supplierIds.includes(s.id);
+                        return (
+                          <View key={s.id}>
+                            {index > 0 ? <View style={styles.supplierSep} /> : null}
+                            <Pressable
+                              onPress={() => toggle(s.id)}
+                              style={[styles.supplierRow, active && styles.supplierRowActive]}
+                            >
+                              <View style={styles.supplierRowMain}>
+                                <View
+                                  style={[styles.supplierDot, { backgroundColor: s.color_hex ?? theme.colors.outline }]}
+                                />
+                                <Text style={[styles.supplierRowName, active && styles.supplierRowNameActive]}>
+                                  {s.name}
+                                </Text>
+                              </View>
+                              <Ionicons
+                                name={active ? "checkbox" : "square-outline"}
+                                size={22}
+                                color={active ? theme.colors.primary : theme.colors.outlineVariant}
+                              />
+                            </Pressable>
                           </View>
-                          <Ionicons
-                            name={active ? "checkbox" : "square-outline"}
-                            size={22}
-                            color={active ? theme.colors.primary : theme.colors.outlineVariant}
-                          />
-                        </Pressable>
-                      </View>
-                    );
-                  })
-                )}
-              </ScrollView>
-            </View>
+                        );
+                      })
+                    )}
+                  </ScrollView>
+                </View>
 
-            {!suppliersOnly ? (
-              <>
-            <Text style={[styles.sectionTitle, { marginTop: theme.spacing.lg }]}>
-              {he.unit.filterTopics}
-            </Text>
-            <View style={styles.supplierSearchRow}>
-              <Ionicons name="search-outline" size={18} color={theme.colors.onSurfaceVariant} />
-              <TextInput
-                value={topicQuery}
-                onChangeText={setTopicQuery}
-                placeholder={he.picker.searchInList}
-                placeholderTextColor={theme.colors.onSurfaceVariant}
-                style={styles.supplierSearchInput}
-                textAlign="left"
-              />
-            </View>
-            <View style={styles.supplierListViewport}>
-              <ScrollView
-                style={styles.supplierList}
-                contentContainerStyle={styles.supplierListContent}
-                nestedScrollEnabled
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator
-              >
-                {filteredTopics.length === 0 ? (
-                  <Text style={styles.supplierEmpty}>{he.unit.filterNoTopics}</Text>
-                ) : (
-                  filteredTopics.map((topic, index) => {
-                    const active = draft.topics.includes(topic);
-                    return (
-                      <View key={topic}>
-                        {index > 0 ? <View style={styles.supplierSep} /> : null}
-                        <Pressable
-                          onPress={() => toggleTopic(topic)}
-                          style={[styles.supplierRow, active && styles.supplierRowActive]}
-                        >
-                          <View style={styles.supplierRowMain}>
-                            <Text style={[styles.supplierRowName, active && styles.supplierRowNameActive]}>
-                              {topic}
-                            </Text>
+                <Text style={[styles.sectionTitle, { marginTop: theme.spacing.lg }]}>
+                  {he.unit.filterTopics}
+                </Text>
+                <View style={styles.supplierSearchRow}>
+                  <Ionicons name="search-outline" size={18} color={theme.colors.onSurfaceVariant} />
+                  <TextInput
+                    value={topicQuery}
+                    onChangeText={setTopicQuery}
+                    placeholder={he.picker.searchInList}
+                    placeholderTextColor={theme.colors.onSurfaceVariant}
+                    style={styles.supplierSearchInput}
+                    textAlign="left"
+                  />
+                </View>
+                <View style={styles.supplierListViewport}>
+                  <ScrollView
+                    style={styles.supplierList}
+                    contentContainerStyle={styles.supplierListContent}
+                    nestedScrollEnabled
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator
+                  >
+                    {filteredTopics.length === 0 ? (
+                      <Text style={styles.supplierEmpty}>{noTopicsLabel}</Text>
+                    ) : (
+                      filteredTopics.map((topic, index) => {
+                        const active = draft.topics.includes(topic);
+                        return (
+                          <View key={topic}>
+                            {index > 0 ? <View style={styles.supplierSep} /> : null}
+                            <Pressable
+                              onPress={() => toggleTopic(topic)}
+                              style={[styles.supplierRow, active && styles.supplierRowActive]}
+                            >
+                              <View style={styles.supplierRowMain}>
+                                <Text style={[styles.supplierRowName, active && styles.supplierRowNameActive]}>
+                                  {topic}
+                                </Text>
+                              </View>
+                              <Ionicons
+                                name={active ? "checkbox" : "square-outline"}
+                                size={22}
+                                color={active ? theme.colors.primary : theme.colors.outlineVariant}
+                              />
+                            </Pressable>
                           </View>
-                          <Ionicons
-                            name={active ? "checkbox" : "square-outline"}
-                            size={22}
-                            color={active ? theme.colors.primary : theme.colors.outlineVariant}
-                          />
-                        </Pressable>
-                      </View>
-                    );
-                  })
-                )}
+                        );
+                      })
+                    )}
+                  </ScrollView>
+                </View>
+
+                <Text style={[styles.sectionTitle, { marginTop: theme.spacing.lg }]}>
+                  {he.unit.filterPriceRange}
+                </Text>
+                <View style={styles.priceRow}>
+                  <View style={styles.priceInputBlock}>
+                    <Text style={styles.priceLabel}>מ־{he.unit.pricePrefix}</Text>
+                    <TextInput
+                      style={styles.priceInput}
+                      value={draft.priceMin?.toString() ?? ""}
+                      onChangeText={(t) => setPrice("priceMin", t)}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor={theme.colors.onSurfaceVariant}
+                    />
+                  </View>
+                  <View style={styles.priceInputBlock}>
+                    <Text style={styles.priceLabel}>עד {he.unit.pricePrefix}</Text>
+                    <TextInput
+                      style={styles.priceInput}
+                      value={draft.priceMax?.toString() ?? ""}
+                      onChangeText={(t) => setPrice("priceMax", t)}
+                      keyboardType="numeric"
+                      placeholder="∞"
+                      placeholderTextColor={theme.colors.onSurfaceVariant}
+                    />
+                  </View>
+                </View>
               </ScrollView>
-            </View>
-              </>
-            ) : null}
 
-            {!suppliersOnly ? (
-              <>
-            <Text style={[styles.sectionTitle, { marginTop: theme.spacing.lg }]}>
-              {he.unit.filterPriceRange}
-            </Text>
-            <View style={styles.priceRow}>
-              <View style={styles.priceInputBlock}>
-                <Text style={styles.priceLabel}>מ־{he.unit.pricePrefix}</Text>
-                <TextInput
-                  style={styles.priceInput}
-                  value={draft.priceMin?.toString() ?? ""}
-                  onChangeText={(t) => setPrice("priceMin", t)}
-                  keyboardType="numeric"
-                  placeholder="0"
-                  placeholderTextColor={theme.colors.onSurfaceVariant}
-                />
+              <View style={[styles.actions, { paddingBottom: keyboardHeight }]}>
+                <Pressable style={styles.resetBtn} onPress={reset}>
+                  <Text style={styles.resetBtnText}>{he.unit.filterReset}</Text>
+                </Pressable>
+                <Pressable style={styles.applyBtn} onPress={apply}>
+                  <Text style={styles.applyBtnText}>{he.generic.confirm}</Text>
+                </Pressable>
               </View>
-              <View style={styles.priceInputBlock}>
-                <Text style={styles.priceLabel}>עד {he.unit.pricePrefix}</Text>
-                <TextInput
-                  style={styles.priceInput}
-                  value={draft.priceMax?.toString() ?? ""}
-                  onChangeText={(t) => setPrice("priceMax", t)}
-                  keyboardType="numeric"
-                  placeholder="∞"
-                  placeholderTextColor={theme.colors.onSurfaceVariant}
-                />
-              </View>
-            </View>
-              </>
-            ) : null}
-            </ScrollView>
-
-            <View style={styles.actions}>
-              <Pressable style={styles.resetBtn} onPress={reset}>
-                <Text style={styles.resetBtnText}>{he.unit.filterReset}</Text>
-              </Pressable>
-              <Pressable style={styles.applyBtn} onPress={apply}>
-                <Text style={styles.applyBtnText}>{he.generic.confirm}</Text>
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
-      </KeyboardAvoidingView>
+            </Pressable>
+          </SafeAreaView>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -393,23 +396,36 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   badgeText: { color: theme.colors.onPrimary, fontWeight: "700", fontSize: 12 },
+  modalRoot: { flex: 1 },
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(11, 28, 48, 0.45)",
-    justifyContent: "flex-end",
+    justifyContent: "flex-start",
+  },
+  dismissStrip: {
+    height: DISMISS_STRIP_HEIGHT,
+    flexShrink: 0,
+    width: "100%",
+  },
+  sheetSafe: {
+    flex: 1,
+    width: "100%",
+    flexShrink: 1,
   },
   sheet: {
+    flex: 1,
+    flexDirection: "column",
     backgroundColor: theme.colors.surface,
     borderTopLeftRadius: theme.radius.xl,
     borderTopRightRadius: theme.radius.xl,
     padding: theme.spacing.lg,
     paddingBottom: theme.spacing.lg,
-    maxHeight: "88%",
     ...theme.shadow.modal,
   },
   sheetScroll: {
-    flexGrow: 0,
+    flex: 1,
     flexShrink: 1,
+    minHeight: 0,
   },
   sheetScrollContent: {
     gap: theme.spacing.md,

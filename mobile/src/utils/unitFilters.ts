@@ -38,20 +38,30 @@ export function passesBookTitleSearch(b: StoreMapBook, query: string): boolean {
   return b.title.normalize("NFKC").toLocaleLowerCase("und").includes(q);
 }
 
-export function collectTopicsFromUnit(u: StoreMapUnit): string[] {
-  const seen = new Set<string>();
-  const scan = (shelves: StoreMapShelf[]) => {
-    for (const shelf of shelves) {
-      for (const cell of shelf.cells) {
-        for (const b of cell.books) {
-          const topic = (b.topic ?? "").trim();
-          if (topic) seen.add(topic);
-        }
+function collectTopicsFromShelves(shelves: StoreMapShelf[], seen: Set<string>): void {
+  for (const shelf of shelves) {
+    for (const cell of shelf.cells) {
+      for (const b of cell.books) {
+        const topic = (b.topic ?? "").trim();
+        if (topic) seen.add(topic);
       }
     }
-  };
-  scan(u.shelves);
-  for (const side of u.sides) scan(side.shelves);
+  }
+}
+
+export function collectTopicsFromUnit(u: StoreMapUnit): string[] {
+  const seen = new Set<string>();
+  collectTopicsFromShelves(u.shelves, seen);
+  for (const side of u.sides) collectTopicsFromShelves(side.shelves, seen);
+  return [...seen].sort((a, b) => a.localeCompare(b, "he"));
+}
+
+export function collectTopicsFromMap(map: StoreMap): string[] {
+  const seen = new Set<string>();
+  for (const u of map.units) {
+    collectTopicsFromShelves(u.shelves, seen);
+    for (const side of u.sides) collectTopicsFromShelves(side.shelves, seen);
+  }
   return [...seen].sort((a, b) => a.localeCompare(b, "he"));
 }
 

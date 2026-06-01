@@ -1,12 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import type { BookLocation, BookWithLocations, StoreMapBook, Supplier } from "@avihay-books/shared";
+import type { BookLocation, BookWithLocations, Supplier } from "@avihay-books/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
-  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -17,6 +16,7 @@ import {
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -36,23 +36,22 @@ import {
   SearchablePickerField,
   suppliersToPickerItems,
 } from "../../src/components/pickers/SearchablePicker";
+import { SearchableBookPickerField } from "../../src/components/pickers/SearchableBookPickerField";
 import { ConfirmDialog } from "../../src/components/ConfirmDialog";
+import { EditBookModal } from "../../src/components/inventory/EditBookModal";
+import type { MapPlacementSubmitTarget } from "../../src/components/unit/MoveBookModal";
 import {
-  MoveBookModal,
-  type MapPlacementSubmitTarget,
-} from "../../src/components/unit/MoveBookModal";
+  InventoryMoveBookModal,
+  type InventoryMoveItem,
+} from "../../src/components/unit/InventoryMoveBookModal";
 import { PerCopyPlacementModal } from "../../src/components/unit/PerCopyPlacementModal";
+import { useKeyboardHeight } from "../../src/hooks/useKeyboardHeight";
 import { he } from "../../src/i18n/he";
 import { findFirstDisplayCellId, findStoreMapCellById, resolvePositionForPlacement } from "../../src/utils/storeMapCells";
 import { theme } from "../../src/theme";
 
 /** ייחוס יציב למקרה של `data === undefined` — אסור להשתמש ב־`[]` inlined (מתחלף כל רינדר). */
 const NO_BOOKS: BookWithLocations[] = [];
-
-/** מגבלת שורות בדרופדאון החיפוש (ביצועים כשיש מאות ספרים לאותו ספק). */
-const BOOK_DROPDOWN_SUGGESTION_CAP = 50;
-
-const BOOK_FILTER_BLUR_CLOSE_MS = Platform.OS === "ios" ? 140 : 230;
 
 function interpolate(template: string, vars: Record<string, string>): string {
   return Object.entries(vars).reduce((s, [k, v]) => {
@@ -63,27 +62,6 @@ function interpolate(template: string, vars: Record<string, string>): string {
 function unplacedQuantity(book: BookWithLocations): number {
   const onShelf = book.locations.reduce((s, l) => s + l.quantity_in_cell, 0);
   return Math.max(0, book.stock_quantity - onShelf);
-}
-
-function toStoreMapBook(
-  book: BookWithLocations,
-  loc: BookWithLocations["locations"][number],
-  supplierColor: string,
-): StoreMapBook {
-  return {
-    location_id: loc.id,
-    book_id: book.id,
-    title: book.title,
-    author: book.author,
-    supplier_id: book.supplier_id,
-    supplier_color: supplierColor,
-    position_in_cell: loc.position_in_cell,
-    quantity_in_cell: loc.quantity_in_cell,
-    is_new: book.is_new,
-    price: String(book.price),
-    topic: book.topic,
-    is_pending_shortage: false,
-  };
 }
 
 /** פירוק למשבצות שורות להעברה — תא אחד או כל המלאי */
@@ -107,12 +85,8 @@ export default function AddRemoveScreen(): JSX.Element {
   const suppliers = useSuppliersWithFallback();
   const supplierPickerItems = useMemo(() => suppliersToPickerItems(suppliers), [suppliers]);
   const [supplierId, setSupplierId] = useState<string | null>(null);
-  const [bookTitleFilter, setBookTitleFilter] = useState("");
-  const [bookSupplierFilterFocused, setBookSupplierFilterFocused] = useState(false);
-  /** `true`: הרשימה פתוחה עד סגירה בכפתור החץ (`blur` בשדה לא סוגר). */
-  const [bookSuggestionsPanelPinned, setBookSuggestionsPanelPinned] = useState(false);
+  const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
   const [scrollBooksListToBookId, setScrollBooksListToBookId] = useState<string | null>(null);
-  const blurBookFilterTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const booksFlatListRef = useRef<FlatList<BookWithLocations> | null>(null);
   const [newBookOpen, setNewBookOpen] = useState(false);
   /** מזהה מיקום לעדכון משולב, או `null` לעדכון מלאי כולל בלבד. */
@@ -120,22 +94,6 @@ export default function AddRemoveScreen(): JSX.Element {
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
   /** טקסט בשדה «כמה להוסיף למלאי» לפי `book.id`. */
   const [stockBulkDraft, setStockBulkDraft] = useState<Record<string, string>>({});
-  const [keyboardVisible, setKeyboardVisible] = useState(false);
-
-  useEffect(() => {
-    const showSub = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
-      () => setKeyboardVisible(true)
-    );
-    const hideSub = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
-      () => setKeyboardVisible(false)
-    );
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
 
   const booksQuery = useInventoryBooksBySupplier(supplierId);
   const storeMapQuery = useStoreMap();
@@ -147,69 +105,69 @@ export default function AddRemoveScreen(): JSX.Element {
   const moveBook = useMoveBook();
   const booksData = booksQuery.data;
   const books = booksData ?? NO_BOOKS;
-  const bookTitleFilterTrimmed = bookTitleFilter.trim();
   const filteredBooks = useMemo(() => {
-    if (!bookTitleFilterTrimmed) return books;
-    const q = bookTitleFilterTrimmed.normalize("NFKC").toLocaleLowerCase("und");
-    return books.filter((b) =>
-      b.title.normalize("NFKC").toLocaleLowerCase("und").includes(q),
-    );
-  }, [books, bookTitleFilterTrimmed]);
+    if (!selectedBookId) return books;
+    return books.filter((b) => b.id === selectedBookId);
+  }, [books, selectedBookId]);
 
-  const dropdownSuggestionBooks = useMemo(
-    () => filteredBooks.slice(0, BOOK_DROPDOWN_SUGGESTION_CAP),
-    [filteredBooks],
+  const keyboardHeight = useKeyboardHeight();
+  const { height: windowH } = useWindowDimensions();
+
+  /** מעקב אחר היסט הגלילה הנוכחי של רשימת הספרים — לחישוב גלילה יחסית. */
+  const booksScrollOffsetRef = useRef(0);
+  /** רפרנסים לאינפוטים בכרטיסים, לפי `${bookId}:price|stock` — למדידת מיקום מול המקלדת. */
+  const inputRefs = useRef<Map<string, TextInput>>(new Map());
+  /** האינפוט שבפוקוס כעת — נמדד מחדש כשהמקלדת נפתחת (Android: אחרי ה-focus). */
+  const focusedInputKeyRef = useRef<string | null>(null);
+
+  /** גולל את רשימת הספרים כך שהאינפוט הממוקד יישב מעל המקלדת. */
+  const ensureInputVisible = useCallback(
+    (key: string) => {
+      if (keyboardHeight <= 0) return;
+      const node = inputRefs.current.get(key);
+      if (!node) return;
+      node.measureInWindow((_x, y, _w, height) => {
+        const keyboardTop = windowH - keyboardHeight;
+        const margin = theme.spacing.lg;
+        const overflow = y + height - (keyboardTop - margin);
+        if (overflow > 0) {
+          booksFlatListRef.current?.scrollToOffset({
+            offset: Math.max(0, booksScrollOffsetRef.current + overflow),
+            animated: true,
+          });
+        }
+      });
+    },
+    [keyboardHeight, windowH],
   );
-  const dropdownSuggestionTruncated = dropdownSuggestionBooks.length < filteredBooks.length;
+
+  const onInputFocus = useCallback(
+    (key: string) => {
+      focusedInputKeyRef.current = key;
+      ensureInputVisible(key);
+    },
+    [ensureInputVisible],
+  );
+
+  useEffect(() => {
+    if (keyboardHeight <= 0 || !focusedInputKeyRef.current) return undefined;
+    const key = focusedInputKeyRef.current;
+    const t = setTimeout(() => ensureInputVisible(key), 60);
+    return () => clearTimeout(t);
+  }, [keyboardHeight, ensureInputVisible]);
 
   const isOffline = booksQuery.isError;
 
-  const clearBookFilterBlurTimer = useCallback(() => {
-    if (blurBookFilterTimerRef.current !== null) {
-      clearTimeout(blurBookFilterTimerRef.current);
-      blurBookFilterTimerRef.current = null;
-    }
+  const onBookPickerChange = useCallback((bookId: string | null) => {
+    setSelectedBookId(bookId);
+    if (bookId) setScrollBooksListToBookId(bookId);
   }, []);
 
-  const onBookTitleFilterFocus = useCallback(() => {
-    clearBookFilterBlurTimer();
-    setBookSupplierFilterFocused(true);
-  }, [clearBookFilterBlurTimer]);
-
-  const onBookTitleFilterBlur = useCallback(() => {
-    blurBookFilterTimerRef.current = setTimeout(() => {
-      setBookSupplierFilterFocused(false);
-      blurBookFilterTimerRef.current = null;
-    }, BOOK_FILTER_BLUR_CLOSE_MS);
-  }, [clearBookFilterBlurTimer]);
-
-  const toggleBookSuggestionsPanelPinned = useCallback(() => {
-    clearBookFilterBlurTimer();
-    setBookSuggestionsPanelPinned((p) => !p);
-  }, [clearBookFilterBlurTimer]);
-
-  const onPickBookFromDropdown = useCallback(
-    (book: BookWithLocations) => {
-      clearBookFilterBlurTimer();
-      setBookTitleFilter(book.title);
-      setBookSupplierFilterFocused(false);
-      setBookSuggestionsPanelPinned(false);
-      Keyboard.dismiss();
-      setScrollBooksListToBookId(book.id);
-    },
-    [clearBookFilterBlurTimer],
-  );
-
-  useEffect(() => () => clearBookFilterBlurTimer(), [clearBookFilterBlurTimer]);
-
   useEffect(() => {
-    setBookTitleFilter("");
+    setSelectedBookId(null);
     setStockBulkDraft({});
-    setBookSupplierFilterFocused(false);
-    setBookSuggestionsPanelPinned(false);
     setScrollBooksListToBookId(null);
-    clearBookFilterBlurTimer();
-  }, [supplierId, clearBookFilterBlurTimer]);
+  }, [supplierId]);
 
   useEffect(() => {
     if (scrollBooksListToBookId === null) return undefined;
@@ -316,6 +274,7 @@ export default function AddRemoveScreen(): JSX.Element {
 
   const [busyBookId, setBusyBookId] = useState<string | null>(null);
   const [deactivateBook, setDeactivateBook] = useState<BookWithLocations | null>(null);
+  const [editBook, setEditBook] = useState<BookWithLocations | null>(null);
 
   /** הקשר למודאל פר־עותק בספר חדש (נסגר לאחר שמירת הבחירה) */
   const [newBookPcCtx, setNewBookPcCtx] = useState<{
@@ -336,20 +295,10 @@ export default function AddRemoveScreen(): JSX.Element {
   const [existingPerCopyBook, setExistingPerCopyBook] = useState<BookWithLocations | null>(null);
   const [existingPerCopyModalError, setExistingPerCopyModalError] = useState<string | null>(null);
 
-  const [moveMapBook, setMoveMapBook] = useState<StoreMapBook | null>(null);
-  const [moveLockQtyOne, setMoveLockQtyOne] = useState(false);
   const [inventoryMoveBook, setInventoryMoveBook] = useState<BookWithLocations | null>(null);
   const [inventoryMoveSlots, setInventoryMoveSlots] = useState<
     { loc: BookWithLocations["locations"][number]; copyIndex: number }[]
   >([]);
-  const [inventoryMoveSlotIndex, setInventoryMoveSlotIndex] = useState(0);
-  /** מצב «העבר את כל העותקים בתא זה» — מדגיש את כל צ׳יפי העותקים מאותה רשומת מיקום */
-  const [inventoryMoveBulkLocId, setInventoryMoveBulkLocId] = useState<string | null>(null);
-  const moveSplitContextRef = useRef<{
-    bookId: string;
-    sourceLocation: BookWithLocations["locations"][number];
-    splitOffSingle: boolean;
-  } | null>(null);
   const [inventoryMapError, setInventoryMapError] = useState<string | null>(null);
 
   useFocusEffect(
@@ -388,7 +337,7 @@ export default function AddRemoveScreen(): JSX.Element {
       patchBookPending: patchBook.isPending,
       placementReady: placementStoreMap != null,
       storeMapUpdatedAt: storeMapQuery.dataUpdatedAt,
-      bookTitleFilterTrimmed,
+      selectedBookId,
     }),
     [
       booksQuery.dataUpdatedAt,
@@ -401,7 +350,7 @@ export default function AddRemoveScreen(): JSX.Element {
       patchBook.isPending,
       placementStoreMap,
       storeMapQuery.dataUpdatedAt,
-      bookTitleFilterTrimmed,
+      selectedBookId,
     ],
   );
 
@@ -487,106 +436,76 @@ export default function AddRemoveScreen(): JSX.Element {
     [patchBook],
   );
 
-  const onSubmitInventoryMoveMap = useCallback(
-    async (target: MapPlacementSubmitTarget) => {
-      if (!moveMapBook) return;
+  const closeInventoryMove = useCallback(() => {
+    setInventoryMoveBook(null);
+    setInventoryMoveSlots([]);
+    setInventoryMapError(null);
+  }, []);
+
+  const onSubmitInventoryMoveAll = useCallback(
+    async (moves: InventoryMoveItem[]) => {
+      if (!inventoryMoveBook || moves.length === 0) return;
       setInventoryMapError(null);
-      const ctx = moveSplitContextRef.current;
-      try {
-        if (ctx?.splitOffSingle) {
-          let created: BookLocation | null = null;
-          try {
-            created = await createBookLocation.mutateAsync({
-              book_id: ctx.bookId,
-              cell_id: target.cellId,
-              position_in_cell: target.positionInCell,
-              quantity_in_cell: 1,
-            });
-            const nextQty = ctx.sourceLocation.quantity_in_cell - 1;
-            if (nextQty <= 0) {
-              await api.delete(`/book-locations/${ctx.sourceLocation.id}`);
-            } else {
-              await patchLoc.mutateAsync({
-                location: {
-                  ...ctx.sourceLocation,
-                  quantity_in_cell: nextQty,
-                },
-              });
-            }
-          } catch (err) {
-            if (created?.id) {
-              try {
-                await api.delete(`/book-locations/${created.id}`);
-              } catch {
-                /* best-effort revert */
-              }
-            }
-            throw err;
-          }
-        } else {
-          await moveBook.mutateAsync({
-            locationId: moveMapBook.location_id,
-            bookId: moveMapBook.book_id,
-            cellId: target.cellId,
-            positionInCell: target.positionInCell,
-            quantityInCell: target.quantityInCell,
-          });
+      const qtyRemaining = new Map<string, number>();
+      for (const m of moves) {
+        if (!qtyRemaining.has(m.sourceLocation.id)) {
+          qtyRemaining.set(m.sourceLocation.id, m.sourceLocation.quantity_in_cell);
         }
-        moveSplitContextRef.current = null;
-        setMoveLockQtyOne(false);
-        setMoveMapBook(null);
-        setInventoryMoveBook(null);
-        setInventoryMoveSlots([]);
-        setInventoryMoveSlotIndex(0);
-        setInventoryMoveBulkLocId(null);
+      }
+
+      try {
+        for (const move of moves) {
+          const locId = move.sourceLocation.id;
+          const remaining = qtyRemaining.get(locId) ?? move.sourceLocation.quantity_in_cell;
+
+          if (move.splitOffSingle) {
+            let created: BookLocation | null = null;
+            try {
+              created = await createBookLocation.mutateAsync({
+                book_id: move.bookId,
+                cell_id: move.target.cellId,
+                position_in_cell: move.target.positionInCell,
+                quantity_in_cell: 1,
+              });
+              const nextQty = remaining - 1;
+              qtyRemaining.set(locId, nextQty);
+              if (nextQty <= 0) {
+                await api.delete(`/book-locations/${locId}`);
+              } else {
+                await patchLoc.mutateAsync({
+                  location: {
+                    ...move.sourceLocation,
+                    quantity_in_cell: nextQty,
+                  },
+                });
+              }
+            } catch (err) {
+              if (created?.id) {
+                try {
+                  await api.delete(`/book-locations/${created.id}`);
+                } catch {
+                  /* best-effort revert */
+                }
+              }
+              throw err;
+            }
+          } else {
+            await moveBook.mutateAsync({
+              locationId: locId,
+              bookId: move.bookId,
+              cellId: move.target.cellId,
+              positionInCell: move.target.positionInCell,
+              quantityInCell: move.target.quantityInCell,
+            });
+            qtyRemaining.set(locId, 0);
+          }
+        }
+        closeInventoryMove();
       } catch {
         setInventoryMapError(he.addRemove.mapMoveFailed);
       }
     },
-    [createBookLocation, moveBook, moveMapBook, patchLoc],
-  );
-
-  const applyInventorySlotAt = useCallback(
-    (
-      index: number,
-      slots: { loc: BookWithLocations["locations"][number]; copyIndex: number }[],
-      pickBook: BookWithLocations,
-    ) => {
-      setInventoryMoveBulkLocId(null);
-      const slot = slots[index];
-      if (!slot) return;
-      const col =
-        suppliers.find((s) => s.id === pickBook.supplier_id)?.color_hex ??
-        theme.colors.outlineVariant;
-      const loc = slot.loc;
-      const splitOff = loc.quantity_in_cell > 1;
-      moveSplitContextRef.current = {
-        bookId: pickBook.id,
-        sourceLocation: loc,
-        splitOffSingle: splitOff,
-      };
-      setMoveLockQtyOne(splitOff);
-      setMoveMapBook(toStoreMapBook(pickBook, { ...loc, quantity_in_cell: 1 }, col));
-      setInventoryMoveSlotIndex(index);
-    },
-    [suppliers],
-  );
-
-  const applyInventoryWholeRow = useCallback(
-    (pickBook: BookWithLocations, loc: BookWithLocations["locations"][number]) => {
-      const col =
-        suppliers.find((s) => s.id === pickBook.supplier_id)?.color_hex ??
-        theme.colors.outlineVariant;
-      moveSplitContextRef.current = {
-        bookId: pickBook.id,
-        sourceLocation: loc,
-        splitOffSingle: false,
-      };
-      setMoveLockQtyOne(false);
-      setMoveMapBook(toStoreMapBook(pickBook, loc, col));
-      setInventoryMoveBulkLocId(loc.id);
-    },
-    [suppliers],
+    [closeInventoryMove, createBookLocation, inventoryMoveBook, moveBook, patchLoc],
   );
 
   const openInventoryMoveSession = useCallback(
@@ -594,77 +513,11 @@ export default function AddRemoveScreen(): JSX.Element {
       const slots = expandInventoryMoveSlots(pickBook, locId);
       if (slots.length === 0) return;
       setInventoryMapError(null);
-      setInventoryMoveBulkLocId(null);
       setInventoryMoveBook(pickBook);
       setInventoryMoveSlots(slots);
-      setInventoryMoveSlotIndex(0);
-      applyInventorySlotAt(0, slots, pickBook);
     },
-    [applyInventorySlotAt],
+    [],
   );
-
-  const inventoryMoveContextBanner = useMemo(() => {
-    if (!inventoryMoveBook || inventoryMoveSlots.length === 0) return undefined;
-    const slot = inventoryMoveSlots[inventoryMoveSlotIndex];
-    if (!slot) return undefined;
-
-    const uniqueBulkLocs = new Map<string, BookWithLocations["locations"][number]>();
-    for (const s of inventoryMoveSlots) {
-      if (s.loc.quantity_in_cell > 1 && !uniqueBulkLocs.has(s.loc.id)) {
-        uniqueBulkLocs.set(s.loc.id, s.loc);
-      }
-    }
-    const bulkMoves =
-      uniqueBulkLocs.size > 0
-        ? [...uniqueBulkLocs.values()].map((loc) => ({
-          id: loc.id,
-          label: interpolate(he.addRemove.inventoryMoveWholeRowBulk, {
-            n: String(loc.quantity_in_cell),
-            cell: loc.cell_name,
-          }),
-          onPress: () => applyInventoryWholeRow(inventoryMoveBook, loc),
-        }))
-        : undefined;
-
-    const detail = interpolate(he.addRemove.inventoryMoveCopyLine, {
-      i: String(slot.copyIndex + 1),
-      n: String(slot.loc.quantity_in_cell),
-      cell: slot.loc.cell_name,
-      pos: String(slot.loc.position_in_cell),
-    });
-    const currentLocationText = `${he.addRemove.moveCurrentLocationPrefix} ${detail}`;
-    const activeMask =
-      inventoryMoveBulkLocId !== null
-        ? inventoryMoveSlots.map((s) => s.loc.id === inventoryMoveBulkLocId)
-        : inventoryMoveSlots.map((_, i) => i === inventoryMoveSlotIndex);
-    const slotPicker =
-      inventoryMoveSlots.length > 1
-        ? {
-          labels: inventoryMoveSlots.map((_, i) =>
-            interpolate(he.addRemove.inventoryMoveSlotChip, {
-              i: String(i + 1),
-              n: String(inventoryMoveSlots.length),
-            }),
-          ),
-          activeMask,
-          onSelect: (i: number) => {
-            applyInventorySlotAt(i, inventoryMoveSlots, inventoryMoveBook);
-          },
-        }
-        : undefined;
-    return {
-      currentLocationText,
-      slotPicker,
-      bulkMoves,
-    };
-  }, [
-    inventoryMoveBook,
-    inventoryMoveSlots,
-    inventoryMoveSlotIndex,
-    inventoryMoveBulkLocId,
-    applyInventorySlotAt,
-    applyInventoryWholeRow,
-  ]);
 
   const headerButtons = (
     <View style={styles.topBar}>
@@ -709,10 +562,7 @@ export default function AddRemoveScreen(): JSX.Element {
   return (
     <>
       <SafeAreaView style={styles.screen} edges={["top", "bottom"]}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={{ flex: 1 }}
-        >
+        <View style={{ flex: 1 }}>
           <View style={styles.titleBlock}>
             <Text style={styles.title}>{he.addRemove.title}</Text>
             <Text style={styles.subtitle}>{he.addRemove.subtitle}</Text>
@@ -750,121 +600,59 @@ export default function AddRemoveScreen(): JSX.Element {
                     <Text style={styles.mapGuardText}>{mapPlacementGuardMessage}</Text>
                   </View>
                 ) : null}
-                <View style={styles.bookFilterRow}>
-                  <Ionicons name="search-outline" size={20} color={theme.colors.onSurfaceVariant} />
-                  <TextInput
-                    style={styles.bookFilterInput}
-                    value={bookTitleFilter}
-                    onChangeText={setBookTitleFilter}
-                    placeholder={he.addRemove.bookTitleSearchPlaceholder}
-                    placeholderTextColor={theme.colors.onSurfaceVariant}
-                    returnKeyType="search"
-                    textAlign="left"
-                    accessibilityLabel={he.addRemove.bookTitleSearchAccessibility}
-                    onFocus={onBookTitleFilterFocus}
-                    onBlur={onBookTitleFilterBlur}
-                  />
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={
-                      bookSuggestionsPanelPinned
-                        ? he.addRemove.bookDropdownHide
-                        : he.addRemove.bookDropdownShow
-                    }
-                    onPress={() => toggleBookSuggestionsPanelPinned()}
-                    hitSlop={10}
-                    style={styles.bookFilterChevronBtn}
-                  >
-                    <Ionicons
-                      name={bookSuggestionsPanelPinned ? "chevron-up-outline" : "chevron-down-outline"}
-                      size={22}
-                      color={theme.colors.primary}
-                    />
-                  </Pressable>
-                </View>
-                {bookSuggestionsPanelPinned || bookSupplierFilterFocused ? (
-                  filteredBooks.length > 0 || bookTitleFilterTrimmed ? (
-                    <View style={styles.bookDropdownOuter}>
-                      {filteredBooks.length === 0 ? (
-                        <Text style={styles.bookDropdownEmptyText}>{he.addRemove.bookDropdownNoMatches}</Text>
-                      ) : (
-                        <>
-                          <ScrollView
-                            keyboardShouldPersistTaps="handled"
-                            nestedScrollEnabled
-                            showsVerticalScrollIndicator
-                            style={styles.bookDropdownScroll}
-                          >
-                            {dropdownSuggestionBooks.map((book) => (
-                              <Pressable
-                                key={book.id}
-                                onPressIn={() => clearBookFilterBlurTimer()}
-                                onPress={() => onPickBookFromDropdown(book)}
-                                style={({ pressed }) => [
-                                  styles.bookDropdownRow,
-                                  pressed && styles.bookDropdownRowPressed,
-                                ]}
-                              >
-                                <Text style={styles.bookDropdownTitle} numberOfLines={2}>
-                                  {book.title}
-                                </Text>
-                                <Text style={styles.bookDropdownAuthor} numberOfLines={1}>
-                                  {book.author}
-                                </Text>
-                              </Pressable>
-                            ))}
-                          </ScrollView>
-                          {dropdownSuggestionTruncated ? (
-                            <Text style={styles.bookDropdownTruncHint}>
-                              {interpolate(he.addRemove.bookDropdownTruncated, {
-                                shown: String(dropdownSuggestionBooks.length),
-                                total: String(filteredBooks.length),
-                              })}
-                            </Text>
-                          ) : null}
-                        </>
-                      )}
-                    </View>
-                  ) : null
-                ) : null}
+                <SearchableBookPickerField
+                  compact
+                  books={books}
+                  valueId={selectedBookId}
+                  onChange={onBookPickerChange}
+                  emptySelectionLabel={he.addRemove.bookTitleSearchPlaceholder}
+                  searchPlaceholder={he.addRemove.bookTitleSearchPlaceholder}
+                  clearSelectionLabel={he.addRemove.bookSearchShowAll}
+                  emptyListMessage={he.addRemove.bookDropdownNoMatches}
+                />
               </View>
               <FlatList
                 ref={booksFlatListRef}
                 keyboardShouldPersistTaps="handled"
-                automaticallyAdjustKeyboardInsets={true}
+                keyboardDismissMode="on-drag"
+                automaticallyAdjustKeyboardInsets={false}
                 contentInsetAdjustmentBehavior="automatic"
+                onScroll={(e) => {
+                  booksScrollOffsetRef.current = e.nativeEvent.contentOffset.y;
+                }}
+                scrollEventThrottle={16}
                 style={styles.inventoryBooksFlatList}
                 data={filteredBooks}
                 extraData={listExtraData}
                 keyExtractor={(item) => item.id}
                 ListEmptyComponent={
-                  bookTitleFilterTrimmed ? (
+                  selectedBookId ? (
                     <View style={styles.bookSearchEmptyBox}>
                       <Text style={styles.hintText}>{he.addRemove.bookSearchEmpty}</Text>
                     </View>
                   ) : null
                 }
-                onScrollToIndexFailed={(info) => {
-                  const list = booksFlatListRef.current;
-                  if (!list) return;
-                  setTimeout(() => {
-                    try {
-                      list.scrollToOffset({
-                        offset: Math.max(0, Math.floor(info.averageItemLength * info.index)),
-                        animated: true,
-                      });
-                    } catch {
-                      //
-                    }
-                  }, 280);
-                }}
-                contentContainerStyle={[
-                  styles.inventoryBooksListContent,
-                  keyboardVisible && { paddingBottom: 380 }
-                ]}
-                ItemSeparatorComponent={() => <View style={styles.sep} />}
-                refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-                renderItem={({ item: book }) => {
+                  onScrollToIndexFailed={(info) => {
+                    const list = booksFlatListRef.current;
+                    if (!list) return;
+                    setTimeout(() => {
+                      try {
+                        list.scrollToOffset({
+                          offset: Math.max(0, Math.floor(info.averageItemLength * info.index)),
+                          animated: true,
+                        });
+                      } catch {
+                        //
+                      }
+                    }, 280);
+                  }}
+                  contentContainerStyle={[
+                    styles.inventoryBooksListContent,
+                    { paddingBottom: keyboardHeight + theme.spacing.xl },
+                  ]}
+                  ItemSeparatorComponent={() => <View style={styles.sep} />}
+                  refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+                  renderItem={({ item: book }) => {
                   const locId = locationByBook[book.id] ?? null;
                   const selectedLoc =
                     locId === null ? null : book.locations.find((loc) => loc.id === locId) ?? null;
@@ -886,6 +674,15 @@ export default function AddRemoveScreen(): JSX.Element {
                           <Text style={styles.bookTitle}>{book.title}</Text>
                           <Text style={styles.bookAuthor}>{book.author}</Text>
                         </View>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={he.addRemove.editBookA11y}
+                          hitSlop={8}
+                          onPress={() => setEditBook(book)}
+                          style={styles.trashHit}
+                        >
+                          <Ionicons name="pencil-outline" size={20} color={theme.colors.primary} />
+                        </Pressable>
                         <Pressable
                           accessibilityRole="button"
                           hitSlop={8}
@@ -1019,6 +816,11 @@ export default function AddRemoveScreen(): JSX.Element {
                         <Text style={styles.dimLabel}>{he.addRemove.stockBulkAddLabel}</Text>
                         <View style={styles.stockBulkRow}>
                           <TextInput
+                            ref={(node) => {
+                              const key = `${book.id}:stock`;
+                              if (node) inputRefs.current.set(key, node);
+                              else inputRefs.current.delete(key);
+                            }}
                             value={stockBulkDraft[book.id] ?? ""}
                             onChangeText={(t) =>
                               setStockBulkDraft((p) => ({
@@ -1026,6 +828,7 @@ export default function AddRemoveScreen(): JSX.Element {
                                 [book.id]: t.replace(/\D/g, ""),
                               }))
                             }
+                            onFocus={() => onInputFocus(`${book.id}:stock`)}
                             keyboardType="number-pad"
                             placeholder={he.addRemove.stockBulkAddPlaceholder}
                             placeholderTextColor={theme.colors.onSurfaceVariant}
@@ -1064,8 +867,14 @@ export default function AddRemoveScreen(): JSX.Element {
                       <Text style={styles.dimLabel}>{he.addRemove.tableHeaderPrice}</Text>
                       <View style={styles.priceRow}>
                         <TextInput
+                          ref={(node) => {
+                            const key = `${book.id}:price`;
+                            if (node) inputRefs.current.set(key, node);
+                            else inputRefs.current.delete(key);
+                          }}
                           value={priceDraft[book.id] ?? String(book.price)}
                           onChangeText={(t) => setPriceDraft((p) => ({ ...p, [book.id]: t }))}
+                          onFocus={() => onInputFocus(`${book.id}:price`)}
                           keyboardType="decimal-pad"
                           style={styles.priceInput}
                         />
@@ -1079,7 +888,7 @@ export default function AddRemoveScreen(): JSX.Element {
               />
             </View>
           )}
-        </KeyboardAvoidingView>
+        </View>
       </SafeAreaView>
 
       <NewBookModal
@@ -1238,28 +1047,22 @@ export default function AddRemoveScreen(): JSX.Element {
         }}
       />
 
-      <MoveBookModal
-        key={`mv-${moveMapBook?.location_id ?? "x"}-${inventoryMoveSlotIndex}-${moveLockQtyOne}-${moveMapBook?.quantity_in_cell ?? 0}`}
-        visible={moveMapBook !== null}
-        book={moveMapBook}
+      <InventoryMoveBookModal
+        visible={inventoryMoveBook !== null}
+        book={inventoryMoveBook}
+        slots={inventoryMoveSlots}
         storeMap={placementStoreMap}
+        supplierColor={
+          inventoryMoveBook
+            ? suppliers.find((s) => s.id === inventoryMoveBook.supplier_id)?.color_hex
+            : undefined
+        }
         submitting={
           moveBook.isPending || createBookLocation.isPending || patchLoc.isPending
         }
-        lockQuantityForMove={moveLockQtyOne}
-        moveContextBanner={inventoryMoveContextBanner}
         errorMessage={inventoryMapError}
-        onClose={() => {
-          setMoveMapBook(null);
-          moveSplitContextRef.current = null;
-          setMoveLockQtyOne(false);
-          setInventoryMapError(null);
-          setInventoryMoveBook(null);
-          setInventoryMoveSlots([]);
-          setInventoryMoveSlotIndex(0);
-          setInventoryMoveBulkLocId(null);
-        }}
-        onSubmit={onSubmitInventoryMoveMap}
+        onClose={closeInventoryMove}
+        onSubmitAll={onSubmitInventoryMoveAll}
       />
 
       <ConfirmDialog
@@ -1282,6 +1085,30 @@ export default function AddRemoveScreen(): JSX.Element {
               onSuccess: () => setDeactivateBook(null),
             },
           );
+        }}
+      />
+
+      <EditBookModal
+        visible={editBook !== null}
+        book={editBook}
+        suppliers={suppliers}
+        submitting={patchBook.isPending && editBook !== null && busyBookId === editBook.id}
+        onClose={() => setEditBook(null)}
+        onSubmit={async (patch) => {
+          if (!editBook) return;
+          try {
+            setBusyBookId(editBook.id);
+            const updated = await patchBook.mutateAsync({
+              id: editBook.id,
+              patch: patch as unknown as Record<string, unknown>,
+            });
+            setPriceDraft((p) => ({ ...p, [editBook.id]: String(updated.price) }));
+            setEditBook(null);
+          } catch {
+            Alert.alert(he.generic.errorTitle, he.addRemove.editBookFailed);
+          } finally {
+            setBusyBookId(null);
+          }
         }}
       />
     </>
@@ -1714,70 +1541,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.lg,
     paddingBottom: theme.spacing.xl,
     flexGrow: 1,
-  },
-  bookFilterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.outlineVariant,
-    borderRadius: theme.radius.md,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    backgroundColor: theme.colors.surfaceContainerLow,
-  },
-  bookFilterChevronBtn: {
-    paddingHorizontal: theme.spacing.xs,
-    justifyContent: "center",
-  },
-  bookDropdownOuter: {
-    marginTop: theme.spacing.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.outlineVariant,
-    borderRadius: theme.radius.md,
-    backgroundColor: theme.colors.surface,
-    overflow: "hidden",
-  },
-  bookDropdownScroll: { maxHeight: 196 },
-  bookDropdownRow: {
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.outlineVariant,
-  },
-  bookDropdownRowPressed: { backgroundColor: theme.colors.surfaceContainerHighest },
-  bookDropdownTitle: {
-    ...theme.typography.labelMd,
-    color: theme.colors.onSurface,
-    textAlign: "left",
-  },
-  bookDropdownAuthor: {
-    ...theme.typography.caption,
-    color: theme.colors.onSurfaceVariant,
-    textAlign: "left",
-    marginTop: 2,
-  },
-  bookDropdownTruncHint: {
-    ...theme.typography.caption,
-    color: theme.colors.onSurfaceVariant,
-    textAlign: "center",
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
-    backgroundColor: theme.colors.surfaceContainerLow,
-  },
-  bookDropdownEmptyText: {
-    ...theme.typography.caption,
-    color: theme.colors.onSurfaceVariant,
-    textAlign: "center",
-    paddingVertical: theme.spacing.md,
-    paddingHorizontal: theme.spacing.sm,
-  },
-  bookFilterInput: {
-    flex: 1,
-    minHeight: 36,
-    paddingVertical: Platform.OS === "ios" ? theme.spacing.sm : theme.spacing.xs,
-    ...theme.typography.bodyMd,
-    color: theme.colors.onSurface,
   },
   bookSearchEmptyBox: {
     alignItems: "center",

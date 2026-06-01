@@ -1,3 +1,4 @@
+import type { BookWithLocations } from "@avihay-books/shared";
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   FlatList,
@@ -13,58 +14,34 @@ import { Ionicons } from "@expo/vector-icons";
 import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
 import { theme } from "../../theme";
 
-/** פריט בחירה גנרי — ספק, קטגוריה וכו׳. */
-export interface PickerListItem {
-  id: string;
-  label: string;
-  accentColor?: string;
-}
-
-/** ממפה `Supplier[]` ל־`PickerListItem` להצגה ב־`SearchablePickerField`. */
-export function suppliersToPickerItems(
-  suppliers: readonly { id: string; name: string; color_hex?: string }[],
-): PickerListItem[] {
-  return suppliers.map((s) => ({
-    id: s.id,
-    label: s.name,
-    accentColor: s.color_hex,
-  }));
-}
-
 type AnchorRect = { x: number; y: number; width: number; height: number };
 
-export interface SearchablePickerFieldProps {
-  items: readonly PickerListItem[];
+export interface SearchableBookPickerFieldProps {
+  books: readonly BookWithLocations[];
   valueId: string | null;
   onChange: (id: string | null) => void;
   searchPlaceholder: string;
   emptyListMessage: string;
-  fieldLabel?: string;
-  /** טקסט בשדה כשאין בחירה (משמש גם כ־`placeholder`) */
+  /** טקסט בשדה כשאין בחירה */
   emptySelectionLabel: string;
-  /** אם קיימת — שורה ראשונה בדרופדאון מאפשרת `null` (למשל «הכול») */
+  /** שורת «הצג הכול» בראש הדרופדאון */
   clearSelectionLabel?: string;
-  disabled?: boolean;
-  /** עיצוב צפוף לשורות כמו סרגל הוספה/הסרה */
   compact?: boolean;
 }
 
 /**
- * שדה קלט בסגנון `combo-box`: בשיא סגירה נראה כמו `TextInput`; בפתיחה — חיפוש + רשימה
- * מוצגים בדרופדאון מתחת (מודאל שקוף מעוגן למיקום השדה).
+ * בחירת ספר בסגנון `SearchablePickerField`: שדה סגור + מודאל עם חיפוש, backdrop ו-X לסגירה.
  */
-export function SearchablePickerField({
-  items,
+export function SearchableBookPickerField({
+  books,
   valueId,
   onChange,
-  fieldLabel,
   emptySelectionLabel,
   searchPlaceholder,
   clearSelectionLabel,
   emptyListMessage,
-  disabled,
   compact,
-}: SearchablePickerFieldProps): JSX.Element {
+}: SearchableBookPickerFieldProps): JSX.Element {
   const anchorRef = useRef<View>(null);
   const { height: windowH } = useWindowDimensions();
   const keyboardHeight = useKeyboardHeight();
@@ -74,14 +51,18 @@ export function SearchablePickerField({
   const [query, setQuery] = useState("");
   const [panelH, setPanelH] = useState(0);
 
-  const picked = items.find((i) => i.id === valueId);
-  const closedDisplay = picked?.label ?? "";
+  const picked = books.find((b) => b.id === valueId);
+  const closedDisplay = picked?.title ?? "";
 
-  const filteredItems = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [...items];
-    return items.filter((it) => it.label.toLowerCase().includes(q));
-  }, [items, query]);
+  const filteredBooks = useMemo(() => {
+    const q = query.trim().normalize("NFKC").toLocaleLowerCase("und");
+    if (!q) return [...books];
+    return books.filter(
+      (b) =>
+        b.title.normalize("NFKC").toLocaleLowerCase("und").includes(q) ||
+        b.author.normalize("NFKC").toLocaleLowerCase("und").includes(q),
+    );
+  }, [books, query]);
 
   const closeMenu = useCallback(() => {
     setMenuOpen(false);
@@ -90,7 +71,6 @@ export function SearchablePickerField({
   }, []);
 
   const openMenu = () => {
-    if (disabled) return;
     anchorRef.current?.measureInWindow((x, y, width, height) => {
       setAnchor({ x, y, width, height });
       setQuery("");
@@ -105,7 +85,6 @@ export function SearchablePickerField({
   const headerReserve = 56 + (clearSelectionLabel ? 48 : 0);
   const availableRegion = bottomLimit - TOP_MARGIN;
 
-  /** גובה מרבי לרשימת הפריטים מתחת לשורות החיפוש */
   const listMaxHeight =
     anchor === null
       ? 200
@@ -116,27 +95,17 @@ export function SearchablePickerField({
 
   return (
     <View style={[styles.fieldWrap, compact && styles.fieldWrapCompact]}>
-      {fieldLabel ? (
-        <Text style={styles.fieldLabel} numberOfLines={1}>
-          {fieldLabel}
-        </Text>
-      ) : null}
-
       <View ref={anchorRef} collapsable={false} style={{ flexShrink: 1 }}>
         <Pressable
-          disabled={disabled}
           onPress={openMenu}
           style={({ pressed }) => [
             styles.trigger,
             compact && styles.triggerCompact,
-            disabled && styles.triggerDisabled,
-            pressed && !disabled && styles.triggerPressed,
+            pressed && styles.triggerPressed,
           ]}
         >
           <View style={styles.triggerInner}>
-            {picked?.accentColor ? (
-              <View style={[styles.triggerAccent, { backgroundColor: picked.accentColor }]} />
-            ) : null}
+            <Ionicons name="search-outline" size={18} color={theme.colors.onSurfaceVariant} />
             <TextInput
               editable={false}
               pointerEvents="none"
@@ -148,15 +117,11 @@ export function SearchablePickerField({
               placeholderTextColor={theme.colors.onSurfaceVariant}
               style={[
                 styles.triggerInput,
-                !picked || valueId === null ? styles.triggerInputMuted : undefined,
+                !picked ? styles.triggerInputMuted : undefined,
               ]}
             />
           </View>
-          <Ionicons
-            name="chevron-down"
-            size={20}
-            color={disabled ? theme.colors.outlineVariant : theme.colors.primary}
-          />
+          <Ionicons name="chevron-down" size={20} color={theme.colors.primary} />
         </Pressable>
       </View>
 
@@ -192,21 +157,14 @@ export function SearchablePickerField({
                 textAlign="left"
                 autoFocus
               />
-              <Pressable
-                hitSlop={10}
-                onPress={closeMenu}
-                accessibilityRole="button"
-              >
+              <Pressable hitSlop={10} onPress={closeMenu} accessibilityRole="button">
                 <Ionicons name="close-outline" size={22} color={theme.colors.onSurfaceVariant} />
               </Pressable>
             </View>
 
             {clearSelectionLabel ? (
               <Pressable
-                style={[
-                  styles.clearRow,
-                  valueId === null && styles.optionRowSelected,
-                ]}
+                style={[styles.clearRow, valueId === null && styles.optionRowSelected]}
                 onPress={() => {
                   onChange(null);
                   closeMenu();
@@ -229,46 +187,42 @@ export function SearchablePickerField({
             <View style={[styles.dropdownListViewport, { height: listMaxHeight }]}>
               <FlatList
                 keyboardShouldPersistTaps="handled"
-                data={filteredItems}
-                keyExtractor={(it) => it.id}
+                data={filteredBooks}
+                keyExtractor={(book) => book.id}
                 style={styles.dropdownList}
                 contentContainerStyle={styles.dropdownListContent}
                 nestedScrollEnabled
                 ItemSeparatorComponent={() => <View style={styles.listSep} />}
-                renderItem={({ item }) => {
-                  const active = item.id === valueId;
+                renderItem={({ item: book }) => {
+                  const active = book.id === valueId;
                   return (
                     <Pressable
                       style={[styles.optionRow, active && styles.optionRowSelected]}
                       onPress={() => {
-                        onChange(item.id);
+                        onChange(book.id);
                         closeMenu();
                       }}
                     >
                       <View style={styles.optionMain}>
-                        {item.accentColor ? (
-                          <View style={[styles.accent, { backgroundColor: item.accentColor }]} />
-                        ) : null}
                         <Text
-                          style={[styles.optionText, active && styles.optionTextSelected]}
+                          style={[styles.optionTitle, active && styles.optionTitleSelected]}
                           numberOfLines={2}
                         >
-                          {item.label}
+                          {book.title}
+                        </Text>
+                        <Text style={styles.optionAuthor} numberOfLines={1}>
+                          {book.author}
                         </Text>
                       </View>
                       <Ionicons
                         name={active ? "checkmark-circle" : "ellipse-outline"}
                         size={22}
-                        color={
-                          active ? theme.colors.primary : theme.colors.outlineVariant
-                        }
+                        color={active ? theme.colors.primary : theme.colors.outlineVariant}
                       />
                     </Pressable>
                   );
                 }}
-                ListEmptyComponent={
-                  <Text style={styles.emptyList}>{emptyListMessage}</Text>
-                }
+                ListEmptyComponent={<Text style={styles.emptyList}>{emptyListMessage}</Text>}
               />
             </View>
           </View>
@@ -291,11 +245,6 @@ const styles = StyleSheet.create({
     marginBottom: 0,
     zIndex: 1,
   },
-  fieldLabel: {
-    ...theme.typography.labelMd,
-    color: theme.colors.onSurfaceVariant,
-    textAlign: "left",
-  },
   trigger: {
     flexDirection: "row",
     alignItems: "center",
@@ -314,7 +263,6 @@ const styles = StyleSheet.create({
     minHeight: 40,
     borderRadius: theme.radius.md,
   },
-  triggerDisabled: { opacity: 0.45 },
   triggerPressed: { opacity: 0.92 },
   triggerInner: {
     flexDirection: "row",
@@ -323,7 +271,6 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  triggerAccent: { width: 12, height: 12, borderRadius: 6, flexShrink: 0 },
   triggerInput: {
     flex: 1,
     minWidth: 0,
@@ -390,12 +337,8 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     backgroundColor: theme.colors.surface,
   },
-  dropdownList: {
-    flex: 1,
-  },
-  dropdownListContent: {
-    flexGrow: 1,
-  },
+  dropdownList: { flex: 1 },
+  dropdownListContent: { flexGrow: 1 },
   listSep: { height: StyleSheet.hairlineWidth, backgroundColor: theme.colors.outlineVariant },
   optionRow: {
     flexDirection: "row",
@@ -408,17 +351,24 @@ const styles = StyleSheet.create({
   },
   optionRowSelected: { backgroundColor: theme.colors.secondaryContainer },
   optionMain: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: theme.spacing.sm,
     flex: 1,
     minWidth: 0,
+    gap: 2,
   },
-  accent: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    flexShrink: 0,
+  optionTitle: {
+    ...theme.typography.bodyMd,
+    color: theme.colors.onSurface,
+    textAlign: "left",
+  },
+  optionTitleSelected: {
+    ...theme.typography.labelMd,
+    color: theme.colors.primary,
+    fontFamily: theme.fontFamily.semibold,
+  },
+  optionAuthor: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: "left",
   },
   optionText: {
     ...theme.typography.bodyMd,
