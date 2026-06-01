@@ -1,10 +1,13 @@
 import type {
+  DeliveryMethod,
+  FulfillmentType,
   NotificationType,
   OrderStatus,
   OrderType,
   ShortageStatus,
   SideLabel,
   StorePosition,
+  WhatsappSessionStatus,
 } from "./enums.js";
 
 export type UUID = string;
@@ -110,6 +113,13 @@ export interface OrderRow {
   manual_book_author: string | null;
   status: OrderStatus;
   created_at: ISOTimestamp;
+  /** שדות זרימת בוט הוואטסאפ (אופציונליים — קיימים בהזמנות `whatsapp`). */
+  fulfillment_type?: FulfillmentType | null;
+  delivery_method?: DeliveryMethod | null;
+  delivery_fee?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  order_group_id?: UUID | null;
 }
 
 export interface AppNotification {
@@ -258,6 +268,42 @@ export interface OrderListItem {
   supplier_name: string;
   supplier_color: string;
   supplier_email: string;
+  /** שדות זרימת בוט הוואטסאפ (אופציונליים — קיימים בהזמנות `whatsapp`). */
+  fulfillment_type?: FulfillmentType | null;
+  delivery_method?: DeliveryMethod | null;
+  delivery_fee?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  order_group_id?: UUID | null;
+}
+
+/** רשומת שיחת בוט וואטסאפ (`whatsapp_sessions`). */
+export interface WhatsappSession {
+  id: UUID;
+  phone_number: string;
+  status: WhatsappSessionStatus;
+  current_node: string;
+  context: Record<string, unknown>;
+  profile_name: string | null;
+  book_id: UUID | null;
+  order_id: UUID | null;
+  bot_paused_until: ISOTimestamp | null;
+  last_inbound_at: ISOTimestamp | null;
+  created_at: ISOTimestamp;
+  updated_at: ISOTimestamp;
+}
+
+/** לוג הודעת וואטסאפ נכנסת/יוצאת (`whatsapp_messages`). */
+export interface WhatsappMessage {
+  id: UUID;
+  phone_number: string;
+  direction: "in" | "out";
+  wa_message_id: string | null;
+  msg_type: string;
+  body: string | null;
+  payload: Record<string, unknown>;
+  is_echo: boolean;
+  created_at: ISOTimestamp;
 }
 
 /** קבוצת הזמנות לפי ספק לצורך ייצוא PDF / שליחה במייל. */

@@ -6,11 +6,14 @@ import {
   archiveOrdersMatchingLine,
   deleteOrdersMatchingLine,
   findAllOrdersExpanded,
+  findOrderExpandedById,
   updateOrdersMatchingLineStatus,
   updateOrdersBySupplierStatus,
   upsertOrder,
 } from "../repos/orders.repo.js";
 import { ORDER_TYPES, type OrderType } from "@avihay-books/shared";
+import { getWhatsappConfig, isWhatsappConfigured } from "../services/whatsapp/config.js";
+import { sendTemplate } from "../services/whatsapp/client.js";
 
 export const ordersRouter = Router();
 
@@ -150,5 +153,46 @@ ordersRouter.post(
     const n = await updateOrdersBySupplierStatus(body.supplier_id, body.status);
     if (n < 1) throw new HttpError(404, "orders_supplier_not_found");
     res.json({ updated: n });
+  }),
+);
+
+/**
+ * שליחת עדכון יזום ללקוח בוואטסאפ (Template מאושר ב-Meta):
+ *   - `order_ready`  — הספר הגיע / מוכן לאיסוף.
+ *   - `payment_link` — קישור תשלום מאובטח (דורש `paymentUrl`).
+ * עובד גם מחוץ לחלון 24 השעות כי משתמשים ב-Templates.
+ */
+const notifyCustomerBodySchema = z.object({
+  template: z.enum(["order_ready", "payment_link"]).default("order_ready"),
+  paymentUrl: z.string().url().optional(),
+});
+
+ordersRouter.post(
+  "/:id/notify-customer",
+  asyncHandler(async (req, res) => {
+    const body = notifyCustomerBodySchema.parse(req.body ?? {});
+    const order = await findOrderExpandedById(req.params.id!);
+    if (!order) throw new HttpError(404, "order_not_found");
+    if (!order.customer_phone) throw new HttpError(400, "order_missing_customer_phone");
+
+    const cfg = getWhatsappConfig();
+    if (!isWhatsappConfigured(cfg)) throw new HttpError(503, "whatsapp_not_configured");
+
+    const bookTitle = order.book_title || order.manual_book_title || "הספר שהזמנת";
+    const customerName = order.customer_name ?? "";
+
+    if (body.template === "payment_link") {
+      if (!body.paymentUrl) throw new HttpError(400, "payment_url_required");
+      await sendTemplate(order.customer_phone, cfg.templatePaymentLink, cfg.templateLang, {
+        bodyParams: [customerName, bookTitle],
+        urlButtonParam: body.paymentUrl,
+      });
+    } else {
+      await sendTemplate(order.customer_phone, cfg.templateOrderReady, cfg.templateLang, {
+        bodyParams: [customerName, bookTitle],
+      });
+    }
+
+    res.json({ sent: true });
   }),
 );

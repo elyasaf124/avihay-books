@@ -8,6 +8,7 @@ import { ordersRouter } from "./orders.js";
 import { notificationsRouter } from "./notifications.js";
 import { storeMapRouter } from "./storeMap.js";
 import { appConfigRouter } from "./appConfig.js";
+import { whatsappWebhookRouter } from "./webhooks/whatsapp.js";
 import { apiKeyAuth } from "../middleware/apiKeyAuth.js";
 
 export const apiRouter = Router();
@@ -15,6 +16,9 @@ export const apiRouter = Router();
 apiRouter.get("/health", async (_req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
 });
+
+// Webhook של וואטסאפ — לפני apiKeyAuth (מטא מאמת בחתימה, לא ב-x-api-key).
+apiRouter.use("/webhooks/whatsapp", whatsappWebhookRouter);
 
 apiRouter.use(apiKeyAuth);
 apiRouter.use("/app-config", appConfigRouter);

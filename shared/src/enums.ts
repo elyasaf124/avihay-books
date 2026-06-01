@@ -12,11 +12,21 @@ export const NOTIFICATION_TYPES = [
   "remove_from_display",
   "supplier_reorder_reminder",
   "orders_without_supplier",
+  "whatsapp_human_handover",
 ] as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
 
 export const WHATSAPP_INTENTS = ["stock_check", "price_check", "place_order"] as const;
 export type WhatsappIntent = (typeof WHATSAPP_INTENTS)[number];
+
+export const WHATSAPP_SESSION_STATUSES = ["active", "human_handover", "closed"] as const;
+export type WhatsappSessionStatus = (typeof WHATSAPP_SESSION_STATUSES)[number];
+
+export const FULFILLMENT_TYPES = ["pickup", "delivery"] as const;
+export type FulfillmentType = (typeof FULFILLMENT_TYPES)[number];
+
+export const DELIVERY_METHODS = ["home", "pickup_point"] as const;
+export type DeliveryMethod = (typeof DELIVERY_METHODS)[number];
 
 export const STORE_POSITIONS = [
   "front",

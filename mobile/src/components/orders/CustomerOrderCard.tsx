@@ -13,6 +13,8 @@ interface Props {
   onRemoveOrderLine?: (order: OrderListItem) => void;
   onFinishOrderLine?: (order: OrderListItem) => void;
   onEditOrderLine?: (order: OrderListItem) => void;
+  /** שליחת עדכון יזום ללקוח בוואטסאפ (לשונית וואטסאפ/לקוח). */
+  onNotifyCustomer?: (group: OrdersByCustomerGroup) => void;
   removingOrderLineKey?: string | null;
   finishingOrderLineKey?: string | null;
 }
@@ -29,6 +31,7 @@ export function CustomerOrderCard({
   onRemoveOrderLine,
   onFinishOrderLine,
   onEditOrderLine,
+  onNotifyCustomer,
   removingOrderLineKey = null,
   finishingOrderLineKey = null,
 }: Props): JSX.Element {
@@ -56,6 +59,20 @@ export function CustomerOrderCard({
             </Text>
           </View>
         </View>
+        {!isHistory && onNotifyCustomer && group.customer_phone ? (
+          <Pressable
+            onPress={() => onNotifyCustomer(group)}
+            style={({ pressed }) => [styles.notifyBtn, pressed && styles.lineActionPressed]}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel={he.orders.notifyCustomerButtonA11y}
+          >
+            <Ionicons name="logo-whatsapp" size={16} color={theme.colors.onPrimaryContainer} />
+            <Text style={styles.notifyBtnText} numberOfLines={1}>
+              {he.orders.notifyCustomerButton}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
 
       <View style={styles.list}>
@@ -301,6 +318,20 @@ const styles = StyleSheet.create({
     maxWidth: 120,
   },
   finishOrderBtnText: {
+    ...theme.typography.labelMd,
+    color: theme.colors.onPrimaryContainer,
+    fontSize: 11,
+  },
+  notifyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 6,
+    borderRadius: theme.radius.full,
+    backgroundColor: theme.colors.primaryContainer,
+  },
+  notifyBtnText: {
     ...theme.typography.labelMd,
     color: theme.colors.onPrimaryContainer,
     fontSize: 11,
