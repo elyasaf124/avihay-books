@@ -5,6 +5,7 @@
 import { logger } from "../../utils/logger.js";
 import { logWhatsappMessage } from "../../repos/whatsappMessages.repo.js";
 import { getWhatsappConfig, isWhatsappConfigured } from "./config.js";
+import { captureOutbound } from "./outboundCapture.js";
 
 const MAX_BUTTON_TITLE = 20;
 const MAX_ROW_TITLE = 24;
@@ -33,6 +34,22 @@ async function send(payload: Record<string, unknown>, logBody: string, msgType: 
     logger.warn({ to, msgType }, "[whatsapp] not configured — skipping outbound send");
     return;
   }
+  const fullPayload = { messaging_product: "whatsapp", ...payload };
+  const mockMode = (process.env.WHATSAPP_TEST_MOCK ?? "").toLowerCase() === "true";
+
+  if (mockMode) {
+    captureOutbound({ to, msgType, body: logBody, payload: fullPayload });
+    await logWhatsappMessage({
+      phone_number: to,
+      direction: "out",
+      wa_message_id: `mock-${Date.now()}`,
+      msg_type: msgType,
+      body: logBody,
+      payload: fullPayload,
+    });
+    return;
+  }
+
   const url = `https://graph.facebook.com/${cfg.graphVersion}/${cfg.phoneNumberId}/messages`;
   try {
     const res = await fetch(url, {
@@ -41,7 +58,7 @@ async function send(payload: Record<string, unknown>, logBody: string, msgType: 
         Authorization: `Bearer ${cfg.accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ messaging_product: "whatsapp", ...payload }),
+      body: JSON.stringify(fullPayload),
     });
     const data = (await res.json().catch(() => ({}))) as {
       messages?: { id?: string }[];
@@ -56,7 +73,7 @@ async function send(payload: Record<string, unknown>, logBody: string, msgType: 
       wa_message_id: data.messages?.[0]?.id ?? null,
       msg_type: msgType,
       body: logBody,
-      payload,
+      payload: fullPayload,
     });
   } catch (err) {
     logger.error({ err, to }, "[whatsapp] send error");

@@ -9,6 +9,7 @@ import type { BotContentConfig } from "./config.js";
 export const MENU_IDS = {
   stock: "menu:stock",
   order: "menu:order",
+  orderStatus: "menu:order_status",
   hours: "menu:hours",
   payment: "menu:payment",
   catalog: "menu:catalog",
@@ -20,6 +21,7 @@ export const MENU_IDS = {
 export const MAIN_MENU_ROWS: { id: string; title: string; description?: string }[] = [
   { id: MENU_IDS.stock, title: "🔍 בירור מלאי ומחיר", description: "מחיר, מלאי ומיקום ספר בחנות" },
   { id: MENU_IDS.order, title: "🛒 הזמנה חדשה", description: "איסוף עצמי או משלוח" },
+  { id: MENU_IDS.orderStatus, title: "📦 בירור סטטוס הזמנה", description: "מעקב אחר הזמנה קיימת" },
   { id: MENU_IDS.hours, title: "🕒 שעות וניווט", description: "שעות פעילות וכתובת" },
   { id: MENU_IDS.payment, title: "💳 אפשרויות תשלום", description: "מזומן, העברה ותשלום דיגיטלי" },
   { id: MENU_IDS.catalog, title: "📄 קטלוג ספרים", description: "קבלת קטלוג מלא (PDF)" },
@@ -47,7 +49,11 @@ export const BTN = {
   supportOther: "support:other",
   toPayment: "support:payment",
   toHuman: "support:human",
+  b1ImageRetry: "b1:image_retry",
+  statusToHuman: "status:human",
 } as const;
+
+export const STATUS_PICK_PREFIX = "status:order:";
 
 export const PICK_PREFIX = "pick:";
 
@@ -107,7 +113,22 @@ export const T = {
     "מצורף קטלוג הספרים המלא והמעודכן של החנות! מקווים שתמצאו בו את מה שאתם מחפשים!",
   catalogMissing:
     "סליחה, הקטלוג אינו זמין כרגע. נציג יחזור אליך עם הקטלוג בהקדם.",
+
+  b1ImageFallback:
+    "אני עדיין בוט צעיר ולא יודע לקרוא תמונות... 🙈 אנא הקלד את שם הספר בטקסט ואשמח למצוא לך אותו בשנייה!",
+
+  b3NoOrders:
+    "לא מצאתי הזמנה פעילה במערכת שמשויכת למספר הטלפון הזה. " +
+    "אם ביצעת את ההזמנה ממספר אחר, תוכל לבדוק מול נציג בשעות הפעילות.",
+  b3MultipleOrders: "מצאתי מספר הזמנות פעילות על שמך, באיזו מהן תרצה להתעדכן?",
 } as const;
+
+export const ORDER_STATUS_LABELS: Record<string, string> = {
+  pending: "הוזמן",
+  sent: "הגיע לחנות וממתין לך",
+  completed: "הושלם",
+  archived: "הושלם",
+};
 
 /** הודעת שעות פעילות וניווט (ענף 3). קישור הוויז נשלח כ-cta_url נפרד אם הוגדר. */
 export function hoursMessage(content: BotContentConfig): string {

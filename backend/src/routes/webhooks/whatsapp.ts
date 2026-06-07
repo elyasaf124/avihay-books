@@ -76,18 +76,18 @@ interface WaBody {
   entry?: { changes?: WaChange[] }[];
 }
 
-function parseInbound(msg: WaTextMessage): { replyId?: string; text?: string } {
+function parseInbound(msg: WaTextMessage): { replyId?: string; text?: string; msgType?: string } {
   if (msg.type === "interactive" && msg.interactive) {
     const reply = msg.interactive.button_reply ?? msg.interactive.list_reply;
-    return { replyId: reply?.id, text: reply?.title };
+    return { replyId: reply?.id, text: reply?.title, msgType: "interactive" };
   }
   if (msg.type === "button" && msg.button) {
-    return { replyId: msg.button.payload, text: msg.button.text };
+    return { replyId: msg.button.payload, text: msg.button.text, msgType: "button" };
   }
   if (msg.type === "text") {
-    return { text: msg.text?.body ?? "" };
+    return { text: msg.text?.body ?? "", msgType: "text" };
   }
-  return { text: "" };
+  return { text: "", msgType: msg.type };
 }
 
 async function processBody(body: WaBody): Promise<void> {

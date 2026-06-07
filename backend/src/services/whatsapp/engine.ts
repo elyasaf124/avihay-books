@@ -30,17 +30,22 @@ import {
   hoursMessage,
   MAIN_MENU_ROWS,
   MENU_IDS,
+  ORDER_STATUS_LABELS,
   paymentMessage,
   PICK_PREFIX,
+  STATUS_PICK_PREFIX,
   T,
   updatesMessage,
 } from "./text.js";
+import { pool } from "../../db/pool.js";
 
 export interface ParsedInbound {
   /** מזהה כפתור/שורה שנבחר (interactive reply id), אם קיים. */
   replyId?: string;
   /** טקסט חופשי שהלקוח הקליד, אם קיים. */
   text?: string;
+  /** סוג ההודעה המקורי מ-Meta (text, image, sticker, audio, video וכו'). */
+  msgType?: string;
 }
 
 const NODES = {
@@ -48,6 +53,8 @@ const NODES = {
   MAIN_MENU: "main_menu",
   B1_TITLE: "b1_title",
   B1_PICK: "b1_pick",
+  B3_STATUS: "b3_status",
+  B3_PICK: "b3_pick",
   B2_TYPE: "b2_type",
   B2_NAME: "b2_name",
   B2_PHONE: "b2_phone",
@@ -168,7 +175,7 @@ export async function handleIncomingMessage(args: {
   }
 
   try {
-    await dispatch(from, session, token, text);
+    await dispatch(from, session, token, text, inbound.msgType);
   } catch (err) {
     logger.error({ err, from, node: session.current_node }, "[whatsapp] dispatch error");
     await sendText(from, "אירעה תקלה זמנית. בוא נתחיל מחדש 🙂");
@@ -199,12 +206,13 @@ async function dispatch(
   session: WhatsappSession,
   token: string,
   text: string,
+  msgType?: string,
 ): Promise<void> {
   switch (session.current_node) {
     case NODES.MAIN_MENU:
       return handleMainMenu(from, session, token);
     case NODES.B1_TITLE:
-      return handleB1Title(from, session, text);
+      return handleB1Title(from, session, text, msgType);
     case NODES.B1_PICK:
       return handleB1Pick(from, session, token);
     case NODES.B2_TYPE:
@@ -225,6 +233,10 @@ async function dispatch(
       return handleB2More(from, session, token);
     case NODES.B2_NOTES:
       return finishOrder(from, session, text);
+    case NODES.B3_STATUS:
+      return handleB3Status(from, session, token);
+    case NODES.B3_PICK:
+      return handleB3Pick(from, session, token);
     case NODES.B8_MENU:
       return handleSupportMenu(from, session, token);
     case NODES.B8_BOOK_TITLE:
@@ -270,6 +282,8 @@ async function handleMainMenu(from: string, session: WhatsappSession, token: str
       return setNode(session, NODES.B1_TITLE);
     case MENU_IDS.order:
       return askOrderType(from, session);
+    case MENU_IDS.orderStatus:
+      return checkOrderStatus(from, session);
     case MENU_IDS.hours:
       await sendText(from, hoursMessage(content));
       if (content.wazeUrl) {
@@ -326,7 +340,15 @@ async function handleEndLoop(from: string, session: WhatsappSession, token: stri
 // ענף 1 — בירור מלאי, מחיר ומיקום
 // ---------------------------------------------------------------------------
 
-async function handleB1Title(from: string, session: WhatsappSession, text: string): Promise<void> {
+const MEDIA_TYPES = new Set(["image", "sticker", "video", "audio", "voice", "document"]);
+
+async function handleB1Title(from: string, session: WhatsappSession, text: string, msgType?: string): Promise<void> {
+  if (msgType && MEDIA_TYPES.has(msgType)) {
+    await sendReplyButtons(from, T.b1ImageFallback, [
+      { id: BTN.b1ImageRetry, title: "🔄 נסה שוב" },
+    ]);
+    return;
+  }
   if (text.length === 0) {
     await sendText(from, T.b1AskTitle);
     return;
@@ -385,6 +407,7 @@ async function handleB1Pick(from: string, session: WhatsappSession, token: strin
   switch (token) {
     case BTN.toOrder:
       return askOrderType(from, session);
+    case BTN.b1ImageRetry:
     case BTN.searchAgain:
     case BTN.pickNone:
       await sendText(from, T.b1AskTitle);
@@ -581,6 +604,138 @@ async function finishOrder(from: string, session: WhatsappSession, text: string)
     ctx.fulfillment_type === "delivery" ? T.orderDoneDelivery : T.orderDonePickup,
   );
   await goEndLoop(from, session);
+}
+
+// ---------------------------------------------------------------------------
+// ענף 3 — בירור סטטוס הזמנה קיימת
+// ---------------------------------------------------------------------------
+
+interface ActiveOrder {
+  id: string;
+  status: string;
+  manual_book_title: string | null;
+  book_title: string | null;
+  created_at: string;
+}
+
+function phoneVariants(waPhone: string): string[] {
+  const digits = waPhone.replace(/\D/g, "");
+  const variants = [waPhone, digits];
+  if (digits.startsWith("972")) {
+    variants.push("0" + digits.slice(3));
+  }
+  if (digits.startsWith("0")) {
+    variants.push("972" + digits.slice(1));
+  }
+  return [...new Set(variants)];
+}
+
+function statusLabel(status: string): string {
+  return ORDER_STATUS_LABELS[status] ?? status;
+}
+
+function formatDate(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit", year: "numeric" });
+  } catch {
+    return iso;
+  }
+}
+
+async function findActiveOrdersByPhone(waPhone: string): Promise<ActiveOrder[]> {
+  const variants = phoneVariants(waPhone);
+  const placeholders = variants.map((_, i) => `$${i + 1}`).join(", ");
+  const { rows } = await pool.query<ActiveOrder>(
+    `SELECT o.id, o.status,
+            o.manual_book_title,
+            b.title AS book_title,
+            o.created_at::text
+       FROM orders o
+       LEFT JOIN books b ON b.id = o.book_id
+      WHERE o.customer_phone IN (${placeholders})
+        AND o.status IN ('pending', 'sent')
+      ORDER BY o.created_at DESC
+      LIMIT 10`,
+    variants,
+  );
+  return rows;
+}
+
+async function checkOrderStatus(from: string, session: WhatsappSession): Promise<void> {
+  const orders = await findActiveOrdersByPhone(from);
+
+  if (orders.length === 0) {
+    await sendReplyButtons(from, T.b3NoOrders, [
+      { id: BTN.statusToHuman, title: "🛠️ מענה אנושי" },
+      { id: BTN.finish, title: "✅ סיום" },
+    ]);
+    return updateSession(session.id, { current_node: NODES.B3_STATUS, context: {} }).then(() => {});
+  }
+
+  if (orders.length === 1) {
+    const o = orders[0]!;
+    const title = o.manual_book_title ?? o.book_title ?? "הזמנה";
+    const msg =
+      `מצאתי את ההזמנה שלך! 📋\n` +
+      `ספר: ${title}\n` +
+      `סטטוס עדכני: ${statusLabel(o.status)}\n\n` +
+      "אם יש לך שאלות נוספות, נשמח לעזור.";
+    await sendText(from, msg);
+    return goEndLoop(from, session);
+  }
+
+  const rows = orders.map((o) => {
+    const title = o.manual_book_title ?? o.book_title ?? "הזמנה";
+    return {
+      id: `${STATUS_PICK_PREFIX}${o.id}`,
+      title: title.length > 24 ? title.slice(0, 23) + "…" : title,
+      description: `${formatDate(o.created_at)} · ${statusLabel(o.status)}`,
+    };
+  });
+  await sendListMessage(from, T.b3MultipleOrders, "בחר הזמנה", rows);
+  await updateSession(session.id, { current_node: NODES.B3_PICK, context: {} });
+}
+
+async function handleB3Status(from: string, session: WhatsappSession, token: string): Promise<void> {
+  if (token === BTN.statusToHuman) {
+    return handover(from, session, "בירור סטטוס הזמנה — מענה אנושי");
+  }
+  if (token === BTN.finish) return goEndLoop(from, session);
+  await sendReplyButtons(from, T.b3NoOrders, [
+    { id: BTN.statusToHuman, title: "🛠️ מענה אנושי" },
+    { id: BTN.finish, title: "✅ סיום" },
+  ]);
+}
+
+async function handleB3Pick(from: string, session: WhatsappSession, token: string): Promise<void> {
+  if (token.startsWith(STATUS_PICK_PREFIX)) {
+    const orderId = token.slice(STATUS_PICK_PREFIX.length);
+    const { rows } = await pool.query<ActiveOrder>(
+      `SELECT o.id, o.status,
+              o.manual_book_title,
+              b.title AS book_title,
+              o.created_at::text
+         FROM orders o
+         LEFT JOIN books b ON b.id = o.book_id
+        WHERE o.id = $1`,
+      [orderId],
+    );
+    if (rows.length === 0) {
+      await sendText(from, "לא נמצאה הזמנה. בוא נחזור לתפריט.");
+      return startMainMenu(from, session, false);
+    }
+    const o = rows[0]!;
+    const title = o.manual_book_title ?? o.book_title ?? "הזמנה";
+    const msg =
+      `מצאתי את ההזמנה שלך! 📋\n` +
+      `ספר: ${title}\n` +
+      `סטטוס עדכני: ${statusLabel(o.status)}\n\n` +
+      "אם יש לך שאלות נוספות, נשמח לעזור.";
+    await sendText(from, msg);
+    return goEndLoop(from, session);
+  }
+  await checkOrderStatus(from, session);
 }
 
 // ---------------------------------------------------------------------------

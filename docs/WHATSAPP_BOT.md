@@ -82,6 +82,23 @@ curl -X POST https://<HOST>/api/v1/orders/<ORDER_ID>/notify-customer \
 
 ---
 
+## 4b. בדיקות אוטומטיות (ללא מכסת Meta)
+
+כל תרחישי תוכנית הבדיקה המלאה ממומשים כ-integration tests שרצים מול ה-DB המקומי
+במצב `WHATSAPP_TEST_MOCK=true` — **בלי שליחה אמיתית ל-Graph API** (חינם לחלוטין).
+
+```bash
+# דורש DATABASE_URL ב-backend/.env ומיגרציות 023–027
+npm run test:whatsapp
+```
+
+קבצים:
+- `backend/src/services/whatsapp/engine.integration.test.ts` — ענפים A–G
+- `backend/src/routes/orders.notify.integration.test.ts` — עדכוני לקוח (E1–E5)
+- `backend/src/services/whatsapp/testHarness.ts` — עזרי סימולציה
+
+---
+
 ## 5. ארכיטקטורה (קוד)
 
 - `backend/src/routes/webhooks/whatsapp.ts` — קליטת ה-`webhook` + אימות חתימה.
