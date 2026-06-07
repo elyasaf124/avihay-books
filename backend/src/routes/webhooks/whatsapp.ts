@@ -62,6 +62,7 @@ interface WaValue {
   contacts?: { profile?: { name?: string }; wa_id?: string }[];
   messages?: WaTextMessage[];
   message_echoes?: { from?: string; to?: string; id?: string; type?: string }[];
+  smb_message_echoes?: { from?: string; to?: string; id?: string; type?: string }[];
   statuses?: unknown[];
 }
 
@@ -96,7 +97,11 @@ async function processBody(body: WaBody): Promise<void> {
       const profileName = value.contacts?.[0]?.profile?.name ?? null;
 
       // מענה אנושי ידני מאפליקציית WhatsApp Business (Coexistence)
-      for (const echo of value.message_echoes ?? []) {
+      const echoes = [
+        ...(value.smb_message_echoes ?? []),
+        ...(value.message_echoes ?? []),
+      ];
+      for (const echo of echoes) {
         const customer = echo.to;
         if (!customer) continue;
         await logWhatsappMessage({
@@ -129,12 +134,12 @@ async function processBody(body: WaBody): Promise<void> {
 }
 
 whatsappWebhookRouter.post("/", (req, res) => {
+  logger.info({ body: req.body }, "[whatsapp] webhook POST received");
   if (!verifySignature(req)) {
     logger.warn("[whatsapp] invalid webhook signature");
     res.sendStatus(403);
     return;
   }
-  // עונים מיד 200 כדי לא לחרוג מ-timeout של Meta; העיבוד ממשיך אסינכרונית.
   res.sendStatus(200);
   processBody((req.body ?? {}) as WaBody).catch((err: unknown) => {
     logger.error({ err }, "[whatsapp] webhook processing failed");
