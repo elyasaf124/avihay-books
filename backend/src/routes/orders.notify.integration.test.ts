@@ -105,24 +105,6 @@ describe("E — Notify customer", { skip }, () => {
     await deleteTestOrder(orderId);
   });
 
-  test("E3: payment_link template with URL (mock)", async () => {
-    clearOutboundRecords();
-    const phone = "972502223344";
-    const orderId = await insertTestOrder({ customer_phone: phone });
-
-    const res = await request(app, "POST", `/orders/${orderId}/notify-customer`, {
-      template: "payment_link",
-      paymentUrl: "https://example.com/pay/123",
-    });
-    assert.equal(res.status, 200);
-    assert.equal(res.body.sent, true);
-
-    const out = getOutboundRecords();
-    assert.ok(out.some((r) => r.msgType === "template" && r.body.includes("order_payment_link")));
-
-    await deleteTestOrder(orderId);
-  });
-
   test("E4: order without phone returns 400", async () => {
     const orderId = await insertTestOrder({ customer_phone: null });
 

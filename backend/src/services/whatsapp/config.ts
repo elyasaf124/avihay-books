@@ -28,7 +28,6 @@ export interface WhatsappRuntimeConfig {
   humanHoursEnd: number;
   templateLang: string;
   templateOrderReady: string;
-  templatePaymentLink: string;
 }
 
 function parseHoursRange(raw: string | undefined): { start: number; end: number } {
@@ -57,7 +56,6 @@ export function getWhatsappConfig(): WhatsappRuntimeConfig {
     humanHoursEnd: hours.end,
     templateLang: env("WHATSAPP_TEMPLATE_LANG") ?? "he",
     templateOrderReady: env("WHATSAPP_TEMPLATE_ORDER_READY") ?? "order_ready_pickup",
-    templatePaymentLink: env("WHATSAPP_TEMPLATE_PAYMENT_LINK") ?? "order_payment_link",
   };
 }
 
@@ -93,9 +91,13 @@ export function getBotContent(): BotContentConfig {
     wazeUrl: env("BOT_WAZE_URL") ?? null,
     bankDetails:
       env("BOT_BANK_DETAILS") ??
-      "לפקודת: נועם הספר\nבנק הפועלים (12)\nסניף אריאל: 286\nמספר חשבון: 78929",
-    paymentCreditUrl: env("BOT_PAYMENT_CREDIT_URL") ?? null,
-    paymentBitUrl: env("BOT_PAYMENT_BIT_URL") ?? null,
+      "נועם הספר\nבנק הפועלים\nסניף 286\nחשבון 78929",
+    paymentCreditUrl:
+      env("BOT_PAYMENT_CREDIT_URL") ??
+      "https://ultra.kesherhk.info/external/paymentPage/314594",
+    paymentBitUrl:
+      env("BOT_PAYMENT_BIT_URL") ??
+      "https://meshulam.co.il/quick_payment?b=7583d8adc7013c94a822b5f0d7a2d711",
     paymentPayboxUrl: env("BOT_PAYMENT_PAYBOX_URL") ?? null,
     catalogPdfUrl: env("BOT_CATALOG_PDF_URL") ?? null,
     updatesGroupUrl: env("BOT_UPDATES_GROUP_URL") ?? null,

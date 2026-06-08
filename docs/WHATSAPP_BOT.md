@@ -35,12 +35,13 @@
 
 ## 2. Templates לעדכוני הזמנה (order_updates_only)
 
-צור ואשר ב-`Meta` (WhatsApp Manager > Message Templates) שתי תבניות בעברית:
+צור ואשר ב-`Meta` (WhatsApp Manager > Message Templates) תבנית אחת בעברית:
 
-- `order_ready_pickup` — הודעה שהספר הגיע / מוכן לאיסוף. פרמטר גוף אחד: שם הספר.
-- `order_payment_link` — הודעה עם קישור תשלום מאובטח. פרמטר גוף (שם הספר) + כפתור `URL` דינמי.
+- `order_ready_pickup` — הודעה שהספר הגיע / מוכן לאיסוף. שני פרמטרי גוף: `{{1}}` שם הלקוח, `{{2}}` שם הספר.
 
-שמות התבניות והשפה ניתנים לשינוי ב-`WHATSAPP_TEMPLATE_*`.
+**אפשרויות תשלום** (מזומן, צ'ק, אשראי, ביט, העברה בנקאית) נשלחות דרך ענף «אפשרויות תשלום» בבוט — לא דרך template.
+
+שם התבנית והשפה ניתנים לשינוי ב-`WHATSAPP_TEMPLATE_ORDER_READY` / `WHATSAPP_TEMPLATE_LANG`.
 
 ---
 

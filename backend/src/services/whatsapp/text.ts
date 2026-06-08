@@ -140,16 +140,34 @@ export function hoursMessage(content: BotContentConfig): string {
 
 /** הודעת אפשרויות תשלום (ענף 4). */
 export function paymentMessage(content: BotContentConfig): string {
-  const links: string[] = [];
-  if (content.paymentCreditUrl) links.push(`💳 תשלום באשראי: ${content.paymentCreditUrl}`);
-  if (content.paymentBitUrl) links.push(`📱 תשלום בביט: ${content.paymentBitUrl}`);
-  if (content.paymentPayboxUrl) links.push(`💼 תשלום בפייבוקס: ${content.paymentPayboxUrl}`);
-  const linksBlock = links.length > 0 ? `\n\n📱 תשלום דיגיטלי מהיר:\n${links.join("\n")}` : "";
-  return (
-    "באפשרותך לשלם במגוון דרכים לבחירתך:\n\n" +
-    "💵 מזומן: ניתן לשלם ישירות בקופת המזומן בחנות.\n\n" +
-    `🏦 העברה בנקאית:\n${content.bankDetails}${linksBlock}`
-  );
+  const lines: string[] = [
+    "*דרכי תשלום לחנות הספרים:*",
+    "",
+    "🪙 *מזומן*",
+    "",
+    `🪙 *צ'ק* - לפקודת '${content.storeName}'`,
+  ];
+
+  if (content.paymentCreditUrl) {
+    lines.push("", "🪙 *אשראי* -", content.paymentCreditUrl);
+    lines.push("(יש לוודא בסוף התהליך שקיבלת אישור על קבלת התשלום!)");
+  }
+
+  if (content.paymentBitUrl) {
+    lines.push("", `🪙 *ביט* - ${content.paymentBitUrl}`);
+  }
+
+  if (content.paymentPayboxUrl) {
+    lines.push("", `🪙 *פייבוקס* - ${content.paymentPayboxUrl}`);
+  }
+
+  lines.push("", "🪙 *העברה בנקאית*");
+  for (const line of content.bankDetails.split("\n")) {
+    if (line.trim().length > 0) lines.push(line.trim());
+  }
+  lines.push("(נא לשלוח צילום מסך על אישור ההעברה)");
+
+  return lines.join("\n");
 }
 
 /** הודעת קבוצת עדכונים (ענף 7). */

@@ -261,12 +261,16 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       await cleanupTestPhone(phone);
     });
 
-    test("B4.1: payment shows cash and bank", async () => {
+    test("B4.1: payment shows all payment methods", async () => {
       const phone = uniqueTestPhone();
       await resetPhone(phone);
       await goToMainMenu(phone);
       const out = await selectMenu(phone, MENU_IDS.payment);
+      assertSomeBodyContains(out, "דרכי תשלום");
       assertSomeBodyContains(out, "מזומן");
+      assertSomeBodyContains(out, "צ'ק");
+      assertSomeBodyContains(out, "אשראי");
+      assertSomeBodyContains(out, "ביט");
       assertSomeBodyContains(out, "העברה בנקאית");
       assertSomeBodyContains(out, T.endLoopPrompt);
       await cleanupTestPhone(phone);

@@ -620,16 +620,14 @@ export function useCreateCustomerOrder() {
 /** שליחת עדכון יזום ללקוח בוואטסאפ (Template מאושר). דורש בוט וואטסאפ מוגדר בשרת. */
 export interface NotifyCustomerParams {
   orderId: string;
-  template?: "order_ready" | "payment_link";
-  paymentUrl?: string;
+  template?: "order_ready";
 }
 
 export function useNotifyCustomer() {
   return useMutation<void, Error, NotifyCustomerParams>({
-    mutationFn: async ({ orderId, template, paymentUrl }) => {
+    mutationFn: async ({ orderId, template }) => {
       await api.post(`/orders/${orderId}/notify-customer`, {
         template: template ?? "order_ready",
-        ...(paymentUrl ? { paymentUrl } : {}),
       });
     },
   });

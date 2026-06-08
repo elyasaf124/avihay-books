@@ -158,13 +158,11 @@ ordersRouter.post(
 
 /**
  * שליחת עדכון יזום ללקוח בוואטסאפ (Template מאושר ב-Meta):
- *   - `order_ready`  — הספר הגיע / מוכן לאיסוף.
- *   - `payment_link` — קישור תשלום מאובטח (דורש `paymentUrl`).
- * עובד גם מחוץ לחלון 24 השעות כי משתמשים ב-Templates.
+ *   - `order_ready` — הספר הגיע / מוכן לאיסוף.
+ * אפשרויות תשלום נשלחות דרך ענף «אפשרויות תשלום» בבוט (לא דרך template).
  */
 const notifyCustomerBodySchema = z.object({
-  template: z.enum(["order_ready", "payment_link"]).default("order_ready"),
-  paymentUrl: z.string().url().optional(),
+  template: z.enum(["order_ready"]).default("order_ready"),
 });
 
 ordersRouter.post(
@@ -181,17 +179,9 @@ ordersRouter.post(
     const bookTitle = order.book_title || order.manual_book_title || "הספר שהזמנת";
     const customerName = order.customer_name ?? "";
 
-    if (body.template === "payment_link") {
-      if (!body.paymentUrl) throw new HttpError(400, "payment_url_required");
-      await sendTemplate(order.customer_phone, cfg.templatePaymentLink, cfg.templateLang, {
-        bodyParams: [customerName, bookTitle],
-        urlButtonParam: body.paymentUrl,
-      });
-    } else {
-      await sendTemplate(order.customer_phone, cfg.templateOrderReady, cfg.templateLang, {
-        bodyParams: [customerName, bookTitle],
-      });
-    }
+    await sendTemplate(order.customer_phone, cfg.templateOrderReady, cfg.templateLang, {
+      bodyParams: [customerName, bookTitle],
+    });
 
     res.json({ sent: true });
   }),

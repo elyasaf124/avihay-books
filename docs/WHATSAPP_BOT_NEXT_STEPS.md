@@ -133,7 +133,6 @@ WHATSAPP_HANDOVER_TIMEOUT_MIN=180
 WHATSAPP_HUMAN_HOURS=14-18
 WHATSAPP_TEMPLATE_LANG=he
 WHATSAPP_TEMPLATE_ORDER_READY=order_ready_pickup
-WHATSAPP_TEMPLATE_PAYMENT_LINK=order_payment_link
 ```
 
 ### תוכן הבוט (מומלץ)
@@ -178,13 +177,13 @@ WhatsApp Manager → **Message Templates** — צור ו**אשר** בעברית:
 
 | שם (ברירת מחדל) | שימוש |
 |-----------------|--------|
-| `order_ready_pickup` | ספר הגיע / מוכן לאיסוף — פרמטר: שם הספר |
-| `order_payment_link` | קישור תשלום — פרמטר + כפתור URL דינמי |
+| `order_ready_pickup` | ספר הגיע / מוכן לאיסוף — `{{1}}` שם לקוח, `{{2}}` שם ספר |
 
-אם השמות שונים — עדכן `WHATSAPP_TEMPLATE_ORDER_READY` / `WHATSAPP_TEMPLATE_PAYMENT_LINK`.
+אפשרויות תשלום (מזומן, צ'ק, אשראי, ביט, העברה) — דרך ענף «אפשרויות תשלום» בבוט (`BOT_PAYMENT_*`, `BOT_BANK_DETAILS`).
+
+אם השם שונה — עדכן `WHATSAPP_TEMPLATE_ORDER_READY`.
 
 - [ ] `order_ready_pickup` מאושר
-- [ ] `order_payment_link` מאושר
 
 ---
 
