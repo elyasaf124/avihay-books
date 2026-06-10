@@ -68,6 +68,8 @@ module.exports = ({ config }) => {
     bundleIdentifier: IS_DEV_PACKAGE ? `${config.ios?.bundleIdentifier ?? "com.avihay.books"}.dev` : (config.ios?.bundleIdentifier ?? "com.avihay.books"),
   };
 
+  const updatesEnabled = isProductionBuild && hasEasProjectId;
+
   return {
     ...config,
     name,
@@ -78,9 +80,10 @@ module.exports = ({ config }) => {
     },
     updates: {
       ...config.updates,
-      checkAutomatically: "ON_LOAD",
-      fallbackToCacheTimeout: 0,
-      ...(hasEasProjectId ? { url: `https://u.expo.dev/${easProjectId}` } : { enabled: false }),
+      enabled: updatesEnabled,
+      checkAutomatically: updatesEnabled ? "ON_LOAD" : "NEVER",
+      fallbackToCacheTimeout: updatesEnabled ? 0 : undefined,
+      ...(updatesEnabled ? { url: `https://u.expo.dev/${easProjectId}` } : {}),
     },
     extra: {
       ...config.extra,

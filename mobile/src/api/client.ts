@@ -35,29 +35,63 @@ function rewriteLanToLocalhostForWebDev(url: string): string {
   }
 }
 
+/** Android emulator: reach the dev machine via `10.0.2.2` (not `localhost` / LAN IP). */
+function rewriteForAndroidEmulator(url: string): string {
+  if (!__DEV__ || Platform.OS !== "android" || Constants.isDevice) return url;
+  try {
+    const normalized = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(url) ? url : `http://${url}`;
+    const parsed = new URL(normalized);
+    if (parsed.protocol === "https:") return url;
+    const host = parsed.hostname;
+    const isLocalDevHost =
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "10.0.2.2" ||
+      isPrivateLanHost(host);
+    if (!isLocalDevHost) return url;
+    if (host === "10.0.2.2") return url;
+    parsed.hostname = "10.0.2.2";
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+/** @internal Previous name — kept so stale Metro HMR bundles don't crash on reload. */
+function rewriteLocalhostForAndroidEmulator(url: string): string {
+  return rewriteForAndroidEmulator(url);
+}
+
 const extra = Constants.expoConfig?.extra as ApiExtra;
 
 /** כתובת ידועה מראש — אם המשתנים לא נטענו בפרודקשן, נפנה לכאן */
 const PRODUCTION_API_URL = "https://avihay-books-api.onrender.com/api/v1";
 const PRODUCTION_API_KEY = "15b9cb452363ad4f6df728cad766018ddc788ca0ec8c4d0e2610030eb70356de";
 
-/** `??` לא מדלג על מחרוזת ריקה — אחרי EAS לפעמים נשאר `""` וה־`baseURL` נשבר בלי fallback ל־`extra`. קודם `extra` מה־manifest. */
-const resolvedUrl =
-  firstNonBlank(extra?.apiBaseUrl, process.env.EXPO_PUBLIC_API_BASE_URL) ??
-  "http://localhost:4000/api/v1";
+/**
+ * בפיתוח — `EXPO_PUBLIC_*` מה־`.env` קודם ל־`extra` (ב־`app.json` נשאר `localhost` לברירת מחדל).
+ * בפרודקשן — `extra` מה־manifest קודם (EAS / prebuild).
+ */
+const resolvedUrl = __DEV__
+  ? (firstNonBlank(process.env.EXPO_PUBLIC_API_BASE_URL, extra?.apiBaseUrl) ??
+    "http://localhost:4000/api/v1")
+  : (firstNonBlank(extra?.apiBaseUrl, process.env.EXPO_PUBLIC_API_BASE_URL) ??
+    "http://localhost:4000/api/v1");
 
 /** בפרודקשן — אם ה־URL נשאר `localhost` (סימן שהסביבה לא נטענה לבילד), נפנה ל־Render */
 const isLocalhost = resolvedUrl.includes("localhost") || resolvedUrl.includes("127.0.0.1");
 const afterProdFallback = !__DEV__ && isLocalhost ? PRODUCTION_API_URL : resolvedUrl;
-export const API_BASE_URL = rewriteLanToLocalhostForWebDev(afterProdFallback);
+export const API_BASE_URL = rewriteForAndroidEmulator(
+  rewriteLanToLocalhostForWebDev(afterProdFallback),
+);
 
 const resolvedKey = firstNonBlank(extra?.apiKey ?? undefined, process.env.EXPO_PUBLIC_API_KEY);
 const apiKey = resolvedKey ?? (!__DEV__ ? PRODUCTION_API_KEY : undefined);
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  /** שרותים חינמיים (כגון Render) עלולים «להירדם» ולענות אחרי 10–60 שניות מהקריאה הראשונה */
-  timeout: 45_000,
+  /** Local dev: fail fast; Render cold-start may need longer in production builds. */
+  timeout: __DEV__ ? 12_000 : 45_000,
 });
 
 if (apiKey) {

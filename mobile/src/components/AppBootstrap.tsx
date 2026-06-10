@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import { useEffect } from "react";
-import { Platform } from "react-native";
 import * as SplashScreen from "expo-splash-screen";
 import { useAppConfig } from "../api/appConfig";
 import { SplashLoadingView } from "./SplashLoadingView";
@@ -16,15 +15,15 @@ interface AppBootstrapProps {
  */
 export function AppBootstrap({ fontsReady, children }: AppBootstrapProps): JSX.Element | null {
   const config = useAppConfig();
-  const appReady = fontsReady && !config.isLoading;
+  /** In dev, don't block the UI on `/app-config` — `ForceUpdateGate` handles it with the same splash. */
+  const appReady = fontsReady && (__DEV__ || !config.isLoading);
 
   useEffect(() => {
     if (appReady) void SplashScreen.hideAsync().catch(() => undefined);
   }, [appReady]);
 
   if (!appReady) {
-    if (Platform.OS === "web") return <SplashLoadingView />;
-    return null;
+    return <SplashLoadingView />;
   }
 
   return <>{children}</>;

@@ -23,12 +23,14 @@
       "bundleIdentifier": "com.avihay.books"
     },
     "android": {
-      "package": "com.avihay.books"
+      "package": "com.avihay.books",
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "bundler": "metro"
     },
     "plugins": [
+      "expo-dev-client",
       "expo-router",
       [
         "expo-splash-screen",

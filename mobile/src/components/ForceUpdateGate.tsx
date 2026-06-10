@@ -38,7 +38,7 @@ function currentAppVersion(): string {
 export function ForceUpdateGate({ children }: ForceUpdateGateProps): JSX.Element {
   const config = useAppConfig();
 
-  if (config.isLoading) {
+  if (config.isLoading && !__DEV__) {
     return <SplashLoadingView />;
   }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -23,17 +24,20 @@ import {
   useSendMessage,
 } from "../../../src/api/chat";
 import { useChatStream } from "../../../src/hooks/useChatStream";
-import { useKeyboardHeight } from "../../../src/hooks/useKeyboardHeight";
+import { useKeyboardFrame } from "../../../src/hooks/useKeyboardHeight";
 import { MessageBubble } from "../../../src/components/chat/MessageBubble";
 import { wa, avatarColor, avatarInitial } from "../../../src/components/chat/waTheme";
 
 const SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
+const ANDROID_KEYBOARD_CLEARANCE = 12;
+
 export default function ConversationScreen(): JSX.Element {
   const params = useLocalSearchParams<{ phone: string }>();
   const phone = typeof params.phone === "string" ? params.phone : "";
   const insets = useSafeAreaInsets();
-  const keyboardHeight = useKeyboardHeight();
+  const { height: keyboardHeight, screenY: keyboardScreenY } = useKeyboardFrame();
+  const { height: windowH } = useWindowDimensions();
 
   useChatStream();
   const messagesQuery = useMessages(phone);
@@ -52,6 +56,65 @@ export default function ConversationScreen(): JSX.Element {
   );
   const profileName = conversation?.profile_name ?? null;
   const displayName = (profileName ?? "").trim() || phone;
+
+  const keyboardVerticalOffset = Platform.OS === "ios" ? insets.top + 44 : 0;
+  const inputPaddingBottom = Math.max(insets.bottom, 8);
+  const inputBarRef = useRef<View>(null);
+  const androidKeyboardMarginRef = useRef(0);
+  const [androidKeyboardMargin, setAndroidKeyboardMargin] = useState(0);
+
+  useEffect(() => {
+    if (keyboardScreenY == null) {
+      androidKeyboardMarginRef.current = 0;
+      setAndroidKeyboardMargin(0);
+      return;
+    }
+    if (Platform.OS !== "android") return;
+
+    const apply = (): void => {
+      if (androidKeyboardMarginRef.current > 0) return;
+      inputBarRef.current?.measureInWindow((_x, y, _w, height) => {
+        if (androidKeyboardMarginRef.current > 0) return;
+        const barBottomWindow = y + height;
+        const needed = Math.max(
+          0,
+          barBottomWindow - keyboardScreenY + ANDROID_KEYBOARD_CLEARANCE,
+        );
+        if (needed <= 0) return;
+        androidKeyboardMarginRef.current = needed;
+        setAndroidKeyboardMargin(needed);
+      });
+    };
+
+    apply();
+    const t = setTimeout(apply, 60);
+    return () => clearTimeout(t);
+  }, [keyboardScreenY]);
+
+  useEffect(() => {
+    if (!__DEV__) return;
+    console.log("[chat-keyboard] layout", {
+      platform: Platform.OS,
+      windowH,
+      keyboardHeight,
+      insetsTop: insets.top,
+      insetsBottom: insets.bottom,
+      keyboardVerticalOffset,
+      inputPaddingBottom,
+      kavBehavior: Platform.OS === "ios" ? "padding" : undefined,
+      keyboardScreenY,
+      androidKeyboardMargin,
+    });
+  }, [
+    windowH,
+    keyboardHeight,
+    insets.top,
+    insets.bottom,
+    keyboardVerticalOffset,
+    inputPaddingBottom,
+    keyboardScreenY,
+    androidKeyboardMargin,
+  ]);
 
   // חלון 24 שעות: מאתרים את ההודעה הנכנסת האחרונה (הרשימה ממוינת חדש→ישן).
   const outsideWindow = useMemo(() => {
@@ -96,7 +159,7 @@ export default function ConversationScreen(): JSX.Element {
     <KeyboardAvoidingView
       style={styles.screen}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 44 : 0}
+      keyboardVerticalOffset={keyboardVerticalOffset}
     >
       <Stack.Screen
         options={{
@@ -153,7 +216,33 @@ export default function ConversationScreen(): JSX.Element {
         </View>
       ) : null}
 
-      <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 8) + keyboardHeight }]}>
+      <View
+        ref={inputBarRef}
+        style={[
+          styles.inputBar,
+          { paddingBottom: inputPaddingBottom, marginBottom: androidKeyboardMargin },
+        ]}
+        onLayout={() => {
+          if (!__DEV__) return;
+          inputBarRef.current?.measureInWindow((x, y, width, height) => {
+            const barBottomWindow = y + height;
+            const contentBottomWindow = barBottomWindow - inputPaddingBottom;
+            console.log("[chat-keyboard] inputBar onLayout", {
+              x,
+              y,
+              width,
+              height,
+              paddingBottom: inputPaddingBottom,
+              marginBottom: androidKeyboardMarginRef.current,
+              contentBottomWindow,
+              keyboardScreenY,
+              gapToKeyboard:
+                keyboardScreenY != null ? keyboardScreenY - contentBottomWindow : null,
+              distanceFromWindowBottom: windowH - barBottomWindow,
+            });
+          });
+        }}
+      >
         <View style={styles.inputWrap}>
           <TextInput
             style={styles.input}
@@ -164,6 +253,9 @@ export default function ConversationScreen(): JSX.Element {
             multiline
             editable={!outsideWindow}
             textAlign="left"
+            onFocus={() => {
+              if (__DEV__) console.log("[chat-keyboard] input focused");
+            }}
           />
         </View>
         <Pressable
