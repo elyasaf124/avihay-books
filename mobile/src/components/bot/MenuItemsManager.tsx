@@ -13,15 +13,20 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import type { BotConfigData, CustomFlow, MenuItemConfig } from "@avihay-books/shared";
+import {
+  MAX_MENU_ITEMS_ENABLED,
+  MAX_MENU_ITEMS_TOTAL,
+  type BotConfigData,
+  type CustomFlow,
+  type MenuItemConfig,
+} from "@avihay-books/shared";
 import { useBotConfig, useSaveBotConfig } from "../../api/botConfig";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { he } from "../../i18n/he";
 import { theme } from "../../theme";
-import { CenterState, genId, SaveBar } from "./BotFormControls";
+import { CenterState, genId } from "./BotFormControls";
 import { sanitizeAllCustomFlows } from "./flowSanitize";
-
-const MAX_ITEMS = 10;
+import { useBotAutoSave } from "./useBotAutoSave";
 
 function interpolate(template: string, vars: Record<string, string>): string {
   return template.replace(/\{\{(\w+)\}\}/g, (_m, k: string) => vars[k] ?? "");
@@ -56,11 +61,18 @@ export function MenuItemsManager(): JSX.Element {
   }, [configQuery.data, draft]);
 
   const items = draft?.menu_items ?? [];
+  const enabledCount = items.filter((it) => it.enabled).length;
+
+  const { syncSaved } = useBotAutoSave(draft, draft != null);
 
   const updateItems = (next: MenuItemConfig[]): void =>
     setDraft((prev) => (prev ? { ...prev, menu_items: reindex(next) } : prev));
 
   const toggle = (id: string, value: boolean): void => {
+    if (value && enabledCount >= MAX_MENU_ITEMS_ENABLED) {
+      Alert.alert(he.bot.maxEnabledReached);
+      return;
+    }
     const next = items.map((it) => (it.id === id ? { ...it, enabled: value } : it));
     if (!next.some((it) => it.enabled)) {
       Alert.alert(he.bot.needOneEnabled);
@@ -96,7 +108,9 @@ export function MenuItemsManager(): JSX.Element {
   const persist = async (next: BotConfigData): Promise<BotConfigData | null> => {
     try {
       const saved = await saveMutation.mutateAsync(withSanitizedFlows(next));
-      setDraft({ ...saved, menu_items: reindex([...saved.menu_items].sort((a, b) => a.order - b.order)) });
+      const synced = { ...saved, menu_items: reindex([...saved.menu_items].sort((a, b) => a.order - b.order)) };
+      setDraft(synced);
+      syncSaved(synced);
       return saved;
     } catch {
       Alert.alert(he.generic.errorTitle, he.bot.saveFailed);
@@ -105,8 +119,12 @@ export function MenuItemsManager(): JSX.Element {
   };
 
   const openCreate = (): void => {
-    if (items.length >= MAX_ITEMS) {
-      Alert.alert(he.bot.maxItemsReached);
+    if (items.length >= MAX_MENU_ITEMS_TOTAL) {
+      Alert.alert(he.bot.maxTotalReached);
+      return;
+    }
+    if (enabledCount >= MAX_MENU_ITEMS_ENABLED) {
+      Alert.alert(he.bot.maxEnabledReached);
       return;
     }
     setCreateTitle(he.bot.newFlowTitle);
@@ -155,12 +173,6 @@ export function MenuItemsManager(): JSX.Element {
     await persist(next);
   };
 
-  const onSave = async (): Promise<void> => {
-    if (!draft) return;
-    const saved = await persist(draft);
-    if (saved) Alert.alert(he.bot.saved);
-  };
-
   return (
     <SafeAreaView style={styles.screen} edges={["bottom"]}>
       <CenterState
@@ -181,52 +193,62 @@ export function MenuItemsManager(): JSX.Element {
                 </Pressable>
               </View>
 
-              <Pressable style={styles.rowMain} onPress={() => openEdit(item)}>
-                <Text style={styles.rowTitle} numberOfLines={1}>{item.title}</Text>
-                <Text style={styles.rowBadge}>
-                  {item.type === "custom" ? he.bot.menuItemCustom : he.bot.menuItemBuiltin}
-                </Text>
-              </Pressable>
+              <View style={styles.rowBody}>
+                <Pressable style={styles.rowMain} onPress={() => openEdit(item)}>
+                  <Text style={styles.rowTitle} numberOfLines={2}>{item.title}</Text>
+                  <Text style={styles.rowBadge}>
+                    {item.type === "custom" ? he.bot.menuItemCustom : he.bot.menuItemBuiltin}
+                  </Text>
+                </Pressable>
 
-              <View style={styles.rowActions}>
-                {item.type === "custom" ? (
-                  <>
-                    <Pressable
-                      onPress={() => item.flow_id && router.push(`/bot/flow/${item.flow_id}` as never)}
-                      style={styles.actionBtn}
-                      accessibilityLabel={he.bot.editFlow}
-                    >
-                      <Ionicons name="git-branch-outline" size={20} color={theme.colors.primary} />
-                    </Pressable>
-                    <Pressable
-                      onPress={() => setDeleteTarget(item)}
-                      style={styles.actionBtn}
-                      accessibilityLabel={he.generic.delete}
-                    >
-                      <Ionicons name="trash-outline" size={20} color={theme.colors.error} />
-                    </Pressable>
-                  </>
-                ) : null}
-                <Switch
-                  value={item.enabled}
-                  onValueChange={(v) => toggle(item.id, v)}
-                  trackColor={{ true: theme.colors.primary }}
-                />
+                <View style={styles.rowFooter}>
+                  {item.type === "custom" ? (
+                    <View style={styles.customActions}>
+                      <Pressable
+                        onPress={() => item.flow_id && router.push(`/bot/flow/${item.flow_id}` as never)}
+                        style={styles.actionBtn}
+                        accessibilityLabel={he.bot.editFlow}
+                      >
+                        <Ionicons name="git-branch-outline" size={20} color={theme.colors.primary} />
+                      </Pressable>
+                      <Pressable
+                        onPress={() => setDeleteTarget(item)}
+                        style={styles.actionBtn}
+                        accessibilityLabel={he.generic.delete}
+                      >
+                        <Ionicons name="trash-outline" size={20} color={theme.colors.error} />
+                      </Pressable>
+                    </View>
+                  ) : null}
+                  <View style={styles.footerSpacer} />
+                  <Switch
+                    value={item.enabled}
+                    onValueChange={(v) => toggle(item.id, v)}
+                    trackColor={{ true: theme.colors.primary }}
+                    style={styles.switch}
+                  />
+                </View>
               </View>
             </View>
           ))}
 
           <Pressable
-            style={[styles.addBtn, items.length >= MAX_ITEMS && styles.addBtnDisabled]}
+            style={[
+              styles.addBtn,
+              (items.length >= MAX_MENU_ITEMS_TOTAL || enabledCount >= MAX_MENU_ITEMS_ENABLED) &&
+                styles.addBtnDisabled,
+            ]}
             onPress={openCreate}
-            disabled={items.length >= MAX_ITEMS || saveMutation.isPending}
+            disabled={
+              items.length >= MAX_MENU_ITEMS_TOTAL ||
+              enabledCount >= MAX_MENU_ITEMS_ENABLED ||
+              saveMutation.isPending
+            }
           >
             <Ionicons name="add-circle-outline" size={20} color={theme.colors.onPrimary} />
             <Text style={styles.addBtnText}>{he.bot.addCustomItem}</Text>
           </Pressable>
         </ScrollView>
-
-        <SaveBar onSave={() => void onSave()} saving={saveMutation.isPending} />
       </CenterState>
 
       <Modal visible={creating} transparent animationType="fade" onRequestClose={() => setCreating(false)}>
@@ -297,7 +319,7 @@ const styles = StyleSheet.create({
   hint: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "right", marginBottom: theme.spacing.xs },
   row: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "stretch",
     gap: theme.spacing.sm,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.lg,
@@ -305,13 +327,33 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.outlineVariant,
     padding: theme.spacing.sm,
   },
-  reorder: { gap: 2 },
+  reorder: { gap: 2, justifyContent: "center" },
   arrowBtn: { padding: 2 },
-  rowMain: { flex: 1, gap: 2 },
+  rowBody: { flex: 1, minWidth: 0, gap: theme.spacing.xs },
+  rowMain: { gap: 2 },
   rowTitle: { ...theme.typography.bodyLg, color: theme.colors.onSurface, textAlign: "right" },
   rowBadge: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "right" },
-  rowActions: { flexDirection: "row", alignItems: "center", gap: theme.spacing.xs },
-  actionBtn: { padding: theme.spacing.xs },
+  rowFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 36,
+  },
+  footerSpacer: { flex: 1, minWidth: theme.spacing.sm },
+  customActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.xs,
+    flexShrink: 0,
+  },
+  actionBtn: {
+    width: 36,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceContainerLow,
+  },
+  switch: { flexShrink: 0, transform: [{ scaleX: 0.9 }, { scaleY: 0.9 }] },
   addBtn: {
     flexDirection: "row",
     alignItems: "center",

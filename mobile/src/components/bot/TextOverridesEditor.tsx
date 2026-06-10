@@ -1,12 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { BotTextKey, BotTextOverrides } from "@avihay-books/shared";
-import { useBotConfig, useSaveBotConfig } from "../../api/botConfig";
+import { useBotConfig } from "../../api/botConfig";
 import { he } from "../../i18n/he";
 import { theme } from "../../theme";
-import { CenterState, SaveBar } from "./BotFormControls";
+import { CenterState } from "./BotFormControls";
+import { useBotAutoSave } from "./useBotAutoSave";
 
 const LABELS: Record<BotTextKey, string> = {
   welcome: "הודעת פתיחה",
@@ -65,12 +66,18 @@ const GROUPS: { title: string; keys: BotTextKey[] }[] = [
 
 export function TextOverridesEditor(): JSX.Element {
   const configQuery = useBotConfig();
-  const saveMutation = useSaveBotConfig();
   const [draft, setDraft] = useState<BotTextOverrides | null>(null);
 
   useEffect(() => {
     if (configQuery.data && !draft) setDraft({ ...configQuery.data.text_overrides });
   }, [configQuery.data, draft]);
+
+  const savePayload = useMemo(() => {
+    if (!configQuery.data || !draft) return null;
+    return { ...configQuery.data, text_overrides: draft };
+  }, [configQuery.data, draft]);
+
+  useBotAutoSave(savePayload, savePayload != null);
 
   const set = (key: BotTextKey, value: string): void =>
     setDraft((prev) => {
@@ -79,16 +86,6 @@ export function TextOverridesEditor(): JSX.Element {
       else next[key] = value;
       return next;
     });
-
-  const onSave = async (): Promise<void> => {
-    if (!configQuery.data || !draft) return;
-    try {
-      await saveMutation.mutateAsync({ ...configQuery.data, text_overrides: draft });
-      Alert.alert(he.bot.saved);
-    } catch {
-      Alert.alert(he.generic.errorTitle, he.bot.saveFailed);
-    }
-  };
 
   return (
     <SafeAreaView style={styles.screen} edges={["bottom"]}>
@@ -131,7 +128,6 @@ export function TextOverridesEditor(): JSX.Element {
             </View>
           ))}
         </ScrollView>
-        <SaveBar onSave={() => void onSave()} saving={saveMutation.isPending} />
       </CenterState>
     </SafeAreaView>
   );

@@ -1,6 +1,6 @@
 /**
  * ניהול קונפיגורציית הבוט מהאפליקציה: שליפת הקונפיג המלא ושמירתו.
- * ה-`PUT` מאמת את כל המבנה ב-`zod`, כולל אילוצי WhatsApp (עד 10 פריטי תפריט,
+ * ה-`PUT` מאמת את כל המבנה ב-`zod`, כולל אילוצי WhatsApp (עד 10 פריטים מוצגים,
  * עד 3 כפתורים, אורכי כותרות) ותקינות זרימות מותאמות (יעדי `goto`, צמתים מנותקים).
  */
 import { Router } from "express";
@@ -11,6 +11,8 @@ import {
   FLOW_AFTER_ACTIONS,
   FLOW_BUTTON_ACTIONS,
   FLOW_NODE_TYPES,
+  MAX_MENU_ITEMS_ENABLED,
+  MAX_MENU_ITEMS_TOTAL,
   sanitizeAllCustomFlows,
   type BotConfigData,
 } from "@avihay-books/shared";
@@ -84,7 +86,7 @@ const storeInfoSchema = z.object({
 const botConfigSchema = z
   .object({
     store_info: storeInfoSchema,
-    menu_items: z.array(menuItemSchema).min(1).max(10),
+    menu_items: z.array(menuItemSchema).min(1).max(MAX_MENU_ITEMS_TOTAL),
     custom_flows: z.record(customFlowSchema).default({}),
     text_overrides: z.record(z.enum(BOT_TEXT_KEYS), z.string().min(1)).default({}),
   })
@@ -94,6 +96,15 @@ const botConfigSchema = z
         code: z.ZodIssueCode.custom,
         path: ["menu_items"],
         message: "at_least_one_menu_item_must_be_enabled",
+      });
+    }
+
+    const enabledCount = cfg.menu_items.filter((m) => m.enabled).length;
+    if (enabledCount > MAX_MENU_ITEMS_ENABLED) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["menu_items"],
+        message: "too_many_enabled_menu_items",
       });
     }
 

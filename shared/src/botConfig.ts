@@ -4,6 +4,12 @@
  * כך שחוזה הנתונים נשאר מסונכרן בין שני הצדדים.
  */
 
+/** מקסימום פריטים מוצגים בתפריט WhatsApp (מגבלת Meta לרשימה אינטראקטיבית). */
+export const MAX_MENU_ITEMS_ENABLED = 10;
+
+/** מקסימום פריטים בקונפיגורציה (מוצגים + מוסתרים). */
+export const MAX_MENU_ITEMS_TOTAL = 30;
+
 /** מפתחות הענפים המובנים — קשורים ללוגיקה ב-`engine.ts` ולכן לא ניתנים למחיקה. */
 export const BUILTIN_MENU_KEYS = [
   "stock",

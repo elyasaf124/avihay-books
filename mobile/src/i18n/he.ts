@@ -693,6 +693,7 @@ export const he = {
 
   bot: {
     manageButton: "ניהול הבוט",
+    backToChat: "חזרה לצ'אט",
     hubTitle: "ניהול בוט וואטסאפ",
     hubSubtitle: "ערוך את התפריט, התשובות ופרטי החנות של הבוט",
     loading: "טוען הגדרות בוט…",
@@ -726,7 +727,7 @@ export const he = {
     optionalHint: "השאר ריק אם לא רלוונטי",
 
     menuTitle: "פריטי תפריט",
-    menuHint: "עד 10 פריטים. לחיצה ארוכה על ענף מובנה אינה מאפשרת מחיקה — רק הסתרה.",
+    menuHint: "עד 10 פריטים מוצגים בוואטסאפ. ענפים מוסתרים לא נספרים — אפשר לשמור עד 30 בסך הכל.",
     menuItemBuiltin: "ענף מובנה",
     menuItemCustom: "ענף מותאם",
     enabledLabel: "מוצג בתפריט",
@@ -736,7 +737,8 @@ export const he = {
     fieldItemTitle: "כותרת בתפריט",
     fieldItemDescription: "תיאור קצר",
     addCustomItem: "הוסף ענף מותאם",
-    maxItemsReached: "הגעת למקסימום של 10 פריטים",
+    maxEnabledReached: "ניתן להציג עד 10 פריטים בוואטסאפ — הסתר פריט אחר לפני הפעלה",
+    maxTotalReached: "הגעת למקסימום של 30 פריטים (מוצגים + מוסתרים)",
     editFlow: "ערוך זרימה",
     deleteItemConfirmTitle: "למחוק את הענף?",
     deleteItemConfirmMessage: "«{{name}}» והזרימה שלו יימחקו לצמיתות.",

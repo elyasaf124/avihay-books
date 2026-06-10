@@ -1,4 +1,5 @@
 import { Stack } from "expo-router";
+import { BotChatBackButton } from "../../../src/components/bot/BotChatBackButton";
 import { theme } from "../../../src/theme";
 import { he } from "../../../src/i18n/he";
 
@@ -15,6 +16,7 @@ export default function BotLayout(): JSX.Element {
         },
         headerShadowVisible: false,
         headerBackTitle: he.bot.hubTitle,
+        headerRight: () => <BotChatBackButton />,
       }}
     >
       <Stack.Screen name="index" options={{ title: he.bot.hubTitle }} />

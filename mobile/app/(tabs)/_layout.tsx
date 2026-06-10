@@ -5,8 +5,8 @@ import { StitchTabBar } from "../../src/components/StitchTabBar";
 import { StoreMapFilterProvider } from "../../src/context/StoreMapFilterContext";
 import { theme } from "../../src/theme";
 import { he } from "../../src/i18n/he";
+import { ChatHeaderButton } from "../../src/components/chat/ChatHeaderButton";
 import { useUnreadPushNotifier } from "../../src/hooks/useUnreadPushNotifier";
-import { useChatUnreadCount } from "../../src/api/chat";
 import { useChatPushRegistration } from "../../src/hooks/useChatPushRegistration";
 
 const tabHeaderStyle: ViewStyle = {
@@ -17,7 +17,6 @@ const tabHeaderStyle: ViewStyle = {
 
 export default function TabsLayout(): JSX.Element {
   const { unreadCount } = useUnreadPushNotifier();
-  const chatUnread = useChatUnreadCount({ pollMs: 30_000 }).data ?? 0;
   useChatPushRegistration();
   return (
     <StoreMapFilterProvider>
@@ -38,6 +37,7 @@ export default function TabsLayout(): JSX.Element {
         name="index"
         options={{
           title: he.tabs.home,
+          headerRight: () => <ChatHeaderButton />,
           tabBarIcon: ({ color, focused, size }) => (
             <Ionicons name={focused ? "home" : "home-outline"} color={color} size={size} />
           ),
@@ -84,20 +84,7 @@ export default function TabsLayout(): JSX.Element {
           ),
         }}
       />
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: he.tabs.chat,
-          tabBarIcon: ({ color, focused, size }) => (
-            <Ionicons
-              name={focused ? "chatbubbles" : "chatbubbles-outline"}
-              color={color}
-              size={size}
-            />
-          ),
-          tabBarBadge: chatUnread > 0 ? chatUnread : undefined,
-        }}
-      />
+      <Tabs.Screen name="chat" options={{ href: null, title: he.tabs.chat }} />
       <Tabs.Screen
         name="notifications"
         options={{

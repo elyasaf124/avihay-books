@@ -45,6 +45,38 @@ export function FlowEditor({ flowId }: { flowId: string }): JSX.Element {
     setLoaded(true);
   }, [configQuery.data, loaded, flowId]);
 
+  const onSave = async (): Promise<void> => {
+    if (!configQuery.data) return;
+    setEditingId(null);
+    const title = (name.trim() || he.bot.newFlowName).slice(0, 24);
+    const flow = prepareFlowForSave({ name: title, nodes, entry_node_id: entryId }, order);
+    const custom_flows = sanitizeAllCustomFlows({
+      ...configQuery.data.custom_flows,
+      [flowId]: flow,
+    });
+    const menu_items = configQuery.data.menu_items.map((m) =>
+      m.flow_id === flowId ? { ...m, title } : m,
+    );
+    try {
+      const saved = await saveMutation.mutateAsync({
+        ...configQuery.data,
+        menu_items,
+        custom_flows,
+      });
+      const savedFlow = saved.custom_flows[flowId];
+      if (savedFlow) {
+        const menuItem = saved.menu_items.find((m) => m.flow_id === flowId);
+        setName(menuItem?.title ?? savedFlow.name);
+        setNodes(savedFlow.nodes);
+        setEntryId(savedFlow.entry_node_id);
+        setOrder(Object.keys(savedFlow.nodes));
+      }
+      router.back();
+    } catch {
+      Alert.alert(he.generic.errorTitle, he.bot.saveFailed);
+    }
+  };
+
   const addStep = (): void => {
     const id = genId("node");
     const node: FlowNode = { id, type: "text", text: "", after: "end_loop" };
@@ -82,35 +114,6 @@ export function FlowEditor({ flowId }: { flowId: string }): JSX.Element {
       return next;
     });
     setDeleteId(null);
-  };
-
-  const onSave = async (): Promise<void> => {
-    if (!configQuery.data) return;
-    setEditingId(null);
-    const title = (name.trim() || he.bot.newFlowName).slice(0, 24);
-    const raw = { name: title, nodes, entry_node_id: entryId };
-    const flow = prepareFlowForSave(raw, order);
-    const custom_flows = sanitizeAllCustomFlows({
-      ...configQuery.data.custom_flows,
-      [flowId]: flow,
-    });
-    const menu_items = configQuery.data.menu_items.map((m) =>
-      m.flow_id === flowId ? { ...m, title } : m,
-    );
-    try {
-      await saveMutation.mutateAsync({
-        ...configQuery.data,
-        menu_items,
-        custom_flows,
-      });
-      setNodes(flow.nodes);
-      setEntryId(flow.entry_node_id);
-      setOrder((prev) => prev.filter((id) => flow.nodes[id]));
-      setName(title);
-      router.back();
-    } catch {
-      Alert.alert(he.generic.errorTitle, he.bot.saveFailed);
-    }
   };
 
   const flowMissing = configQuery.data != null && !configQuery.data.custom_flows[flowId];
