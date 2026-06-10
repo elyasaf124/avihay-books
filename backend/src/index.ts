@@ -9,13 +9,40 @@ import { startNotificationCrons } from "./services/notifications.js";
 
 const app = express();
 
+/** CSP מותאם ל-Embedded Signup — FB JS SDK + inline scripts בדף onboarding בלבד. */
+const onboardHelmet = helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://connect.facebook.net"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      frameSrc: ["https://www.facebook.com", "https://web.facebook.com", "https://facebook.com"],
+      connectSrc: [
+        "'self'",
+        "https://graph.facebook.com",
+        "https://www.facebook.com",
+        "https://connect.facebook.net",
+      ],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+});
+
+const defaultHelmet = helmet();
+
 app.use((req, res, next) => {
   if (req.headers["access-control-request-private-network"] === "true") {
     res.setHeader("Access-Control-Allow-Private-Network", "true");
   }
   next();
 });
-app.use(helmet());
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api/v1/whatsapp-onboard")) {
+    onboardHelmet(req, res, next);
+  } else {
+    defaultHelmet(req, res, next);
+  }
+});
 app.use(
   cors({
     origin: process.env.CORS_ORIGIN === "*" ? true : (process.env.CORS_ORIGIN ?? "*").split(","),

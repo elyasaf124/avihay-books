@@ -6,6 +6,8 @@ import { StoreMapFilterProvider } from "../../src/context/StoreMapFilterContext"
 import { theme } from "../../src/theme";
 import { he } from "../../src/i18n/he";
 import { useUnreadPushNotifier } from "../../src/hooks/useUnreadPushNotifier";
+import { useChatUnreadCount } from "../../src/api/chat";
+import { useChatPushRegistration } from "../../src/hooks/useChatPushRegistration";
 
 const tabHeaderStyle: ViewStyle = {
   backgroundColor: theme.colors.surface,
@@ -15,6 +17,8 @@ const tabHeaderStyle: ViewStyle = {
 
 export default function TabsLayout(): JSX.Element {
   const { unreadCount } = useUnreadPushNotifier();
+  const chatUnread = useChatUnreadCount({ pollMs: 30_000 }).data ?? 0;
+  useChatPushRegistration();
   return (
     <StoreMapFilterProvider>
     <Tabs
@@ -81,6 +85,20 @@ export default function TabsLayout(): JSX.Element {
         }}
       />
       <Tabs.Screen
+        name="chat"
+        options={{
+          title: he.tabs.chat,
+          tabBarIcon: ({ color, focused, size }) => (
+            <Ionicons
+              name={focused ? "chatbubbles" : "chatbubbles-outline"}
+              color={color}
+              size={size}
+            />
+          ),
+          tabBarBadge: chatUnread > 0 ? chatUnread : undefined,
+        }}
+      />
+      <Tabs.Screen
         name="notifications"
         options={{
           title: he.tabs.notifications,
@@ -95,6 +113,7 @@ export default function TabsLayout(): JSX.Element {
         }}
       />
       <Tabs.Screen name="customer-orders-history" options={{ href: null }} />
+      <Tabs.Screen name="bot" options={{ href: null }} />
     </Tabs>
     </StoreMapFilterProvider>
   );

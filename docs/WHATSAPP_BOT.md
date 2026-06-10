@@ -12,8 +12,7 @@
 
 1. צור `Meta App` מסוג **Business** ב-[developers.facebook.com](https://developers.facebook.com/apps).
 2. הוסף את מוצר **WhatsApp** לאפליקציה. ייווצר `WhatsApp Business Account` (`WABA`).
-3. **Coexistence**: חבר את המספר העסקי דרך `Embedded Signup` תוך בחירת המסלול
-   "onboard with existing WhatsApp Business app". דרישות:
+3. **Coexistence**: חבר את המספר העסקי דרך דף Embedded Signup (`/api/v1/whatsapp-onboard`) — ראה [`WHATSAPP_COEXISTENCE_ONBOARDING.md`](./WHATSAPP_COEXISTENCE_ONBOARDING.md). דרישות:
    - אפליקציית `WhatsApp Business` בגרסה `2.24.17`+ פעילה על המספר.
    - רישום כ-`Tech Provider`/`Solution Partner`, או ביצוע ה-`onboarding` דרך `BSP` שתומך ב-Coexistence.
    - `webhook` ציבורי שמסוגל לקלוט אירועים (ראה שלב 3).
@@ -103,6 +102,8 @@ npm run test:whatsapp
 ## 5. ארכיטקטורה (קוד)
 
 - `backend/src/routes/webhooks/whatsapp.ts` — קליטת ה-`webhook` + אימות חתימה.
+- `backend/src/routes/whatsappOnboard.ts` — Embedded Signup (Coexistence onboarding).
+- `backend/src/services/whatsapp/onboarding.ts` — החלפת code, subscribe, sync.
 - `backend/src/services/whatsapp/engine.ts` — מנוע השיחה (state machine) ושמונת הענפים.
 - `backend/src/services/whatsapp/client.ts` — שליחה ל-`Graph API` (טקסט, כפתורים, רשימה, מסמך, cta_url, template).
 - `backend/src/services/whatsapp/config.ts` + `text.ts` — קונפיגורציה ותוכן עברי.

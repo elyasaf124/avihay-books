@@ -90,11 +90,12 @@ npm run db:migrate
 
 ### 3.2 חיבור המספר (Coexistence)
 
-1. **Embedded Signup** → **"onboard with existing WhatsApp Business app"**
-2. דרישות:
-   - `WhatsApp Business` גרסה **2.24.17+** על המספר
-   - ישראל נתמכת (לא EU/UK/EEA)
-   - לפעמים נדרש Tech Provider / BSP — תלוי בחשבון Meta
+**מדריך מפורט:** [`WHATSAPP_COEXISTENCE_ONBOARDING.md`](./WHATSAPP_COEXISTENCE_ONBOARDING.md)
+
+1. השלם **Tech Provider** + **Embedded Signup config_id** → `WHATSAPP_ES_CONFIG_ID`.
+2. פתח דף החיבור: `https://<HOST>/api/v1/whatsapp-onboard`
+3. סרוק QR מאפליקציית WhatsApp Business (גרסה **2.24.17+**).
+4. העתק `envHints` מהתוצאה ל-Render / `.env`.
 
 ### 3.3 אימות עסק
 
@@ -104,8 +105,10 @@ npm run db:migrate
 
 | משתנה | מאיפה |
 |-------|--------|
-| `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp → API Setup |
-| `WHATSAPP_WABA_ID` | WhatsApp → API Setup |
+| `WHATSAPP_APP_ID` | App → Settings → Basic |
+| `WHATSAPP_PHONE_NUMBER_ID` | WhatsApp → API Setup / onboarding result |
+| `WHATSAPP_WABA_ID` | WhatsApp → API Setup / onboarding result |
+| `WHATSAPP_ES_CONFIG_ID` | Facebook Login for Business → Configurations |
 | `WHATSAPP_ACCESS_TOKEN` | System User token + `whatsapp_business_messaging` |
 | `WHATSAPP_APP_SECRET` | App → Settings → Basic |
 | `WHATSAPP_VERIFY_TOKEN` | מחרוזת שאתה בוחר (אותה ערך ב-Webhook) |
@@ -123,8 +126,10 @@ Render → **Environment** (בנוסף ל-`DATABASE_URL`, `APP_API_KEY`):
 
 ```env
 WHATSAPP_ENABLED=true
+WHATSAPP_APP_ID=
 WHATSAPP_PHONE_NUMBER_ID=
 WHATSAPP_WABA_ID=
+WHATSAPP_ES_CONFIG_ID=
 WHATSAPP_ACCESS_TOKEN=
 WHATSAPP_APP_SECRET=
 WHATSAPP_VERIFY_TOKEN=
@@ -164,7 +169,7 @@ BOT_DELIVERY_POINT_FEE=25
 |-----|-----|
 | **Callback URL** | `https://<RENDER-HOST>/api/v1/webhooks/whatsapp` |
 | **Verify token** | = `WHATSAPP_VERIFY_TOKEN` |
-| **Subscribe fields** | `messages`, `smb_message_echoes` |
+| **Subscribe fields** | `messages`, `smb_message_echoes`, `history`, `smb_app_state_sync`, `account_update` |
 
 - [ ] Webhook verified (Meta שולח GET — מקבל 200)
 - [ ] `messages` + `smb_message_echoes` מסומנים

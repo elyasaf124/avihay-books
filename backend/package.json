@@ -12,8 +12,8 @@
     "db:seed": "tsx ../seed/runSeed.ts",
     "db:reset": "tsx ../database/runReset.ts && tsx ../database/runMigrations.ts && tsx ../seed/runSeed.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test src/services/whatsapp/engine.integration.test.ts src/routes/orders.notify.integration.test.ts",
-    "test:whatsapp": "tsx --test src/services/whatsapp/engine.integration.test.ts src/routes/orders.notify.integration.test.ts"
+    "test": "tsx --test src/services/whatsapp/engine.integration.test.ts src/services/whatsapp/onboarding.test.ts src/routes/orders.notify.integration.test.ts",
+    "test:whatsapp": "tsx --test src/services/whatsapp/engine.integration.test.ts src/services/whatsapp/onboarding.test.ts src/routes/orders.notify.integration.test.ts"
   },
   "dependencies": {
     "@avihay-books/shared": "0.1.0",

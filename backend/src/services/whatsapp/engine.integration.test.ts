@@ -3,13 +3,19 @@
  * Runs against local DB with WHATSAPP_TEST_MOCK=true (no Meta API quota used).
  */
 import assert from "node:assert/strict";
-import { after, before, describe, test } from "node:test";
-import type { Book } from "@avihay-books/shared";
+import { after, afterEach, before, describe, test } from "node:test";
+import type { Book, BotConfigData } from "@avihay-books/shared";
 import { pool } from "../../db/pool.js";
 import { BTN, MENU_IDS, PICK_PREFIX, STATUS_PICK_PREFIX, T } from "./text.js";
 import {
+  buildDefaultBotConfig,
+  resetBotConfigForTests,
+  saveBotConfig,
+} from "../../repos/botConfig.repo.js";
+import {
   assertLastMsgType,
   assertSomeBodyContains,
+  botConfigTableAvailable,
   cleanupTestPhone,
   countMessages,
   countNotificationsLike,
@@ -40,6 +46,8 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
 
   before(async () => {
     setupWhatsappTestEnv();
+    // מתחילים מקונפיג ריק כדי שתוכן הענפים ייגזר ממשתני הסביבה (כפי שהבדיקות מצפות).
+    if (await botConfigTableAvailable()) await resetBotConfigForTests();
     inStockBook = await getInStockBook();
     outOfStockBook = await getOutOfStockBook();
   });
@@ -819,5 +827,142 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
 
       await cleanupTestPhone(phone, customerPhone);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test H: Dynamic menu, custom flows & text overrides (DB-driven bot_config)
+// ---------------------------------------------------------------------------
+const botCfgSkip = skip || !(await botConfigTableAvailable());
+
+describe("WhatsApp Bot — Dynamic config", { skip: botCfgSkip }, () => {
+  before(() => {
+    setupWhatsappTestEnv();
+  });
+
+  // מאפסים את הקונפיג (שורה ריקה) אחרי כל בדיקה כדי לא להשפיע על שאר התרחישים/ריצות.
+  afterEach(async () => {
+    await resetBotConfigForTests();
+  });
+
+  async function setConfig(mutate: (cfg: BotConfigData) => BotConfigData): Promise<void> {
+    await saveBotConfig(mutate(buildDefaultBotConfig()));
+  }
+
+  function listRowIds(rec: { payload: Record<string, unknown> }): string[] {
+    const interactive = rec.payload.interactive as
+      | { action?: { sections?: { rows?: { id: string }[] }[] } }
+      | undefined;
+    return (interactive?.action?.sections?.[0]?.rows ?? []).map((r) => r.id);
+  }
+
+  test("H1: disabling a builtin item removes it from the menu list", async () => {
+    await setConfig((cfg) => ({
+      ...cfg,
+      menu_items: cfg.menu_items.map((m) =>
+        m.builtin_key === "updates" ? { ...m, enabled: false } : m,
+      ),
+    }));
+    const phone = uniqueTestPhone();
+    await resetPhone(phone);
+    const out = await sendInbound(phone, { text: "שלום" });
+    const list = out.find((r) => r.msgType === "interactive.list");
+    assert.ok(list, "expected a list message");
+    const ids = listRowIds(list);
+    assert.ok(!ids.includes(MENU_IDS.updates), "disabled item should be hidden");
+    assert.ok(ids.includes(MENU_IDS.stock), "enabled builtin should remain");
+    await cleanupTestPhone(phone);
+  });
+
+  test("H2: custom flow text node sends text and ends the loop", async () => {
+    const flowId = "test_flow_text";
+    const itemId = "custom:promo_text";
+    await setConfig((cfg) => ({
+      ...cfg,
+      menu_items: [
+        ...cfg.menu_items,
+        {
+          id: itemId,
+          title: "מבצע",
+          description: "",
+          type: "custom",
+          flow_id: flowId,
+          enabled: true,
+          order: cfg.menu_items.length,
+        },
+      ],
+      custom_flows: {
+        [flowId]: {
+          name: "מבצע",
+          entry_node_id: "n1",
+          nodes: { n1: { id: "n1", type: "text", text: "יש מבצע היום!", after: "end_loop" } },
+        },
+      },
+    }));
+    const phone = uniqueTestPhone();
+    await resetPhone(phone);
+    await goToMainMenu(phone);
+    const out = await selectMenu(phone, itemId);
+    assertSomeBodyContains(out, "יש מבצע היום!");
+    const session = await getSession(phone);
+    assert.equal(session?.current_node, "end_loop");
+    await cleanupTestPhone(phone);
+  });
+
+  test("H3: custom flow buttons navigate via goto", async () => {
+    const flowId = "test_flow_btn";
+    const itemId = "custom:quiz";
+    await setConfig((cfg) => ({
+      ...cfg,
+      menu_items: [
+        ...cfg.menu_items,
+        {
+          id: itemId,
+          title: "שאלון",
+          description: "",
+          type: "custom",
+          flow_id: flowId,
+          enabled: true,
+          order: cfg.menu_items.length,
+        },
+      ],
+      custom_flows: {
+        [flowId]: {
+          name: "שאלון",
+          entry_node_id: "start",
+          nodes: {
+            start: {
+              id: "start",
+              type: "buttons",
+              text: "בחר אפשרות:",
+              buttons: [{ id: "opt_a", title: "א", action: "goto", target_node_id: "done" }],
+            },
+            done: { id: "done", type: "text", text: "תודה על הבחירה!", after: "end_loop" },
+          },
+        },
+      },
+    }));
+    const phone = uniqueTestPhone();
+    await resetPhone(phone);
+    await goToMainMenu(phone);
+    let out = await selectMenu(phone, itemId);
+    assert.ok(out.some((r) => r.msgType === "interactive.button"), "expected reply buttons");
+    const mid = await getSession(phone);
+    assert.ok(mid?.current_node.startsWith("custom:"), "should be inside custom flow");
+    out = await sendInbound(phone, { replyId: "opt_a" });
+    assertSomeBodyContains(out, "תודה על הבחירה!");
+    await cleanupTestPhone(phone);
+  });
+
+  test("H4: text override replaces the default menu prompt", async () => {
+    await setConfig((cfg) => ({
+      ...cfg,
+      text_overrides: { menuPrompt: "תפריט מותאם אישית:" },
+    }));
+    const phone = uniqueTestPhone();
+    await resetPhone(phone);
+    const out = await sendInbound(phone, { text: "שלום" });
+    assertSomeBodyContains(out, "תפריט מותאם אישית:");
+    await cleanupTestPhone(phone);
   });
 });

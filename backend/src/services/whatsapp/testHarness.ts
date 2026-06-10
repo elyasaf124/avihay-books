@@ -173,3 +173,15 @@ export async function dbAvailable(): Promise<boolean> {
     return false;
   }
 }
+
+/** האם טבלת `bot_config` (מיגרציה 030) קיימת — לדילוג על בדיקות הקונפיג אם לא הורצה. */
+export async function botConfigTableAvailable(): Promise<boolean> {
+  try {
+    const { rows } = await pool.query<{ reg: string | null }>(
+      "SELECT to_regclass('public.bot_config')::text AS reg",
+    );
+    return rows[0]?.reg != null;
+  } catch {
+    return false;
+  }
+}

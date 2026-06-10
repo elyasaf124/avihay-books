@@ -306,6 +306,36 @@ export interface WhatsappMessage {
   created_at: ISOTimestamp;
 }
 
+/** שיחה אחת בתיבת הצ'אט באפליקציה — שורה ברשימת השיחות (מקובצת לפי מספר טלפון). */
+export interface ChatConversation {
+  phone_number: string;
+  profile_name: string | null;
+  status: WhatsappSessionStatus | null;
+  /** האם הבוט מושהה כרגע (מענה אנושי פעיל). */
+  bot_paused: boolean;
+  last_message_body: string | null;
+  last_message_type: string;
+  last_message_direction: "in" | "out" | null;
+  last_message_at: ISOTimestamp | null;
+  unread_count: number;
+}
+
+/** הודעה בודדת לתצוגה במסך השיחה. */
+export interface ChatMessageView {
+  id: UUID;
+  direction: "in" | "out";
+  msg_type: string;
+  body: string | null;
+  is_echo: boolean;
+  created_at: ISOTimestamp;
+}
+
+/** תוצאת שליחת הודעת עובד מתוך האפליקציה. */
+export interface ChatSendResult {
+  ok: boolean;
+  message: ChatMessageView;
+}
+
 /** קבוצת הזמנות לפי ספק לצורך ייצוא PDF / שליחה במייל. */
 export interface OrdersBySupplierGroup {
   supplier_id: UUID | null;

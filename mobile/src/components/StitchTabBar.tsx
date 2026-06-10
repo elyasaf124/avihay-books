@@ -99,6 +99,7 @@ export function StitchTabBar({
 function isTabHidden(routeName: string, options?: BottomTabNavigationOptions): boolean {
   if (
     routeName === "unit" ||
+    routeName === "bot" ||
     routeName === "suppliers" ||
     routeName === "customer-orders-history"
   ) {

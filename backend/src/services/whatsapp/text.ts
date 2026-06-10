@@ -4,6 +4,22 @@
  * ומשמשים את מנוע השיחה לניתוב.
  */
 import type { BotContentConfig } from "./config.js";
+import type { BotTextKey, BotTextOverrides } from "@avihay-books/shared";
+
+/**
+ * עקיפות הטקסט הפעילות בהודעה הנוכחית. נקבעות בתחילת `handleIncomingMessage`
+ * מתוך הקונפיג השמור, כך שכל גישה ל-`T` מחזירה את הטקסט שהעובד הגדיר (אם הוגדר).
+ */
+let activeOverrides: BotTextOverrides = {};
+
+export function setActiveTextOverrides(overrides: BotTextOverrides | undefined): void {
+  activeOverrides = overrides ?? {};
+}
+
+function ov(key: BotTextKey, fallback: string): string {
+  const v = activeOverrides[key];
+  return typeof v === "string" && v.trim().length > 0 ? v : fallback;
+}
 
 /** מזהי שורות התפריט הראשי (List Message — עד 10 שורות). */
 export const MENU_IDS = {
@@ -57,71 +73,161 @@ export const STATUS_PICK_PREFIX = "status:order:";
 
 export const PICK_PREFIX = "pick:";
 
+/**
+ * טקסטי הבוט. כל ערך נקרא דרך `ov()` כך שטקסט שהעובד הגדיר באפליקציה גובר על
+ * ברירת המחדל. הטקסטים עם פרמטרים (`welcome`, `closing`, `supportOffHours`)
+ * תומכים ב-placeholders: `{storeName}`, `{start}`, `{end}`.
+ */
+const DEFAULTS = {
+  welcome:
+    "שלום! ברוך הבא לחנות הספרים '{storeName}' 📚\n" +
+    "אני נועם, העוזר הווירטואלי של החנות. איך אוכל לעזור לך?",
+  closing:
+    "שמחתי מאוד לעזור! אשמח לעזור לך גם בעתיד בכל דבר שתרצה! " +
+    "נועם, הבוט של '{storeName}' 😉",
+  supportOffHours:
+    "המענה האנושי שלנו פעיל בין השעות {start}:00 ל-{end}:00. " +
+    "באפשרותך לכתוב כאן את שאלתך בטקסט חופשי, ונציג יחזור אליך מיד עם תחילת שעות הפעילות!",
+} as const;
+
 export const T = {
   welcome: (storeName: string): string =>
-    `שלום! ברוך הבא לחנות הספרים '${storeName}' 📚\n` +
-    `אני נועם, העוזר הווירטואלי של החנות. איך אוכל לעזור לך?`,
-  menuButton: "תפריט ראשי",
-  menuPrompt: "בחר מהתפריט:",
+    ov("welcome", DEFAULTS.welcome).replaceAll("{storeName}", storeName),
+  get menuButton(): string {
+    return ov("menuButton", "תפריט ראשי");
+  },
+  get menuPrompt(): string {
+    return ov("menuPrompt", "בחר מהתפריט:");
+  },
 
-  b1AskTitle: "אנא הקלד את שם הספר שאתה מחפש:",
-  b1ManyMatches: "מצאתי כמה אפשרויות, למה התכוונת?",
-  b1NoMatch:
-    "מצטער, לא מצאתי את הספר בקטלוג שלנו. כדאי לוודא ששם הספר מאויית נכון. " +
-    "אם הוא מדויק, כנראה שהוא חסר כרגע. תרצה להזמין אותו?",
+  get b1AskTitle(): string {
+    return ov("b1AskTitle", "אנא הקלד את שם הספר שאתה מחפש:");
+  },
+  get b1ManyMatches(): string {
+    return ov("b1ManyMatches", "מצאתי כמה אפשרויות, למה התכוונת?");
+  },
+  get b1NoMatch(): string {
+    return ov(
+      "b1NoMatch",
+      "מצטער, לא מצאתי את הספר בקטלוג שלנו. כדאי לוודא ששם הספר מאויית נכון. " +
+        "אם הוא מדויק, כנראה שהוא חסר כרגע. תרצה להזמין אותו?",
+    );
+  },
 
-  orderAskType: "איזה סוג הזמנה תרצה לבצע?",
-  askName: "נא להקליד שם מלא:",
-  askPhone: "נא להקליד מספר טלפון ליצירת קשר:",
-  askAddress: "נא להקליד כתובת מלאה למשלוח (עיר, רחוב, מספר בית, דירה):",
-  askDeliveryMethod: "איזה סוג משלוח תעדיף?",
-  askBookTitle: "מה שם הספר שתרצה להזמין?",
-  askQuantity: "מה הכמות המבוקשת?",
-  askMore: "האם יש ספרים נוספים שתרצה להזמין?",
-  askNotesPickup: "האם יש הערות או בקשות נוספות להזמנה? (אם אין, אנא הקלד 'אין'):",
-  askNotesDelivery: "האם יש הערות או בקשות נוספות למשלוח? (אם אין, אנא הקלד 'אין'):",
-  invalidQuantity: "לא הצלחתי לקרוא את הכמות. אנא הקלד מספר (לדוגמה: 2):",
+  get orderAskType(): string {
+    return ov("orderAskType", "איזה סוג הזמנה תרצה לבצע?");
+  },
+  get askName(): string {
+    return ov("askName", "נא להקליד שם מלא:");
+  },
+  get askPhone(): string {
+    return ov("askPhone", "נא להקליד מספר טלפון ליצירת קשר:");
+  },
+  get askAddress(): string {
+    return ov("askAddress", "נא להקליד כתובת מלאה למשלוח (עיר, רחוב, מספר בית, דירה):");
+  },
+  get askDeliveryMethod(): string {
+    return ov("askDeliveryMethod", "איזה סוג משלוח תעדיף?");
+  },
+  get askBookTitle(): string {
+    return ov("askBookTitle", "מה שם הספר שתרצה להזמין?");
+  },
+  get askQuantity(): string {
+    return ov("askQuantity", "מה הכמות המבוקשת?");
+  },
+  get askMore(): string {
+    return ov("askMore", "האם יש ספרים נוספים שתרצה להזמין?");
+  },
+  get askNotesPickup(): string {
+    return ov("askNotesPickup", "האם יש הערות או בקשות נוספות להזמנה? (אם אין, אנא הקלד 'אין'):");
+  },
+  get askNotesDelivery(): string {
+    return ov("askNotesDelivery", "האם יש הערות או בקשות נוספות למשלוח? (אם אין, אנא הקלד 'אין'):");
+  },
+  get invalidQuantity(): string {
+    return ov("invalidQuantity", "לא הצלחתי לקרוא את הכמות. אנא הקלד מספר (לדוגמה: 2):");
+  },
 
-  orderDonePickup:
-    "ההזמנה נקלטה בהצלחה! נעדכן ברגע שהספר/ים שהזמנת יגיע לחנות.",
-  orderDoneDelivery:
-    "ההזמנה נקלטה במערכת! נעדכן ברגע שההזמנה תהיה מוכנה למשלוח. " +
-    "קישור מאובטח לתשלום (כולל עלות המשלוח שנבחרה) יישלח אליך בהקדם.",
+  get orderDonePickup(): string {
+    return ov("orderDonePickup", "ההזמנה נקלטה בהצלחה! נעדכן ברגע שהספר/ים שהזמנת יגיע לחנות.");
+  },
+  get orderDoneDelivery(): string {
+    return ov(
+      "orderDoneDelivery",
+      "ההזמנה נקלטה במערכת! נעדכן ברגע שההזמנה תהיה מוכנה למשלוח. " +
+        "קישור מאובטח לתשלום (כולל עלות המשלוח שנבחרה) יישלח אליך בהקדם.",
+    );
+  },
 
-  quoteHandover:
-    "הפנייה שלך הועברה ישירות לנציג אנושי. נחזור אליך בהקדם האפשרי עם הצעת מחיר " +
-    "מותאמת עבור כמויות גדולות ומוסדות.",
+  get quoteHandover(): string {
+    return ov(
+      "quoteHandover",
+      "הפנייה שלך הועברה ישירות לנציג אנושי. נחזור אליך בהקדם האפשרי עם הצעת מחיר " +
+        "מותאמת עבור כמויות גדולות ומוסדות.",
+    );
+  },
 
-  supportPrompt: "באיזו בעיה נתקלת או במה נוכל לעזור?",
-  supportAskBook: "מה שם הספר שלא נמצא בתא?",
-  supportReportSaved: "הדיווח נרשם ויועבר לבדיקה. תודה על העדכון!",
-  supportPosText:
-    "הדיווח הועבר למנהל החנות לטיפול מיידי. בינתיים, ניתן לבצע תשלום בחנות במזומן, " +
-    "העברה בנקאית או דרך הקישורים הדיגיטליים הניידים.",
-  supportHumanInHours: "מעבירה אותך לנציג אנושי, אנא המתן 🙂",
+  get supportPrompt(): string {
+    return ov("supportPrompt", "באיזו בעיה נתקלת או במה נוכל לעזור?");
+  },
+  get supportAskBook(): string {
+    return ov("supportAskBook", "מה שם הספר שלא נמצא בתא?");
+  },
+  get supportReportSaved(): string {
+    return ov("supportReportSaved", "הדיווח נרשם ויועבר לבדיקה. תודה על העדכון!");
+  },
+  get supportPosText(): string {
+    return ov(
+      "supportPosText",
+      "הדיווח הועבר למנהל החנות לטיפול מיידי. בינתיים, ניתן לבצע תשלום בחנות במזומן, " +
+        "העברה בנקאית או דרך הקישורים הדיגיטליים הניידים.",
+    );
+  },
+  get supportHumanInHours(): string {
+    return ov("supportHumanInHours", "מעבירה אותך לנציג אנושי, אנא המתן 🙂");
+  },
   supportOffHours: (start: number, end: number): string =>
-    `המענה האנושי שלנו פעיל בין השעות ${start}:00 ל-${end}:00. ` +
-    "באפשרותך לכתוב כאן את שאלתך בטקסט חופשי, ונציג יחזור אליך מיד עם תחילת שעות הפעילות!",
-  supportQuestionSaved: "שאלתך נשמרה ונציג יחזור אליך עם תחילת שעות הפעילות. תודה!",
+    ov("supportOffHours", DEFAULTS.supportOffHours)
+      .replaceAll("{start}", String(start))
+      .replaceAll("{end}", String(end)),
+  get supportQuestionSaved(): string {
+    return ov("supportQuestionSaved", "שאלתך נשמרה ונציג יחזור אליך עם תחילת שעות הפעילות. תודה!");
+  },
 
-  endLoopPrompt: "האם יש עוד משהו שאוכל לעזור לך בו?",
+  get endLoopPrompt(): string {
+    return ov("endLoopPrompt", "האם יש עוד משהו שאוכל לעזור לך בו?");
+  },
   closing: (storeName: string): string =>
-    `שמחתי מאוד לעזור! אשמח לעזור לך גם בעתיד בכל דבר שתרצה! ` +
-    `נועם, הבוט של '${storeName}' 😉`,
+    ov("closing", DEFAULTS.closing).replaceAll("{storeName}", storeName),
 
-  catalogCaption:
-    "מצורף קטלוג הספרים המלא והמעודכן של החנות! מקווים שתמצאו בו את מה שאתם מחפשים!",
-  catalogMissing:
-    "סליחה, הקטלוג אינו זמין כרגע. נציג יחזור אליך עם הקטלוג בהקדם.",
+  get catalogCaption(): string {
+    return ov(
+      "catalogCaption",
+      "מצורף קטלוג הספרים המלא והמעודכן של החנות! מקווים שתמצאו בו את מה שאתם מחפשים!",
+    );
+  },
+  get catalogMissing(): string {
+    return ov("catalogMissing", "סליחה, הקטלוג אינו זמין כרגע. נציג יחזור אליך עם הקטלוג בהקדם.");
+  },
 
-  b1ImageFallback:
-    "אני עדיין בוט צעיר ולא יודע לקרוא תמונות... 🙈 אנא הקלד את שם הספר בטקסט ואשמח למצוא לך אותו בשנייה!",
+  get b1ImageFallback(): string {
+    return ov(
+      "b1ImageFallback",
+      "אני עדיין בוט צעיר ולא יודע לקרוא תמונות... 🙈 אנא הקלד את שם הספר בטקסט ואשמח למצוא לך אותו בשנייה!",
+    );
+  },
 
-  b3NoOrders:
-    "לא מצאתי הזמנה פעילה במערכת שמשויכת למספר הטלפון הזה. " +
-    "אם ביצעת את ההזמנה ממספר אחר, תוכל לבדוק מול נציג בשעות הפעילות.",
-  b3MultipleOrders: "מצאתי מספר הזמנות פעילות על שמך, באיזו מהן תרצה להתעדכן?",
-} as const;
+  get b3NoOrders(): string {
+    return ov(
+      "b3NoOrders",
+      "לא מצאתי הזמנה פעילה במערכת שמשויכת למספר הטלפון הזה. " +
+        "אם ביצעת את ההזמנה ממספר אחר, תוכל לבדוק מול נציג בשעות הפעילות.",
+    );
+  },
+  get b3MultipleOrders(): string {
+    return ov("b3MultipleOrders", "מצאתי מספר הזמנות פעילות על שמך, באיזו מהן תרצה להתעדכן?");
+  },
+};
 
 export const ORDER_STATUS_LABELS: Record<string, string> = {
   pending: "הוזמן",

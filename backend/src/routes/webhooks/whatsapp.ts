@@ -12,6 +12,9 @@ import { logger } from "../../utils/logger.js";
 import { getWhatsappConfig } from "../../services/whatsapp/config.js";
 import { handleIncomingMessage, handleStaffEcho } from "../../services/whatsapp/engine.js";
 import { logWhatsappMessage } from "../../repos/whatsappMessages.repo.js";
+import { upsertNotification } from "../../repos/notifications.repo.js";
+import { broadcast } from "../../services/chatBus.js";
+import { sendChatPush } from "../../services/push.js";
 
 export const whatsappWebhookRouter = Router();
 
@@ -64,6 +67,11 @@ interface WaValue {
   message_echoes?: { from?: string; to?: string; id?: string; type?: string }[];
   smb_message_echoes?: { from?: string; to?: string; id?: string; type?: string }[];
   statuses?: unknown[];
+  phone_number?: string;
+  event?: string;
+  disconnection_info?: { reason?: string; initiated_by?: string };
+  history?: unknown[];
+  state_sync?: unknown[];
 }
 
 interface WaChange {
@@ -73,7 +81,7 @@ interface WaChange {
 
 interface WaBody {
   object?: string;
-  entry?: { changes?: WaChange[] }[];
+  entry?: { id?: string; changes?: WaChange[] }[];
 }
 
 function parseInbound(msg: WaTextMessage): { replyId?: string; text?: string; msgType?: string } {
@@ -90,10 +98,53 @@ function parseInbound(msg: WaTextMessage): { replyId?: string; text?: string; ms
   return { text: "", msgType: msg.type };
 }
 
+async function handleAccountUpdate(value: WaValue, wabaId?: string): Promise<void> {
+  const event = value.event;
+  if (!event) return;
+  logger.info({ event, wabaId, value }, "[whatsapp] account_update webhook");
+
+  if (event === "PARTNER_REMOVED" || event === "ACCOUNT_OFFBOARDED") {
+    const reason = value.disconnection_info?.reason ?? event;
+    const initiatedBy = value.disconnection_info?.initiated_by ?? "unknown";
+    await upsertNotification({
+      type: "whatsapp_human_handover",
+      message: `ניתוק Coexistence מ-WhatsApp (${reason}, ${initiatedBy}). יש לחבר מחדש דרך /api/v1/whatsapp-onboard`,
+      is_read: false,
+    });
+  } else if (event === "ACCOUNT_RECONNECTED") {
+    logger.info({ wabaId }, "[whatsapp] coexistence account reconnected");
+  }
+}
+
 async function processBody(body: WaBody): Promise<void> {
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
+      const field = change.field ?? "messages";
       const value = change.value ?? {};
+
+      if (field === "account_update") {
+        await handleAccountUpdate(value, entry.id);
+        continue;
+      }
+
+      if (field === "history") {
+        const chunks = value.history ?? [];
+        logger.info(
+          { wabaId: entry.id, chunks: chunks.length },
+          "[whatsapp] history sync webhook (logged only)",
+        );
+        continue;
+      }
+
+      if (field === "smb_app_state_sync") {
+        const contacts = value.state_sync ?? [];
+        logger.info(
+          { wabaId: entry.id, contacts: contacts.length },
+          "[whatsapp] smb_app_state_sync webhook (logged only)",
+        );
+        continue;
+      }
+
       const profileName = value.contacts?.[0]?.profile?.name ?? null;
 
       // מענה אנושי ידני מאפליקציית WhatsApp Business (Coexistence)
@@ -113,6 +164,7 @@ async function processBody(body: WaBody): Promise<void> {
           payload: echo,
         });
         await handleStaffEcho(customer);
+        broadcast({ type: "message", phone: customer });
       }
 
       // הודעות נכנסות מלקוחות
@@ -128,6 +180,17 @@ async function processBody(body: WaBody): Promise<void> {
           payload: msg,
         });
         await handleIncomingMessage({ from: msg.from, profileName, inbound });
+
+        // עדכון real-time לתיבת הצ'אט + התראת Push למכשירי העובדים.
+        broadcast({ type: "message", phone: msg.from });
+        const preview = (inbound.text ?? inbound.replyId ?? "📎").slice(0, 120);
+        await sendChatPush({
+          title: profileName ?? msg.from,
+          body: preview,
+          phone: msg.from,
+        }).catch((err: unknown) => {
+          logger.warn({ err }, "[whatsapp] chat push failed");
+        });
       }
     }
   }

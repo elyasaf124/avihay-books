@@ -6,7 +6,7 @@
  * תמיכת Coexistence: כאשר נציג עונה ידנית מאפליקציית WhatsApp Business (echo) או
  * כאשר הלקוח מבקש נציג — השיחה עוברת ל-`human_handover` והבוט מושהה (`bot_paused_until`).
  */
-import type { FulfillmentType, DeliveryMethod, WhatsappSession } from "@avihay-books/shared";
+import type { CustomFlow, FulfillmentType, DeliveryMethod, WhatsappSession } from "@avihay-books/shared";
 import { logger } from "../../utils/logger.js";
 import { fuzzySearchBooks, findBookById } from "../../repos/books.repo.js";
 import { getBookLocationPaths } from "../bookLocation.js";
@@ -17,22 +17,27 @@ import {
   findSessionByPhone,
   updateSession,
 } from "../../repos/whatsappSessions.repo.js";
-import { getBotContent, getWhatsappConfig, isWhatsappConfigured } from "./config.js";
+import {
+  currentBotContent,
+  getBotConfig,
+  getCachedBotConfig,
+} from "../../repos/botConfig.repo.js";
+import { getWhatsappConfig, isWhatsappConfigured } from "./config.js";
 import {
   sendCtaUrl,
   sendDocument,
   sendListMessage,
   sendReplyButtons,
   sendText,
+  type ListRow,
 } from "./client.js";
 import {
   BTN,
   hoursMessage,
-  MAIN_MENU_ROWS,
-  MENU_IDS,
   ORDER_STATUS_LABELS,
   paymentMessage,
   PICK_PREFIX,
+  setActiveTextOverrides,
   STATUS_PICK_PREFIX,
   T,
   updatesMessage,
@@ -73,6 +78,27 @@ const NODES = {
   HANDOVER: "handover",
   CLOSED: "closed",
 } as const;
+
+/** מצב שיחה בזרימה מותאמת אישית מקודד כ-`custom:<flowId>:<nodeId>`. */
+const CUSTOM_PREFIX = "custom:";
+
+/** שורות התפריט הראשי לפי הקונפיג השמור (פעילות בלבד, ממוינות). */
+function buildMenuRows(): ListRow[] {
+  return getCachedBotConfig()
+    .menu_items.filter((m) => m.enabled)
+    .sort((a, b) => a.order - b.order)
+    .map((m) => ({
+      id: m.id,
+      title: m.title,
+      ...(m.description ? { description: m.description } : {}),
+    }));
+}
+
+/** שעות המענה האנושי מתוך הקונפיג השמור (ניתנות לעריכה באפליקציה). */
+function humanHours(): { start: number; end: number } {
+  const info = getCachedBotConfig().store_info;
+  return { start: info.human_hours_start, end: info.human_hours_end };
+}
 
 interface Ctx {
   fulfillment_type?: FulfillmentType;
@@ -116,9 +142,9 @@ function currentIsraelHour(): number {
 }
 
 function withinHumanHours(): boolean {
-  const cfg = getWhatsappConfig();
+  const { start, end } = humanHours();
   const h = currentIsraelHour();
-  return h >= cfg.humanHoursStart && h < cfg.humanHoursEnd;
+  return h >= start && h < end;
 }
 
 // ---------------------------------------------------------------------------
@@ -132,6 +158,10 @@ export async function handleIncomingMessage(args: {
 }): Promise<void> {
   if (!isWhatsappConfigured()) return;
   const { from, profileName, inbound } = args;
+
+  // טעינת הקונפיג הניתן לעריכה (תפריט, תוכן, טקסטים) + הפעלת עקיפות הטקסט להודעה זו.
+  const botConfig = await getBotConfig();
+  setActiveTextOverrides(botConfig.text_overrides);
 
   let session = await findSessionByPhone(from);
   if (!session) session = await createSession(from, profileName);
@@ -208,6 +238,9 @@ async function dispatch(
   text: string,
   msgType?: string,
 ): Promise<void> {
+  if (session.current_node.startsWith(CUSTOM_PREFIX)) {
+    return handleCustomFlowButton(from, session, token);
+  }
   switch (session.current_node) {
     case NODES.MAIN_MENU:
       return handleMainMenu(from, session, token);
@@ -263,9 +296,9 @@ async function startMainMenu(
   session: WhatsappSession,
   welcome: boolean,
 ): Promise<void> {
-  const content = getBotContent();
+  const content = currentBotContent();
   if (welcome) await sendText(from, T.welcome(content.storeName));
-  await sendListMessage(from, T.menuPrompt, T.menuButton, MAIN_MENU_ROWS);
+  await sendListMessage(from, T.menuPrompt, T.menuButton, buildMenuRows());
   await updateSession(session.id, {
     status: "active",
     current_node: NODES.MAIN_MENU,
@@ -275,42 +308,150 @@ async function startMainMenu(
 }
 
 async function handleMainMenu(from: string, session: WhatsappSession, token: string): Promise<void> {
-  const content = getBotContent();
-  switch (token) {
-    case MENU_IDS.stock:
+  const item = getCachedBotConfig().menu_items.find((m) => m.id === token && m.enabled);
+  if (!item) {
+    await sendListMessage(from, T.menuPrompt, T.menuButton, buildMenuRows());
+    return;
+  }
+  if (item.type === "custom") {
+    return startCustomFlow(from, session, item.flow_id ?? "");
+  }
+
+  const content = currentBotContent();
+  switch (item.builtin_key) {
+    case "stock":
       await sendText(from, T.b1AskTitle);
       return setNode(session, NODES.B1_TITLE);
-    case MENU_IDS.order:
+    case "order":
       return askOrderType(from, session);
-    case MENU_IDS.orderStatus:
+    case "order_status":
       return checkOrderStatus(from, session);
-    case MENU_IDS.hours:
+    case "hours":
       await sendText(from, hoursMessage(content));
       if (content.wazeUrl) {
         await sendCtaUrl(from, "ניווט נוח לחנות:", "🚗 הגעה בוויז", content.wazeUrl);
       }
       return goEndLoop(from, session);
-    case MENU_IDS.payment:
+    case "payment":
       await sendText(from, paymentMessage(content));
       return goEndLoop(from, session);
-    case MENU_IDS.catalog:
+    case "catalog":
       if (content.catalogPdfUrl) {
         await sendDocument(from, content.catalogPdfUrl, "catalog.pdf", T.catalogCaption);
       } else {
         await sendText(from, T.catalogMissing);
       }
       return goEndLoop(from, session);
-    case MENU_IDS.quote:
+    case "quote":
       await sendText(from, T.quoteHandover);
       return handover(from, session, "הצעת מחיר למוסדות");
-    case MENU_IDS.updates:
+    case "updates":
       await sendText(from, updatesMessage(content));
       return goEndLoop(from, session);
-    case MENU_IDS.support:
+    case "support":
       return sendSupportMenu(from, session);
     default:
-      await sendListMessage(from, T.menuPrompt, T.menuButton, MAIN_MENU_ROWS);
+      await sendListMessage(from, T.menuPrompt, T.menuButton, buildMenuRows());
       return;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ענפים מותאמים אישית (Custom Flows) — נבנים מהאפליקציה, סטטיים בלבד
+// ---------------------------------------------------------------------------
+
+async function startCustomFlow(
+  from: string,
+  session: WhatsappSession,
+  flowId: string,
+): Promise<void> {
+  const flow = getCachedBotConfig().custom_flows[flowId];
+  if (!flow || !flow.entry_node_id) return startMainMenu(from, session, false);
+  return runFlowNode(from, session, flowId, flow, flow.entry_node_id);
+}
+
+/** משלוח צעד בזרימה. צעד `buttons` ממתין לתגובה; שאר הסוגים ממשיכים לפי `after`. */
+async function runFlowNode(
+  from: string,
+  session: WhatsappSession,
+  flowId: string,
+  flow: CustomFlow,
+  nodeId: string,
+): Promise<void> {
+  const node = flow.nodes[nodeId];
+  if (!node) return goEndLoop(from, session);
+
+  if (node.type === "buttons") {
+    const buttons = (node.buttons ?? [])
+      .slice(0, 3)
+      .map((b) => ({ id: b.id, title: b.title }));
+    if (buttons.length === 0) return goEndLoop(from, session);
+    await sendReplyButtons(from, node.text, buttons);
+    await updateSession(session.id, { current_node: `${CUSTOM_PREFIX}${flowId}:${nodeId}` });
+    return;
+  }
+
+  if (node.type === "link" && node.link_url) {
+    await sendCtaUrl(from, node.text, node.link_label ?? "פתח קישור", node.link_url);
+  } else if (node.type === "document" && node.document_url) {
+    await sendDocument(from, node.document_url, node.document_filename ?? "file", node.text);
+  } else {
+    await sendText(from, node.text);
+  }
+
+  return advanceAfterNode(from, session, flowId, flow, node.after, node.next_node_id);
+}
+
+async function advanceAfterNode(
+  from: string,
+  session: WhatsappSession,
+  flowId: string,
+  flow: CustomFlow,
+  after: string | undefined,
+  nextNodeId: string | undefined,
+): Promise<void> {
+  if (after === "handover") return handover(from, session, `זרימה: ${flow.name}`);
+  if (after === "next" && nextNodeId) {
+    return runFlowNode(from, session, flowId, flow, nextNodeId);
+  }
+  return goEndLoop(from, session);
+}
+
+async function handleCustomFlowButton(
+  from: string,
+  session: WhatsappSession,
+  token: string,
+): Promise<void> {
+  const rest = session.current_node.slice(CUSTOM_PREFIX.length);
+  const sep = rest.indexOf(":");
+  const flowId = sep >= 0 ? rest.slice(0, sep) : rest;
+  const nodeId = sep >= 0 ? rest.slice(sep + 1) : "";
+
+  const flow = getCachedBotConfig().custom_flows[flowId];
+  const node = flow?.nodes[nodeId];
+  if (!flow || !node || node.type !== "buttons") {
+    return startMainMenu(from, session, false);
+  }
+
+  const button = (node.buttons ?? []).find((b) => b.id === token);
+  if (!button) {
+    // לחיצה לא מזוהה — מציגים שוב את כפתורי הצעד.
+    return runFlowNode(from, session, flowId, flow, nodeId);
+  }
+
+  switch (button.action) {
+    case "goto":
+      if (button.target_node_id) {
+        return runFlowNode(from, session, flowId, flow, button.target_node_id);
+      }
+      return goEndLoop(from, session);
+    case "main_menu":
+      return startMainMenu(from, session, false);
+    case "handover":
+      return handover(from, session, `זרימה: ${flow.name}`);
+    case "end_loop":
+    default:
+      return goEndLoop(from, session);
   }
 }
 
@@ -325,7 +466,7 @@ async function goEndLoop(from: string, session: WhatsappSession): Promise<void> 
 async function handleEndLoop(from: string, session: WhatsappSession, token: string): Promise<void> {
   if (token === BTN.loopYes) return startMainMenu(from, session, false);
   if (token === BTN.loopNo) {
-    const content = getBotContent();
+    const content = currentBotContent();
     await sendText(from, T.closing(content.storeName));
     await updateSession(session.id, { status: "closed", current_node: NODES.CLOSED, context: {} });
     return;
@@ -482,7 +623,7 @@ async function handleB2Address(from: string, session: WhatsappSession, text: str
     return;
   }
   const ctx = ctxOf(session);
-  const content = getBotContent();
+  const content = currentBotContent();
   ctx.address = text;
   await sendReplyButtons(from, T.askDeliveryMethod, [
     { id: BTN.deliveryHome, title: `🛵 עד הבית ₪${content.deliveryHomeFee}` },
@@ -497,7 +638,7 @@ async function handleB2DeliveryMethod(
   token: string,
 ): Promise<void> {
   const ctx = ctxOf(session);
-  const content = getBotContent();
+  const content = currentBotContent();
   if (token === BTN.deliveryHome) {
     ctx.delivery_method = "home";
     ctx.delivery_fee = content.deliveryHomeFee;
@@ -778,7 +919,7 @@ async function handleSupportMenu(
         ]);
         return setNode(session, NODES.B8_OTHER);
       }
-      await sendText(from, T.supportOffHours(getWhatsappConfig().humanHoursStart, getWhatsappConfig().humanHoursEnd));
+      await sendText(from, T.supportOffHours(humanHours().start, humanHours().end));
       return setNode(session, NODES.B8_OTHER_QUESTION);
     default:
       return sendSupportMenu(from, session);
@@ -809,7 +950,7 @@ async function handleSupportPos(
   token: string,
 ): Promise<void> {
   if (token === BTN.toPayment) {
-    await sendText(from, paymentMessage(getBotContent()));
+    await sendText(from, paymentMessage(currentBotContent()));
     return goEndLoop(from, session);
   }
   if (token === BTN.finish) return goEndLoop(from, session);
@@ -839,7 +980,7 @@ async function handleSupportQuestion(
   text: string,
 ): Promise<void> {
   if (text.length === 0) {
-    await sendText(from, T.supportOffHours(getWhatsappConfig().humanHoursStart, getWhatsappConfig().humanHoursEnd));
+    await sendText(from, T.supportOffHours(humanHours().start, humanHours().end));
     return;
   }
   await upsertNotification({

@@ -1,7 +1,9 @@
 /**
  * קונפיגורציית בוט הוואטסאפ: חיבור ל-`Graph API`, תבניות, ותוכן קבוע של הענפים.
  * כל ערך ניתן לעקיפה דרך `.env`; ברירות המחדל לקוחות ממפרט הזרימה של "נועם הספר".
+ * תוכן הענפים (`store_info`) ניתן גם לעריכה מהאפליקציה — ראה `botConfig.repo.ts`.
  */
+import type { BotStoreInfo } from "@avihay-books/shared";
 
 function env(name: string): string | undefined {
   const v = process.env[name]?.trim();
@@ -17,10 +19,12 @@ function envNum(name: string, fallback: number): number {
 
 export interface WhatsappRuntimeConfig {
   enabled: boolean;
+  appId: string | undefined;
   phoneNumberId: string | undefined;
   wabaId: string | undefined;
   accessToken: string | undefined;
   appSecret: string | undefined;
+  esConfigId: string | undefined;
   verifyToken: string | undefined;
   graphVersion: string;
   handoverTimeoutMin: number;
@@ -45,10 +49,12 @@ export function getWhatsappConfig(): WhatsappRuntimeConfig {
   const hours = parseHoursRange(env("WHATSAPP_HUMAN_HOURS"));
   return {
     enabled: (env("WHATSAPP_ENABLED") ?? "false").toLowerCase() === "true",
+    appId: env("WHATSAPP_APP_ID"),
     phoneNumberId: env("WHATSAPP_PHONE_NUMBER_ID"),
     wabaId: env("WHATSAPP_WABA_ID"),
     accessToken: env("WHATSAPP_ACCESS_TOKEN"),
     appSecret: env("WHATSAPP_APP_SECRET"),
+    esConfigId: env("WHATSAPP_ES_CONFIG_ID"),
     verifyToken: env("WHATSAPP_VERIFY_TOKEN"),
     graphVersion: env("WHATSAPP_GRAPH_VERSION") ?? "v21.0",
     handoverTimeoutMin: envNum("WHATSAPP_HANDOVER_TIMEOUT_MIN", 180),
@@ -62,6 +68,11 @@ export function getWhatsappConfig(): WhatsappRuntimeConfig {
 /** האם הבוט מוכן לשלוח/לקבל הודעות (פעיל + טוקנים בסיסיים קיימים). */
 export function isWhatsappConfigured(cfg: WhatsappRuntimeConfig = getWhatsappConfig()): boolean {
   return Boolean(cfg.enabled && cfg.phoneNumberId && cfg.accessToken);
+}
+
+/** האם דף Embedded Signup (Coexistence) מוכן להצגה. */
+export function isEmbeddedSignupConfigured(cfg: WhatsappRuntimeConfig = getWhatsappConfig()): boolean {
+  return Boolean(cfg.appId && cfg.esConfigId && cfg.appSecret);
 }
 
 export interface BotContentConfig {
@@ -79,29 +90,52 @@ export interface BotContentConfig {
   deliveryPointFee: number;
 }
 
-/** תוכן קבוע של הענפים (כתובת, שעות, תשלום, קישורים) — מ-`.env` עם ברירות מחדל מהמפרט. */
-export function getBotContent(): BotContentConfig {
+/** ברירות מחדל לתוכן הענפים — מ-`.env` עם נפילה למפרט "נועם הספר". משמש כבסיס המיזוג ב-DB. */
+export function botStoreInfoDefaults(): BotStoreInfo {
+  const hours = parseHoursRange(env("WHATSAPP_HUMAN_HOURS"));
   return {
-    storeName: env("BOT_STORE_NAME") ?? "נועם הספר",
-    storeAddress:
+    store_name: env("BOT_STORE_NAME") ?? "נועם הספר",
+    store_address:
       env("BOT_STORE_ADDRESS") ?? "בניין הישיבה הגבוהה - קומה ראשונה, רחוב הארז, עלי",
-    hoursText:
+    hours_text:
       env("BOT_HOURS_TEXT") ??
       "ימים א'-ה': 07:00 - 22:00 (מענה אנושי בחנות בין השעות 13:30-15:00)\nימי ו': 07:00 - 14:00",
-    wazeUrl: env("BOT_WAZE_URL") ?? null,
-    bankDetails:
-      env("BOT_BANK_DETAILS") ??
-      "נועם הספר\nבנק הפועלים\nסניף 286\nחשבון 78929",
-    paymentCreditUrl:
-      env("BOT_PAYMENT_CREDIT_URL") ??
-      "https://ultra.kesherhk.info/external/paymentPage/314594",
-    paymentBitUrl:
+    waze_url: env("BOT_WAZE_URL") ?? null,
+    bank_details: env("BOT_BANK_DETAILS") ?? "נועם הספר\nבנק הפועלים\nסניף 286\nחשבון 78929",
+    payment_credit_url:
+      env("BOT_PAYMENT_CREDIT_URL") ?? "https://ultra.kesherhk.info/external/paymentPage/314594",
+    payment_bit_url:
       env("BOT_PAYMENT_BIT_URL") ??
       "https://meshulam.co.il/quick_payment?b=7583d8adc7013c94a822b5f0d7a2d711",
-    paymentPayboxUrl: env("BOT_PAYMENT_PAYBOX_URL") ?? null,
-    catalogPdfUrl: env("BOT_CATALOG_PDF_URL") ?? null,
-    updatesGroupUrl: env("BOT_UPDATES_GROUP_URL") ?? null,
-    deliveryHomeFee: envNum("BOT_DELIVERY_HOME_FEE", 39),
-    deliveryPointFee: envNum("BOT_DELIVERY_POINT_FEE", 25),
+    payment_paybox_url: env("BOT_PAYMENT_PAYBOX_URL") ?? null,
+    catalog_pdf_url: env("BOT_CATALOG_PDF_URL") ?? null,
+    updates_group_url: env("BOT_UPDATES_GROUP_URL") ?? null,
+    delivery_home_fee: envNum("BOT_DELIVERY_HOME_FEE", 39),
+    delivery_point_fee: envNum("BOT_DELIVERY_POINT_FEE", 25),
+    human_hours_start: hours.start,
+    human_hours_end: hours.end,
   };
+}
+
+/** ממיר את ה-`store_info` השמור (snake_case) לצורה שמנוע השיחה צורך (camelCase). */
+export function storeInfoToContent(info: BotStoreInfo): BotContentConfig {
+  return {
+    storeName: info.store_name,
+    storeAddress: info.store_address,
+    hoursText: info.hours_text,
+    wazeUrl: info.waze_url,
+    bankDetails: info.bank_details,
+    paymentCreditUrl: info.payment_credit_url,
+    paymentBitUrl: info.payment_bit_url,
+    paymentPayboxUrl: info.payment_paybox_url,
+    catalogPdfUrl: info.catalog_pdf_url,
+    updatesGroupUrl: info.updates_group_url,
+    deliveryHomeFee: info.delivery_home_fee,
+    deliveryPointFee: info.delivery_point_fee,
+  };
+}
+
+/** תוכן הענפים מברירות המחדל של `.env` בלבד (ללא DB) — נפילה לבדיקות וכשאין cache. */
+export function getBotContent(): BotContentConfig {
+  return storeInfoToContent(botStoreInfoDefaults());
 }
