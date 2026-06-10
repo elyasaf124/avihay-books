@@ -79,7 +79,7 @@ export default function ChatListScreen(): JSX.Element {
           onChangeText={setSearch}
           placeholder={he.chat.searchPlaceholder}
           placeholderTextColor={wa.inkSecondary}
-          textAlign="right"
+          textAlign="left"
         />
       </View>
 
@@ -149,9 +149,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 14,
   },
-  offlineText: { flex: 1, color: "#7A1B1B", fontSize: 13, textAlign: "right" },
+  offlineText: { flex: 1, color: "#7A1B1B", fontSize: 13, textAlign: "left" },
   loadingBox: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8 },
-  loadingText: { color: wa.inkSecondary, fontSize: 14 },
+  loadingText: { color: wa.inkSecondary, fontSize: 14, textAlign: "left" },
   emptyContainer: { flexGrow: 1 },
   empty: {
     flex: 1,
@@ -160,6 +160,6 @@ const styles = StyleSheet.create({
     padding: 32,
     gap: 10,
   },
-  emptyTitle: { fontSize: 17, fontWeight: "600", color: wa.inkPrimary },
+  emptyTitle: { fontSize: 17, fontWeight: "600", color: wa.inkPrimary, textAlign: "left" },
   emptyHint: { fontSize: 14, color: wa.inkSecondary, textAlign: "center" },
 });

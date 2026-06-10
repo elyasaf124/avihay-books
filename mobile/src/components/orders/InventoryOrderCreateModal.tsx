@@ -467,7 +467,7 @@ const styles = StyleSheet.create({
   searchInput: {
     ...theme.typography.bodyMd,
     color: theme.colors.onSurface,
-    textAlign: "right",
+    textAlign: "left",
     paddingVertical: theme.spacing.sm,
     paddingHorizontal: theme.spacing.md,
     borderRadius: theme.radius.lg,

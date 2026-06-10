@@ -2,12 +2,17 @@ import { type ReactNode } from "react";
 import {
   ActivityIndicator,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   type KeyboardTypeOptions,
+  type ScrollViewProps,
+  type StyleProp,
   View,
+  type ViewStyle,
 } from "react-native";
+import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
 
@@ -47,7 +52,7 @@ export function LabeledInput({
         multiline={multiline}
         keyboardType={keyboardType}
         maxLength={maxLength}
-        textAlign="right"
+        textAlign="left"
       />
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
@@ -150,13 +155,36 @@ export function CenterState({
   return <>{children}</>;
 }
 
+/** ScrollView עם padding תחתון דינמי — מונע מהמקלדת לכסות שדות בטפסי בוט. */
+export function BotKeyboardScrollView({
+  children,
+  contentStyle,
+  ...props
+}: ScrollViewProps & {
+  contentStyle?: StyleProp<ViewStyle>;
+}): JSX.Element {
+  const keyboardHeight = useKeyboardHeight();
+  return (
+    <ScrollView
+      keyboardShouldPersistTaps="handled"
+      contentContainerStyle={[
+        contentStyle,
+        { paddingBottom: keyboardHeight + theme.spacing.xl },
+      ]}
+      {...props}
+    >
+      {children}
+    </ScrollView>
+  );
+}
+
 const styles = StyleSheet.create({
   field: { gap: theme.spacing.xs, marginBottom: theme.spacing.md },
   label: {
     ...theme.typography.labelMd,
     color: theme.colors.onSurfaceVariant,
     letterSpacing: 0,
-    textAlign: "right",
+    textAlign: "left",
   },
   input: {
     ...theme.typography.bodyMd,
@@ -173,7 +201,7 @@ const styles = StyleSheet.create({
   hint: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
+    textAlign: "left",
   },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.xs },
   chip: {
@@ -188,7 +216,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primaryContainer,
     borderColor: theme.colors.primary,
   },
-  chipText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onSurface },
+  chipText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onSurface, textAlign: "left" },
   chipTextActive: { color: theme.colors.onPrimary },
   saveBar: {
     padding: theme.spacing.md,
@@ -204,9 +232,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   saveBtnDisabled: { opacity: 0.5 },
-  saveBtnText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onPrimary, fontSize: 15 },
+  saveBtnText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onPrimary, fontSize: 15, textAlign: "left" },
   center: { flex: 1, alignItems: "center", justifyContent: "center", padding: theme.spacing.xl, gap: theme.spacing.sm },
-  centerText: { ...theme.typography.bodyMd, color: theme.colors.onSurfaceVariant },
+  centerText: { ...theme.typography.bodyMd, color: theme.colors.onSurfaceVariant, textAlign: "left" },
   errorText: { ...theme.typography.bodyMd, color: theme.colors.error, textAlign: "center" },
   retryBtn: {
     marginTop: theme.spacing.sm,
@@ -215,5 +243,5 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primaryContainer,
     borderRadius: theme.radius.md,
   },
-  retryText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.primary },
+  retryText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.primary, textAlign: "left" },
 });

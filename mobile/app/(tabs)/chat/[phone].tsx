@@ -23,6 +23,7 @@ import {
   useSendMessage,
 } from "../../../src/api/chat";
 import { useChatStream } from "../../../src/hooks/useChatStream";
+import { useKeyboardHeight } from "../../../src/hooks/useKeyboardHeight";
 import { MessageBubble } from "../../../src/components/chat/MessageBubble";
 import { wa, avatarColor, avatarInitial } from "../../../src/components/chat/waTheme";
 
@@ -32,6 +33,7 @@ export default function ConversationScreen(): JSX.Element {
   const params = useLocalSearchParams<{ phone: string }>();
   const phone = typeof params.phone === "string" ? params.phone : "";
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
 
   useChatStream();
   const messagesQuery = useMessages(phone);
@@ -130,6 +132,7 @@ export default function ConversationScreen(): JSX.Element {
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => <MessageBubble message={item} />}
           contentContainerStyle={styles.listContent}
+          keyboardDismissMode="on-drag"
           ListEmptyComponent={
             <View style={styles.emptyMessages}>
               <Text style={styles.emptyText}>{he.chat.emptyMessages}</Text>
@@ -150,7 +153,7 @@ export default function ConversationScreen(): JSX.Element {
         </View>
       ) : null}
 
-      <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 8) }]}>
+      <View style={[styles.inputBar, { paddingBottom: Math.max(insets.bottom, 8) + keyboardHeight }]}>
         <View style={styles.inputWrap}>
           <TextInput
             style={styles.input}
@@ -160,7 +163,7 @@ export default function ConversationScreen(): JSX.Element {
             placeholderTextColor={wa.inkSecondary}
             multiline
             editable={!outsideWindow}
-            textAlign="right"
+            textAlign="left"
           />
         </View>
         <Pressable
@@ -193,10 +196,10 @@ const styles = StyleSheet.create({
   },
   headerAvatarText: { color: "#FFFFFF", fontSize: 15, fontWeight: "700" },
   headerTexts: { justifyContent: "center" },
-  headerName: { color: "#FFFFFF", fontSize: 16, fontWeight: "700", textAlign: "right" },
-  headerStatus: { color: "#D8F3E9", fontSize: 11, textAlign: "right" },
+  headerName: { color: "#FFFFFF", fontSize: 16, fontWeight: "700", textAlign: "left" },
+  headerStatus: { color: "#D8F3E9", fontSize: 11, textAlign: "left" },
   loadingBox: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8 },
-  loadingText: { color: wa.inkSecondary, fontSize: 14 },
+  loadingText: { color: wa.inkSecondary, fontSize: 14, textAlign: "left" },
   listContent: { paddingVertical: 10 },
   emptyMessages: {
     flex: 1,
@@ -221,7 +224,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  windowText: { flex: 1, color: wa.warningInk, fontSize: 13, textAlign: "right" },
+  windowText: { flex: 1, color: wa.warningInk, fontSize: 13, textAlign: "left" },
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
@@ -230,7 +233,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  errorText: { flex: 1, color: "#7A1B1B", fontSize: 13, textAlign: "right" },
+  errorText: { flex: 1, color: "#7A1B1B", fontSize: 13, textAlign: "left" },
   inputBar: {
     flexDirection: "row",
     alignItems: "flex-end",

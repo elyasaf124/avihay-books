@@ -3,7 +3,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -22,9 +24,10 @@ import {
 } from "@avihay-books/shared";
 import { useBotConfig, useSaveBotConfig } from "../../api/botConfig";
 import { ConfirmDialog } from "../ConfirmDialog";
+import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
 import { he } from "../../i18n/he";
 import { theme } from "../../theme";
-import { CenterState, genId } from "./BotFormControls";
+import { BotKeyboardScrollView, CenterState, genId } from "./BotFormControls";
 import { sanitizeAllCustomFlows } from "./flowSanitize";
 import { useBotAutoSave } from "./useBotAutoSave";
 
@@ -45,6 +48,7 @@ export function MenuItemsManager(): JSX.Element {
   const router = useRouter();
   const configQuery = useBotConfig();
   const saveMutation = useSaveBotConfig();
+  const keyboardHeight = useKeyboardHeight();
   const [draft, setDraft] = useState<BotConfigData | null>(null);
   const [editTarget, setEditTarget] = useState<MenuItemConfig | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -180,7 +184,7 @@ export function MenuItemsManager(): JSX.Element {
         error={configQuery.isError}
         onRetry={() => void configQuery.refetch()}
       >
-        <ScrollView contentContainerStyle={styles.content}>
+        <BotKeyboardScrollView contentStyle={styles.content}>
           <Text style={styles.hint}>{he.bot.menuHint}</Text>
           {items.map((item, index) => (
             <View key={item.id} style={styles.row}>
@@ -248,56 +252,76 @@ export function MenuItemsManager(): JSX.Element {
             <Ionicons name="add-circle-outline" size={20} color={theme.colors.onPrimary} />
             <Text style={styles.addBtnText}>{he.bot.addCustomItem}</Text>
           </Pressable>
-        </ScrollView>
+        </BotKeyboardScrollView>
       </CenterState>
 
       <Modal visible={creating} transparent animationType="fade" onRequestClose={() => setCreating(false)}>
-        <Pressable style={styles.backdrop} onPress={() => setCreating(false)}>
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>{he.bot.createFlowTitle}</Text>
-            <Text style={styles.modalLabel}>{he.bot.fieldItemTitle}</Text>
-            <TextInput
-              style={styles.modalInput}
-              value={createTitle}
-              onChangeText={setCreateTitle}
-              maxLength={24}
-              textAlign="right"
-              autoFocus
-            />
-            <View style={styles.modalActions}>
-              <Pressable style={[styles.modalBtn, styles.modalCancel]} onPress={() => setCreating(false)}>
-                <Text style={styles.modalCancelText}>{he.generic.cancel}</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.modalBtn, styles.modalConfirm]}
-                onPress={() => void confirmCreate()}
-                disabled={saveMutation.isPending}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.modalRoot}
+        >
+          <Pressable style={styles.backdrop} onPress={() => setCreating(false)}>
+            <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: keyboardHeight }}
               >
-                <Text style={styles.modalConfirmText}>{he.generic.save}</Text>
-              </Pressable>
-            </View>
+                <Text style={styles.modalTitle}>{he.bot.createFlowTitle}</Text>
+                <Text style={styles.modalLabel}>{he.bot.fieldItemTitle}</Text>
+                <TextInput
+                  style={styles.modalInput}
+                  value={createTitle}
+                  onChangeText={setCreateTitle}
+                  maxLength={24}
+                  textAlign="left"
+                  autoFocus
+                />
+                <View style={styles.modalActions}>
+                  <Pressable style={[styles.modalBtn, styles.modalCancel]} onPress={() => setCreating(false)}>
+                    <Text style={styles.modalCancelText}>{he.generic.cancel}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.modalBtn, styles.modalConfirm]}
+                    onPress={() => void confirmCreate()}
+                    disabled={saveMutation.isPending}
+                  >
+                    <Text style={styles.modalConfirmText}>{he.generic.save}</Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal visible={editTarget != null} transparent animationType="fade" onRequestClose={() => setEditTarget(null)}>
-        <Pressable style={styles.backdrop} onPress={() => setEditTarget(null)}>
-          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.modalTitle}>{he.bot.editItem}</Text>
-            <Text style={styles.modalLabel}>{he.bot.fieldItemTitle}</Text>
-            <TextInput style={styles.modalInput} value={editTitle} onChangeText={setEditTitle} maxLength={24} textAlign="right" />
-            <Text style={styles.modalLabel}>{he.bot.fieldItemDescription}</Text>
-            <TextInput style={styles.modalInput} value={editDesc} onChangeText={setEditDesc} maxLength={72} textAlign="right" />
-            <View style={styles.modalActions}>
-              <Pressable style={[styles.modalBtn, styles.modalCancel]} onPress={() => setEditTarget(null)}>
-                <Text style={styles.modalCancelText}>{he.generic.cancel}</Text>
-              </Pressable>
-              <Pressable style={[styles.modalBtn, styles.modalConfirm]} onPress={applyEdit}>
-                <Text style={styles.modalConfirmText}>{he.generic.save}</Text>
-              </Pressable>
-            </View>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          style={styles.modalRoot}
+        >
+          <Pressable style={styles.backdrop} onPress={() => setEditTarget(null)}>
+            <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: keyboardHeight }}
+              >
+                <Text style={styles.modalTitle}>{he.bot.editItem}</Text>
+                <Text style={styles.modalLabel}>{he.bot.fieldItemTitle}</Text>
+                <TextInput style={styles.modalInput} value={editTitle} onChangeText={setEditTitle} maxLength={24} textAlign="left" />
+                <Text style={styles.modalLabel}>{he.bot.fieldItemDescription}</Text>
+                <TextInput style={styles.modalInput} value={editDesc} onChangeText={setEditDesc} maxLength={72} textAlign="left" />
+                <View style={styles.modalActions}>
+                  <Pressable style={[styles.modalBtn, styles.modalCancel]} onPress={() => setEditTarget(null)}>
+                    <Text style={styles.modalCancelText}>{he.generic.cancel}</Text>
+                  </Pressable>
+                  <Pressable style={[styles.modalBtn, styles.modalConfirm]} onPress={applyEdit}>
+                    <Text style={styles.modalConfirmText}>{he.generic.save}</Text>
+                  </Pressable>
+                </View>
+              </ScrollView>
+            </Pressable>
           </Pressable>
-        </Pressable>
+        </KeyboardAvoidingView>
       </Modal>
 
       <ConfirmDialog
@@ -316,7 +340,7 @@ export function MenuItemsManager(): JSX.Element {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.colors.background },
   content: { padding: theme.spacing.md, gap: theme.spacing.sm },
-  hint: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "right", marginBottom: theme.spacing.xs },
+  hint: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "left", marginBottom: theme.spacing.xs },
   row: {
     flexDirection: "row",
     alignItems: "stretch",
@@ -331,8 +355,8 @@ const styles = StyleSheet.create({
   arrowBtn: { padding: 2 },
   rowBody: { flex: 1, minWidth: 0, gap: theme.spacing.xs },
   rowMain: { gap: 2 },
-  rowTitle: { ...theme.typography.bodyLg, color: theme.colors.onSurface, textAlign: "right" },
-  rowBadge: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "right" },
+  rowTitle: { ...theme.typography.bodyLg, color: theme.colors.onSurface, textAlign: "left" },
+  rowBadge: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "left" },
   rowFooter: {
     flexDirection: "row",
     alignItems: "center",
@@ -365,7 +389,8 @@ const styles = StyleSheet.create({
     marginTop: theme.spacing.sm,
   },
   addBtnDisabled: { opacity: 0.5 },
-  addBtnText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onPrimary, fontSize: 14 },
+  addBtnText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onPrimary, fontSize: 14, textAlign: "left" },
+  modalRoot: { flex: 1 },
   backdrop: {
     flex: 1,
     backgroundColor: "rgba(11, 28, 48, 0.45)",
@@ -382,8 +407,8 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
     ...theme.shadow.modal,
   },
-  modalTitle: { ...theme.typography.headlineSm, color: theme.colors.onSurface, textAlign: "right" },
-  modalLabel: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onSurfaceVariant, textAlign: "right" },
+  modalTitle: { ...theme.typography.headlineSm, color: theme.colors.onSurface, textAlign: "left" },
+  modalLabel: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onSurfaceVariant, textAlign: "left" },
   modalInput: {
     ...theme.typography.bodyMd,
     color: theme.colors.onSurface,
@@ -398,6 +423,6 @@ const styles = StyleSheet.create({
   modalBtn: { flex: 1, paddingVertical: theme.spacing.md, borderRadius: theme.radius.md, alignItems: "center" },
   modalCancel: { backgroundColor: theme.colors.surfaceContainerLow, borderWidth: 1, borderColor: theme.colors.outlineVariant },
   modalConfirm: { backgroundColor: theme.colors.primary },
-  modalCancelText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onSurface, fontSize: 14 },
-  modalConfirmText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onPrimary, fontSize: 14 },
+  modalCancelText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onSurface, fontSize: 14, textAlign: "left" },
+  modalConfirmText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onPrimary, fontSize: 14, textAlign: "left" },
 });

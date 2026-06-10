@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { BotTextKey, BotTextOverrides } from "@avihay-books/shared";
 import { useBotConfig } from "../../api/botConfig";
 import { he } from "../../i18n/he";
 import { theme } from "../../theme";
-import { CenterState } from "./BotFormControls";
+import { BotKeyboardScrollView, CenterState } from "./BotFormControls";
 import { useBotAutoSave } from "./useBotAutoSave";
 
 const LABELS: Record<BotTextKey, string> = {
@@ -94,7 +94,7 @@ export function TextOverridesEditor(): JSX.Element {
         error={configQuery.isError}
         onRetry={() => void configQuery.refetch()}
       >
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <BotKeyboardScrollView contentStyle={styles.content}>
           <Text style={styles.hint}>{he.bot.textsHint}</Text>
           {GROUPS.map((group) => (
             <View key={group.title} style={styles.group}>
@@ -118,7 +118,7 @@ export function TextOverridesEditor(): JSX.Element {
                       value={value}
                       onChangeText={(v) => set(key, v)}
                       multiline
-                      textAlign="right"
+                      textAlign="left"
                       placeholder={he.bot.textDefaultLabel}
                       placeholderTextColor={theme.colors.onSurfaceVariant}
                     />
@@ -127,7 +127,7 @@ export function TextOverridesEditor(): JSX.Element {
               })}
             </View>
           ))}
-        </ScrollView>
+        </BotKeyboardScrollView>
       </CenterState>
     </SafeAreaView>
   );
@@ -135,13 +135,13 @@ export function TextOverridesEditor(): JSX.Element {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.colors.background },
-  content: { padding: theme.spacing.md, paddingBottom: theme.spacing.xl },
-  hint: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "right", marginBottom: theme.spacing.sm },
+  content: { padding: theme.spacing.md },
+  hint: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "left", marginBottom: theme.spacing.sm },
   group: { marginBottom: theme.spacing.lg },
-  groupTitle: { ...theme.typography.headlineSm, color: theme.colors.primary, textAlign: "right", marginBottom: theme.spacing.sm },
+  groupTitle: { ...theme.typography.headlineSm, color: theme.colors.primary, textAlign: "left", marginBottom: theme.spacing.sm },
   field: { gap: theme.spacing.xs, marginBottom: theme.spacing.md },
   fieldHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  label: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onSurface, textAlign: "right" },
+  label: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onSurface, textAlign: "left" },
   defaultBadge: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant },
   input: {
     ...theme.typography.bodyMd,

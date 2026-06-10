@@ -129,7 +129,7 @@ export function SupplierFormModal({
               onChangeText={setName}
               placeholder={he.suppliers.fieldName}
               autoCapitalize="words"
-              textAlign="right"
+              textAlign="left"
             />
 
             <Text style={styles.label}>{he.suppliers.fieldEmail}</Text>

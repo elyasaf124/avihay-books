@@ -27,7 +27,9 @@
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "format": "prettier --write \"**/*.{ts,tsx,js,cjs,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,cjs,json,md}\"",
-    "test:whatsapp": "npm --workspace backend run test:whatsapp"
+    "test:whatsapp": "npm --workspace backend run test:whatsapp",
+    "android": "expo run:android",
+    "ios": "expo run:ios"
   },
   "engines": {
     "node": ">=20"
@@ -50,6 +52,11 @@
     "@react-navigation/native-stack": "^7.3.16",
     "react": "19.1.0",
     "react-dom": "19.1.0",
+    "react-native": "0.81.5"
+  },
+  "dependencies": {
+    "expo": "~54.0.34",
+    "react": "19.1.0",
     "react-native": "0.81.5"
   }
 }

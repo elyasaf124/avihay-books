@@ -127,7 +127,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     color: wa.inkPrimary,
-    textAlign: "right",
+    textAlign: "left",
   },
   time: {
     fontSize: 12,
@@ -154,7 +154,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     color: wa.inkSecondary,
-    textAlign: "right",
+    textAlign: "left",
   },
   trailing: {
     flexDirection: "row",

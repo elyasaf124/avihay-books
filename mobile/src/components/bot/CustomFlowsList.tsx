@@ -72,6 +72,6 @@ const styles = StyleSheet.create({
   },
   rowPressed: { opacity: 0.75 },
   rowText: { flex: 1, gap: 2 },
-  rowTitle: { ...theme.typography.bodyLg, color: theme.colors.onSurface, textAlign: "right" },
-  rowMeta: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "right" },
+  rowTitle: { ...theme.typography.bodyLg, color: theme.colors.onSurface, textAlign: "left" },
+  rowMeta: { ...theme.typography.caption, color: theme.colors.onSurfaceVariant, textAlign: "left" },
 });

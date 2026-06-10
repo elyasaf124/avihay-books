@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet } from "react-native";
+import { StyleSheet } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { BotStoreInfo } from "@avihay-books/shared";
 import { useBotConfig } from "../../api/botConfig";
 import { he } from "../../i18n/he";
 import { theme } from "../../theme";
-import { CenterState, LabeledInput } from "./BotFormControls";
+import { BotKeyboardScrollView, CenterState, LabeledInput } from "./BotFormControls";
 import { useBotAutoSave } from "./useBotAutoSave";
 
 function draftToStoreInfo(draft: Record<keyof BotStoreInfo, string>): BotStoreInfo {
@@ -76,11 +76,7 @@ export function StoreInfoEditor(): JSX.Element {
         onRetry={() => void configQuery.refetch()}
       >
         {draft ? (
-          <KeyboardAvoidingView
-            style={styles.flex}
-            behavior={Platform.OS === "ios" ? "padding" : undefined}
-          >
-            <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <BotKeyboardScrollView contentStyle={styles.content}>
               <LabeledInput label={he.bot.fieldStoreName} value={draft.store_name} onChangeText={(v) => set("store_name", v)} maxLength={100} />
               <LabeledInput label={he.bot.fieldStoreAddress} value={draft.store_address} onChangeText={(v) => set("store_address", v)} multiline />
               <LabeledInput label={he.bot.fieldHoursText} value={draft.hours_text} onChangeText={(v) => set("hours_text", v)} multiline />
@@ -95,8 +91,7 @@ export function StoreInfoEditor(): JSX.Element {
               <LabeledInput label={he.bot.fieldDeliveryPointFee} value={draft.delivery_point_fee} onChangeText={(v) => set("delivery_point_fee", v)} keyboardType="numeric" />
               <LabeledInput label={he.bot.fieldHumanHoursStart} value={draft.human_hours_start} onChangeText={(v) => set("human_hours_start", v)} keyboardType="numeric" />
               <LabeledInput label={he.bot.fieldHumanHoursEnd} value={draft.human_hours_end} onChangeText={(v) => set("human_hours_end", v)} keyboardType="numeric" />
-            </ScrollView>
-          </KeyboardAvoidingView>
+          </BotKeyboardScrollView>
         ) : null}
       </CenterState>
     </SafeAreaView>
@@ -105,6 +100,5 @@ export function StoreInfoEditor(): JSX.Element {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.colors.background },
-  flex: { flex: 1 },
-  content: { padding: theme.spacing.md, paddingBottom: theme.spacing.xl },
+  content: { padding: theme.spacing.md },
 });

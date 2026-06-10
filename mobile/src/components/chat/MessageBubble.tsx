@@ -63,7 +63,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
     color: wa.inkPrimary,
-    textAlign: "right",
+    textAlign: "left",
   },
   meta: {
     flexDirection: "row",

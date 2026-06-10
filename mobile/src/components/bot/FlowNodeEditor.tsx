@@ -2,7 +2,9 @@ import { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import {
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,6 +18,7 @@ import type {
   FlowNodeType,
 } from "@avihay-books/shared";
 import { he } from "../../i18n/he";
+import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
 import { theme } from "../../theme";
 import { ChipSelect, genId, LabeledInput } from "./BotFormControls";
 
@@ -56,6 +59,7 @@ export function FlowNodeEditor({
   onClose: () => void;
 }): JSX.Element {
   const [draft, setDraft] = useState<FlowNode>(() => ({ ...node }));
+  const keyboardHeight = useKeyboardHeight();
 
   const d = draft;
   const targetOptions = allNodes
@@ -108,16 +112,23 @@ export function FlowNodeEditor({
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.sheet}>
-          <View style={styles.header}>
-            <Text style={styles.headerTitle}>{he.bot.stepEditorTitle}</Text>
-            <Pressable onPress={onClose} hitSlop={8}>
-              <Ionicons name="close" size={24} color={theme.colors.onSurface} />
-            </Pressable>
-          </View>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.modalRoot}
+      >
+        <View style={styles.backdrop}>
+          <View style={styles.sheet}>
+            <View style={styles.header}>
+              <Text style={styles.headerTitle}>{he.bot.stepEditorTitle}</Text>
+              <Pressable onPress={onClose} hitSlop={8}>
+                <Ionicons name="close" size={24} color={theme.colors.onSurface} />
+              </Pressable>
+            </View>
 
-          <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              contentContainerStyle={[styles.body, { paddingBottom: keyboardHeight + theme.spacing.md }]}
+              keyboardShouldPersistTaps="handled"
+            >
             <ChipSelect<FlowNodeType>
               label={he.bot.fieldStepType}
               value={d.type}
@@ -200,18 +211,20 @@ export function FlowNodeEditor({
                 ) : null}
               </>
             )}
-          </ScrollView>
+            </ScrollView>
 
-          <Pressable style={styles.saveBtn} onPress={handleSave}>
-            <Text style={styles.saveBtnText}>{he.generic.save}</Text>
-          </Pressable>
+            <Pressable style={[styles.saveBtn, { marginBottom: keyboardHeight }]} onPress={handleSave}>
+              <Text style={styles.saveBtnText}>{he.generic.save}</Text>
+            </Pressable>
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
 
 const styles = StyleSheet.create({
+  modalRoot: { flex: 1 },
   backdrop: { flex: 1, backgroundColor: "rgba(11, 28, 48, 0.45)", justifyContent: "flex-end" },
   sheet: {
     maxHeight: "92%",
@@ -228,9 +241,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.colors.outlineVariant,
   },
-  headerTitle: { ...theme.typography.headlineSm, color: theme.colors.onSurface },
+  headerTitle: { ...theme.typography.headlineSm, color: theme.colors.onSurface, textAlign: "left" },
   body: { padding: theme.spacing.md },
-  sectionTitle: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onSurfaceVariant, textAlign: "right", marginBottom: theme.spacing.xs },
+  sectionTitle: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onSurfaceVariant, textAlign: "left", marginBottom: theme.spacing.xs },
   buttonCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.lg,
@@ -240,9 +253,9 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.sm,
   },
   buttonCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: theme.spacing.xs },
-  buttonCardIndex: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onSurfaceVariant },
+  buttonCardIndex: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onSurfaceVariant, textAlign: "left" },
   addInline: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingVertical: theme.spacing.sm },
-  addInlineText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.primary },
+  addInlineText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.primary, textAlign: "left" },
   saveBtn: {
     marginHorizontal: theme.spacing.md,
     backgroundColor: theme.colors.primary,
@@ -250,5 +263,5 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.md,
     alignItems: "center",
   },
-  saveBtnText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onPrimary, fontSize: 15 },
+  saveBtnText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onPrimary, fontSize: 15, textAlign: "left" },
 });

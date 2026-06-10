@@ -52,7 +52,7 @@ const styles = StyleSheet.create({
   subtitle: {
     ...theme.typography.bodyMd,
     color: theme.colors.onSurfaceVariant,
-    textAlign: "right",
+    textAlign: "left",
     marginBottom: theme.spacing.xs,
   },
   card: {
@@ -75,6 +75,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   cardText: { flex: 1, gap: 2 },
-  cardTitle: { ...theme.typography.headlineSm, color: theme.colors.onSurface, textAlign: "right" },
-  cardDesc: { ...theme.typography.bodyMd, fontSize: 13, color: theme.colors.onSurfaceVariant, textAlign: "right" },
+  cardTitle: { ...theme.typography.headlineSm, color: theme.colors.onSurface, textAlign: "left" },
+  cardDesc: { ...theme.typography.bodyMd, fontSize: 13, color: theme.colors.onSurfaceVariant, textAlign: "left" },
 });

@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { FlowNode } from "@avihay-books/shared";
 import { useBotConfig, useSaveBotConfig } from "../../api/botConfig";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { he } from "../../i18n/he";
 import { theme } from "../../theme";
-import { CenterState, genId, LabeledInput, SaveBar } from "./BotFormControls";
+import { BotKeyboardScrollView, CenterState, genId, LabeledInput, SaveBar } from "./BotFormControls";
 import { FlowNodeEditor } from "./FlowNodeEditor";
 import { prepareFlowForSave, sanitizeAllCustomFlows, sanitizeSingleNode } from "./flowSanitize";
 
@@ -125,7 +125,7 @@ export function FlowEditor({ flowId }: { flowId: string }): JSX.Element {
         error={configQuery.isError || flowMissing}
         onRetry={() => void configQuery.refetch()}
       >
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+        <BotKeyboardScrollView contentStyle={styles.content}>
           <LabeledInput label={he.bot.fieldFlowName} value={name} onChangeText={setName} maxLength={100} />
 
           <Text style={styles.sectionTitle}>{he.bot.flowStepsTitle}</Text>
@@ -182,7 +182,7 @@ export function FlowEditor({ flowId }: { flowId: string }): JSX.Element {
             <Ionicons name="add-circle-outline" size={20} color={theme.colors.onPrimary} />
             <Text style={styles.addBtnText}>{he.bot.addStep}</Text>
           </Pressable>
-        </ScrollView>
+        </BotKeyboardScrollView>
 
         <SaveBar onSave={() => void onSave()} saving={saveMutation.isPending} />
       </CenterState>
@@ -213,7 +213,7 @@ export function FlowEditor({ flowId }: { flowId: string }): JSX.Element {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.colors.background },
   content: { padding: theme.spacing.md },
-  sectionTitle: { ...theme.typography.headlineSm, color: theme.colors.primary, textAlign: "right", marginBottom: theme.spacing.sm },
+  sectionTitle: { ...theme.typography.headlineSm, color: theme.colors.primary, textAlign: "left", marginBottom: theme.spacing.sm },
   empty: { ...theme.typography.bodyMd, color: theme.colors.onSurfaceVariant, textAlign: "center", paddingVertical: theme.spacing.lg },
   card: {
     backgroundColor: theme.colors.surface,
@@ -243,7 +243,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: theme.radius.full,
   },
-  cardText: { ...theme.typography.bodyMd, color: theme.colors.onSurface, textAlign: "right" },
+  cardText: { ...theme.typography.bodyMd, color: theme.colors.onSurface, textAlign: "left" },
   buttonsPreview: { flexDirection: "row", flexWrap: "wrap", gap: theme.spacing.xs },
   buttonChip: {
     ...theme.typography.caption,
