@@ -383,10 +383,12 @@ async function runFlowNode(
 
   if (node.type === "buttons") {
     const buttons = (node.buttons ?? [])
+      .filter((b) => b.title.trim().length > 0)
       .slice(0, 3)
       .map((b) => ({ id: b.id, title: b.title }));
     if (buttons.length === 0) return goEndLoop(from, session);
-    await sendReplyButtons(from, node.text, buttons);
+    const body = node.text.trim() || "בחר אפשרות:";
+    await sendReplyButtons(from, body, buttons);
     await updateSession(session.id, { current_node: `${CUSTOM_PREFIX}${flowId}:${nodeId}` });
     return;
   }

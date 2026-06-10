@@ -749,7 +749,10 @@ export const he = {
     flowsEmptyHint: "הוסף ענף מותאם ממסך פריטי התפריט",
 
     flowEditorTitle: "עריכת זרימה",
-    fieldFlowName: "שם הזרימה (לשימוש פנימי)",
+    fieldFlowName: "כותרת בתפריט",
+    createFlowTitle: "ענף מותאם חדש",
+    buttonsNeedOne: "הוסף לפחות כפתור אחד עם טקסט",
+    buttonsTextHint: "טקסט ההודעה מוצג מעל הכפתורים (חובה בוואטסאפ)",
     flowStepsTitle: "צעדים",
     addStep: "הוסף צעד",
     entryBadge: "צעד פתיחה",

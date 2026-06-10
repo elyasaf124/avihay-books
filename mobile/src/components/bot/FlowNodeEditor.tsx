@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import {
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -65,7 +66,11 @@ export function FlowNodeEditor({
     setDraft((prev) => {
       if (!prev) return prev;
       if (type === "buttons") {
-        return { ...prev, type, buttons: prev.buttons ?? [], after: undefined, next_node_id: undefined };
+        const buttons =
+          (prev.buttons ?? []).length > 0
+            ? prev.buttons!
+            : [{ id: genId("btn"), title: "", action: "end_loop" as const }];
+        return { ...prev, type, buttons, after: undefined, next_node_id: undefined };
       }
       return { ...prev, type, buttons: undefined, after: prev.after ?? "end_loop" };
     });
@@ -90,6 +95,13 @@ export function FlowNodeEditor({
     setButtons((d.buttons ?? []).filter((_, i) => i !== index));
 
   const handleSave = (): void => {
+    if (d.type === "buttons") {
+      const validButtons = (d.buttons ?? []).filter((b) => b.title.trim().length > 0);
+      if (validButtons.length === 0) {
+        Alert.alert(he.generic.errorTitle, he.bot.buttonsNeedOne);
+        return;
+      }
+    }
     onSave(d);
     onClose();
   };
@@ -118,6 +130,7 @@ export function FlowNodeEditor({
               value={d.text}
               onChangeText={(v) => setDraft((prev) => (prev ? { ...prev, text: v } : prev))}
               multiline
+              hint={d.type === "buttons" ? he.bot.buttonsTextHint : undefined}
             />
 
             {d.type === "link" ? (

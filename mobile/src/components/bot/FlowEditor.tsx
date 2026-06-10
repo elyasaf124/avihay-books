@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { FlowNode } from "@avihay-books/shared";
@@ -19,6 +20,7 @@ const TYPE_LABELS: Record<FlowNode["type"], string> = {
 };
 
 export function FlowEditor({ flowId }: { flowId: string }): JSX.Element {
+  const router = useRouter();
   const configQuery = useBotConfig();
   const saveMutation = useSaveBotConfig();
 
@@ -35,7 +37,8 @@ export function FlowEditor({ flowId }: { flowId: string }): JSX.Element {
     if (!configQuery.data || loaded) return;
     const flow = configQuery.data.custom_flows[flowId];
     if (!flow) return;
-    setName(flow.name);
+    const menuItem = configQuery.data.menu_items.find((m) => m.flow_id === flowId);
+    setName(menuItem?.title ?? flow.name);
     setNodes(flow.nodes);
     setOrder(Object.keys(flow.nodes));
     setEntryId(flow.entry_node_id);
@@ -83,21 +86,28 @@ export function FlowEditor({ flowId }: { flowId: string }): JSX.Element {
 
   const onSave = async (): Promise<void> => {
     if (!configQuery.data) return;
-    const raw = { name: name.trim() || he.bot.newFlowName, nodes, entry_node_id: entryId };
+    setEditingId(null);
+    const title = (name.trim() || he.bot.newFlowName).slice(0, 24);
+    const raw = { name: title, nodes, entry_node_id: entryId };
     const flow = prepareFlowForSave(raw, order);
     const custom_flows = sanitizeAllCustomFlows({
       ...configQuery.data.custom_flows,
       [flowId]: flow,
     });
+    const menu_items = configQuery.data.menu_items.map((m) =>
+      m.flow_id === flowId ? { ...m, title } : m,
+    );
     try {
       await saveMutation.mutateAsync({
         ...configQuery.data,
+        menu_items,
         custom_flows,
       });
       setNodes(flow.nodes);
       setEntryId(flow.entry_node_id);
       setOrder((prev) => prev.filter((id) => flow.nodes[id]));
-      Alert.alert(he.bot.saved);
+      setName(title);
+      router.back();
     } catch {
       Alert.alert(he.generic.errorTitle, he.bot.saveFailed);
     }

@@ -44,6 +44,8 @@ export function MenuItemsManager(): JSX.Element {
   const [editTarget, setEditTarget] = useState<MenuItemConfig | null>(null);
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createTitle, setCreateTitle] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<MenuItemConfig | null>(null);
 
   useEffect(() => {
@@ -102,22 +104,28 @@ export function MenuItemsManager(): JSX.Element {
     }
   };
 
-  const addCustom = async (): Promise<void> => {
-    if (!draft) return;
+  const openCreate = (): void => {
     if (items.length >= MAX_ITEMS) {
       Alert.alert(he.bot.maxItemsReached);
       return;
     }
+    setCreateTitle(he.bot.newFlowTitle);
+    setCreating(true);
+  };
+
+  const confirmCreate = async (): Promise<void> => {
+    if (!draft) return;
+    const title = (createTitle.trim() || he.bot.newFlowTitle).slice(0, 24);
     const flowId = genId("flow");
     const nodeId = genId("node");
     const flow: CustomFlow = {
-      name: he.bot.newFlowName,
+      name: title,
       entry_node_id: nodeId,
       nodes: { [nodeId]: { id: nodeId, type: "text", text: "", after: "end_loop" } },
     };
     const item: MenuItemConfig = {
       id: genId("custom"),
-      title: he.bot.newFlowTitle,
+      title,
       description: "",
       type: "custom",
       flow_id: flowId,
@@ -129,6 +137,7 @@ export function MenuItemsManager(): JSX.Element {
       menu_items: reindex([...items, item]),
       custom_flows: { ...draft.custom_flows, [flowId]: flow },
     };
+    setCreating(false);
     const saved = await persist(next);
     if (saved) router.push(`/bot/flow/${flowId}` as never);
   };
@@ -209,7 +218,7 @@ export function MenuItemsManager(): JSX.Element {
 
           <Pressable
             style={[styles.addBtn, items.length >= MAX_ITEMS && styles.addBtnDisabled]}
-            onPress={() => void addCustom()}
+            onPress={openCreate}
             disabled={items.length >= MAX_ITEMS || saveMutation.isPending}
           >
             <Ionicons name="add-circle-outline" size={20} color={theme.colors.onPrimary} />
@@ -219,6 +228,35 @@ export function MenuItemsManager(): JSX.Element {
 
         <SaveBar onSave={() => void onSave()} saving={saveMutation.isPending} />
       </CenterState>
+
+      <Modal visible={creating} transparent animationType="fade" onRequestClose={() => setCreating(false)}>
+        <Pressable style={styles.backdrop} onPress={() => setCreating(false)}>
+          <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.modalTitle}>{he.bot.createFlowTitle}</Text>
+            <Text style={styles.modalLabel}>{he.bot.fieldItemTitle}</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={createTitle}
+              onChangeText={setCreateTitle}
+              maxLength={24}
+              textAlign="right"
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <Pressable style={[styles.modalBtn, styles.modalCancel]} onPress={() => setCreating(false)}>
+                <Text style={styles.modalCancelText}>{he.generic.cancel}</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.modalBtn, styles.modalConfirm]}
+                onPress={() => void confirmCreate()}
+                disabled={saveMutation.isPending}
+              >
+                <Text style={styles.modalConfirmText}>{he.generic.save}</Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal visible={editTarget != null} transparent animationType="fade" onRequestClose={() => setEditTarget(null)}>
         <Pressable style={styles.backdrop} onPress={() => setEditTarget(null)}>
