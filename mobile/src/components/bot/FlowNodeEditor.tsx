@@ -126,8 +126,6 @@ export function FlowNodeEditor({
 
   const scrollRef = useRef<ScrollView>(null);
 
-  const scrollOffsetRef = useRef(0);
-
   const inputRefs = useRef<Map<string, TextInput>>(new Map());
 
   const focusedInputKeyRef = useRef<string | null>(null);
@@ -145,76 +143,37 @@ export function FlowNodeEditor({
 
 
   const ensureInputVisible = useCallback(
-
     (key: string) => {
-
       if (keyboardHeight <= 0) return;
-
       const input = inputRefs.current.get(key);
-
       if (!input) return;
-
       input.measureInWindow((_x, y, _w, height) => {
-
         const keyboardTop = windowH - keyboardHeight;
-
         const margin = theme.spacing.lg;
-
         const overflow = y + height - (keyboardTop - margin);
-
-        if (overflow > 0) {
-
-          scrollRef.current?.scrollTo({
-
-            y: Math.max(0, scrollOffsetRef.current + overflow),
-
-            animated: true,
-
-          });
-
-        }
-
+        setSheetShift(overflow > 0 ? overflow : 0);
       });
-
     },
-
     [keyboardHeight, windowH],
-
   );
 
+  const onInputFocus = useCallback(
+    (key: string) => {
+      focusedInputKeyRef.current = key;
+      ensureInputVisible(key);
+    },
+    [ensureInputVisible],
+  );
 
-
-  const onInputFocus = useCallback((key: string) => {
-
-    focusedInputKeyRef.current = key;
-
-  }, []);
-
-
-
-  // translateY מיידי גונב focus — מעלים את ה-sheet אחרי שהמקלדת נפתחה ומחזירים focus.
   useEffect(() => {
     if (keyboardHeight <= 0) {
       setSheetShift(0);
       return undefined;
     }
-
     const key = focusedInputKeyRef.current;
-    const lift = keyboardHeight;
-
-    const liftTimer = setTimeout(() => setSheetShift(lift), 100);
-    const refocusTimer = setTimeout(() => {
-      if (key) inputRefs.current.get(key)?.focus();
-    }, 150);
-    const scrollTimer = setTimeout(() => {
-      if (key) ensureInputVisible(key);
-    }, 200);
-
-    return () => {
-      clearTimeout(liftTimer);
-      clearTimeout(refocusTimer);
-      clearTimeout(scrollTimer);
-    };
+    if (!key) return undefined;
+    const t = setTimeout(() => ensureInputVisible(key), 60);
+    return () => clearTimeout(t);
   }, [keyboardHeight, ensureInputVisible]);
 
   const scrollContextValue = useMemo(
@@ -357,21 +316,16 @@ export function FlowNodeEditor({
 
                 style={styles.sheetScroll}
 
-                contentContainerStyle={styles.body}
+                contentContainerStyle={[
+                  styles.body,
+                  { paddingBottom: keyboardHeight + theme.spacing.xl },
+                ]}
 
                 keyboardShouldPersistTaps="handled"
 
                 keyboardDismissMode="on-drag"
 
                 automaticallyAdjustKeyboardInsets={false}
-
-                scrollEventThrottle={16}
-
-                onScroll={(e) => {
-
-                  scrollOffsetRef.current = e.nativeEvent.contentOffset.y;
-
-                }}
 
               >
 

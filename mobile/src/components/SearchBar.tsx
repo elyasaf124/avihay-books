@@ -18,7 +18,7 @@ export function SearchBar({ value, onChange, placeholder = he.home.search }: Pro
         onChangeText={onChange}
         placeholder={placeholder}
         placeholderTextColor={theme.colors.onSurfaceVariant}
-        textAlign="left"
+        textAlign="right"
         autoCorrect={false}
       />
       <Ionicons name="search" size={20} color={theme.colors.onSurfaceVariant} />

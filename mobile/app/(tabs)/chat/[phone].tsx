@@ -252,7 +252,7 @@ export default function ConversationScreen(): JSX.Element {
             placeholderTextColor={wa.inkSecondary}
             multiline
             editable={!outsideWindow}
-            textAlign="left"
+            textAlign="right"
             onFocus={() => {
               if (__DEV__) console.log("[chat-keyboard] input focused");
             }}
