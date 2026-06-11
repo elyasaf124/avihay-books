@@ -1,7 +1,9 @@
 import cron, { type ScheduledTask } from "node-cron";
 import { pool } from "../db/pool.js";
 import {
+  deleteNotificationsOlderThan,
   existsOpenNotification,
+  notificationRetentionInterval,
   upsertNotification,
   upsertOpenLowStockNotification,
 } from "../repos/notifications.repo.js";
@@ -276,17 +278,71 @@ export async function runAllNotificationChecks(): Promise<NotificationCheckSumma
   };
 }
 
+export interface NotificationRetentionJobResult {
+  deleted_count: number;
+  retention: string;
+  ran_at: string;
+}
+
+/** מוחק התראות ישנות מחלון ה-retention (ברירת מחדל: שבועיים). */
+export async function runNotificationRetentionJob(): Promise<NotificationRetentionJobResult> {
+  const retention = notificationRetentionInterval();
+  const deleted_count = await deleteNotificationsOlderThan(retention);
+  return { deleted_count, retention, ran_at: new Date().toISOString() };
+}
+
 /**
  * תזמון `cron` לבדיקות. ברירת המחדל: שלוש פעמים ביום (08:00, 13:00, 18:00).
  * ניתן לכבות ב־`.env` עם `DISABLE_NOTIFICATION_CRON=1` (שימושי בפיתוח/בדיקות).
  */
 const DEFAULT_CRON = "0 8,13,18 * * *";
 const DEFAULT_ORDERS_WITHOUT_SUPPLIER_CRON = "0 8 * * *";
+const DEFAULT_NOTIFICATION_RETENTION_CRON = "0 3 * * *";
 
 let scheduled: ScheduledTask | null = null;
 let ordersWithoutSupplierScheduled: ScheduledTask | null = null;
+let retentionScheduled: ScheduledTask | null = null;
 
 export function startNotificationCrons(): void {
+  if (process.env.DISABLE_NOTIFICATION_RETENTION_CRON !== "1" && !retentionScheduled) {
+    const retentionExpression =
+      process.env.NOTIFICATION_RETENTION_CRON ?? DEFAULT_NOTIFICATION_RETENTION_CRON;
+    if (!cron.validate(retentionExpression)) {
+      logger.warn(
+        { expression: retentionExpression },
+        "invalid NOTIFICATION_RETENTION_CRON expression, falling back to default",
+      );
+    }
+    const safeRetentionCron = cron.validate(retentionExpression)
+      ? retentionExpression
+      : DEFAULT_NOTIFICATION_RETENTION_CRON;
+
+    retentionScheduled = cron.schedule(safeRetentionCron, () => {
+      runNotificationRetentionJob()
+        .then((result) => {
+          if (result.deleted_count > 0) {
+            logger.info(result, "notification retention job completed");
+          }
+        })
+        .catch((err: unknown) => {
+          logger.error({ err }, "notification retention cron tick failed");
+        });
+    });
+
+    logger.info(
+      { expression: safeRetentionCron, retention: notificationRetentionInterval() },
+      "notification retention cron scheduled",
+    );
+
+    if (process.env.RUN_NOTIFICATION_RETENTION_ON_BOOT === "1") {
+      runNotificationRetentionJob().catch((err: unknown) => {
+        logger.error({ err }, "notification retention boot job failed");
+      });
+    }
+  } else if (process.env.DISABLE_NOTIFICATION_RETENTION_CRON === "1") {
+    logger.info("notification retention cron disabled via DISABLE_NOTIFICATION_RETENTION_CRON=1");
+  }
+
   if (process.env.DISABLE_NOTIFICATION_CRON === "1") {
     logger.info("notifications cron disabled via DISABLE_NOTIFICATION_CRON=1");
     return;
@@ -342,4 +398,6 @@ export function stopNotificationCrons(): void {
   scheduled = null;
   ordersWithoutSupplierScheduled?.stop();
   ordersWithoutSupplierScheduled = null;
+  retentionScheduled?.stop();
+  retentionScheduled = null;
 }

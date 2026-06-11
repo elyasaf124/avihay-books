@@ -39,6 +39,14 @@ cd /d "%MOBILE_DIR%"
 set "EXPO_NO_METRO_WORKSPACE_ROOT=1"
 
 echo.
+echo === push (FCM) check ===
+call node scripts\check-google-services.cjs
+if errorlevel 1 (
+    echo Prebuild will continue, but Push will NOT work until google-services.json exists.
+    echo See docs\PUSH_NOTIFICATIONS.md
+)
+
+echo.
 echo === expo-doctor ===
 call npx expo-doctor
 if errorlevel 1 (

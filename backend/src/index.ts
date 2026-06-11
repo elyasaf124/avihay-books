@@ -6,6 +6,7 @@ import { apiRouter } from "./routes/index.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { logger } from "./utils/logger.js";
 import { startNotificationCrons } from "./services/notifications.js";
+import { startChatRetentionCron } from "./services/chatRetention.js";
 
 const app = express();
 
@@ -66,4 +67,5 @@ const port = Number.parseInt(process.env.PORT ?? "4000", 10);
 app.listen(port, "0.0.0.0", () => {
   logger.info(`avihay-books API listening on http://localhost:${port}/api/v1`);
   startNotificationCrons();
+  startChatRetentionCron();
 });

@@ -64,11 +64,13 @@ npx expo prebuild --platform android
 node scripts\write-local-properties.cjs
 ```
 
-אחרי שינוי `plugins` ב-`app.json` / `withForceRTL`:
+אחרי שינוי `plugins` ב-`app.json` / `withForceRTL` / **`google-services.json`**:
 
 ```bat
 npx expo prebuild --platform android --clean
 ```
+
+> **Push (התראות צ'אט):** מדריך מלא ב-[`PUSH_NOTIFICATIONS.md`](PUSH_NOTIFICATIONS.md).
 
 > `mobile/android/` **לא** נכנס ל-Git (ראה `.gitignore`).
 
@@ -129,8 +131,9 @@ adb install -r mobile\android\app\build\outputs\apk\release\app-release.apk
 - [ ] פרויקט ב-`C:\dev\avihay-books-V2`
 - [ ] `npm install` מהשורש
 - [ ] `mobile/.env.production` מלא
+- [ ] **`mobile/google-services.json`** מ-Firebase (Push — ראה [`PUSH_NOTIFICATIONS.md`](PUSH_NOTIFICATIONS.md))
 - [ ] `npx expo-doctor` ב-`mobile/` — ללא אדום קריטי
-- [ ] `mobile/android/` קיים
+- [ ] `mobile/android/` קיים (אחרי `prebuild`)
 - [ ] `mobile/android/local.properties` עם `sdk.dir`
 - [ ] `ANDROID_HOME` מוגדר
 - [ ] `build-release.bat` או `npm run mobile:apk:release`

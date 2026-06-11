@@ -2,6 +2,7 @@
 import { Router } from "express";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { upsertPushToken } from "../repos/pushTokens.repo.js";
+import { logger } from "../utils/logger.js";
 
 export const devicesRouter = Router();
 
@@ -14,6 +15,10 @@ devicesRouter.post(
       throw new HttpError(400, "expo_token is required");
     }
     await upsertPushToken(token, platform);
+    logger.info(
+      { platform, tokenPrefix: token.slice(0, 24) },
+      "[devices] push token registered",
+    );
     res.status(204).end();
   }),
 );

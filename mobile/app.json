@@ -42,7 +42,17 @@
       ],
       "expo-font",
       "expo-localization",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#3d2817",
+          "defaultChannel": "chat",
+          "androidMode": "default",
+          "androidCollapsedTitle": "נועם הספר",
+          "enableBackgroundRemoteNotifications": false
+        }
+      ],
       "./withForceRTL"
     ],
     "experiments": {

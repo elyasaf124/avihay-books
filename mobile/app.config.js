@@ -1,4 +1,5 @@
 const path = require("path");
+const fs = require("fs");
 const { loadProjectEnv } = require("@expo/env");
 
 /** שינוי מזהה האפליקציה לפיתוח כדי לא לדרוס את גרסת הייצור בטלפון. שנה ל-false כדי לחזור לפרודקשן בקלות */
@@ -57,11 +58,15 @@ const hasEasProjectId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
   easProjectId,
 );
 
+const googleServicesFile = "./google-services.json";
+const hasGoogleServices = fs.existsSync(path.join(__dirname, googleServicesFile));
+
 module.exports = ({ config }) => {
   const name = IS_DEV_PACKAGE ? `${config.name}-dev` : config.name;
   const android = {
     ...config.android,
     package: IS_DEV_PACKAGE ? `${config.android?.package ?? "com.avihay.books"}.dev` : (config.android?.package ?? "com.avihay.books"),
+    ...(hasGoogleServices ? { googleServicesFile } : {}),
   };
   const ios = {
     ...config.ios,

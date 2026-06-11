@@ -5,6 +5,14 @@ import type {
   WhatsappMessage,
 } from "@avihay-books/shared";
 
+export const DEFAULT_CHAT_MESSAGE_RETENTION = "1 month";
+
+/** Postgres interval — כמה זמן לשמור הודעות צ'אט (env: `CHAT_MESSAGE_RETENTION`). */
+export function chatMessageRetentionInterval(): string {
+  const raw = process.env.CHAT_MESSAGE_RETENTION?.trim();
+  return raw && raw.length > 0 ? raw : DEFAULT_CHAT_MESSAGE_RETENTION;
+}
+
 export interface LogMessageInput {
   phone_number: string;
   direction: "in" | "out";
@@ -39,11 +47,13 @@ export async function logWhatsappMessage(input: LogMessageInput): Promise<Whatsa
  * שם פרופיל/סטטוס מהשיחה האחרונה, וספירת הודעות נכנסות שטרם נקראו על-ידי העובד.
  */
 export async function listConversations(): Promise<ChatConversation[]> {
+  const retention = chatMessageRetentionInterval();
   const { rows } = await pool.query<ChatConversation>(
     `WITH last_msg AS (
        SELECT DISTINCT ON (phone_number)
          phone_number, body, msg_type, direction, created_at
        FROM whatsapp_messages
+       WHERE created_at >= now() - $1::interval
        ORDER BY phone_number, created_at DESC
      ),
      sess AS (
@@ -57,6 +67,7 @@ export async function listConversations(): Promise<ChatConversation[]> {
        FROM whatsapp_messages m
        LEFT JOIN sess s ON s.phone_number = m.phone_number
        WHERE m.direction = 'in'
+         AND m.created_at >= now() - $1::interval
          AND (s.staff_last_read_at IS NULL OR m.created_at > s.staff_last_read_at)
        GROUP BY m.phone_number
      )
@@ -74,6 +85,7 @@ export async function listConversations(): Promise<ChatConversation[]> {
      LEFT JOIN sess s   ON s.phone_number = lm.phone_number
      LEFT JOIN unread u ON u.phone_number = lm.phone_number
      ORDER BY lm.created_at DESC`,
+    [retention],
   );
   return rows;
 }
@@ -84,20 +96,23 @@ export async function getMessages(
   limit = 50,
   before?: string | null,
 ): Promise<ChatMessageView[]> {
+  const retention = chatMessageRetentionInterval();
   const { rows } = await pool.query<ChatMessageView>(
     `SELECT id, direction, msg_type, body, is_echo, created_at
      FROM whatsapp_messages
      WHERE phone_number = $1
-       AND ($2::timestamptz IS NULL OR created_at < $2::timestamptz)
+       AND created_at >= now() - $2::interval
+       AND ($3::timestamptz IS NULL OR created_at < $3::timestamptz)
      ORDER BY created_at DESC
-     LIMIT $3`,
-    [phone, before ?? null, limit],
+     LIMIT $4`,
+    [phone, retention, before ?? null, limit],
   );
   return rows;
 }
 
 /** ספירת ההודעות הנכנסות שטרם נקראו בכל השיחות — לתג שעל טאב הצ'אט. */
 export async function countUnreadChat(): Promise<number> {
+  const retention = chatMessageRetentionInterval();
   const { rows } = await pool.query<{ cnt: number }>(
     `WITH sess AS (
        SELECT DISTINCT ON (phone_number) phone_number, staff_last_read_at
@@ -108,9 +123,20 @@ export async function countUnreadChat(): Promise<number> {
      FROM whatsapp_messages m
      LEFT JOIN sess s ON s.phone_number = m.phone_number
      WHERE m.direction = 'in'
+       AND m.created_at >= now() - $1::interval
        AND (s.staff_last_read_at IS NULL OR m.created_at > s.staff_last_read_at)`,
+    [retention],
   );
   return rows[0]?.cnt ?? 0;
+}
+
+/** מוחק פיזית הודעות ישנות מחלון retention (ל-cron יומי). */
+export async function deleteWhatsappMessagesOlderThan(interval: string): Promise<number> {
+  const { rowCount } = await pool.query(
+    `DELETE FROM whatsapp_messages WHERE created_at < now() - $1::interval`,
+    [interval],
+  );
+  return rowCount ?? 0;
 }
 
 /** סימון כל ההודעות בשיחה כנקראו (מעדכן את כל רשומות השיחה של המספר). */

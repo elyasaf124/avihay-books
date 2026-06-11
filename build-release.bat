@@ -25,6 +25,10 @@ if not exist "android\local.properties" (
     if errorlevel 1 exit /b 1
 )
 
+echo === push (FCM) check ===
+call node scripts\check-google-services.cjs --strict
+if errorlevel 1 exit /b 1
+
 REM Kill any Metro process on port 8081
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8081 ^| findstr LISTENING') do taskkill /F /PID %%a 2>nul
 

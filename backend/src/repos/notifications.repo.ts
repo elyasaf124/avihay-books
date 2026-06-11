@@ -2,6 +2,14 @@ import { pool } from "../db/pool.js";
 import { notificationInputSchema, type NotificationInput } from "./schemas.js";
 import type { AppNotification, NotificationListItem, NotificationType } from "@avihay-books/shared";
 
+export const DEFAULT_NOTIFICATION_RETENTION = "14 days";
+
+/** Postgres interval — כמה זמן לשמור התראות (env: `NOTIFICATION_RETENTION`). */
+export function notificationRetentionInterval(): string {
+  const raw = process.env.NOTIFICATION_RETENTION?.trim();
+  return raw && raw.length > 0 ? raw : DEFAULT_NOTIFICATION_RETENTION;
+}
+
 export async function upsertNotification(input: NotificationInput): Promise<AppNotification> {
   const v = notificationInputSchema.parse(input);
   const sql = `
@@ -26,8 +34,12 @@ export async function upsertNotification(input: NotificationInput): Promise<AppN
 }
 
 export async function findAllNotifications(): Promise<AppNotification[]> {
+  const retention = notificationRetentionInterval();
   const { rows } = await pool.query<AppNotification>(
-    "SELECT * FROM notifications ORDER BY created_at DESC",
+    `SELECT * FROM notifications
+      WHERE created_at >= now() - $1::interval
+      ORDER BY created_at DESC`,
+    [retention],
   );
   return rows;
 }
@@ -38,6 +50,7 @@ export async function findAllNotifications(): Promise<AppNotification[]> {
  * וזה גם המצב כאשר רשומת הספר/הספק נמחקה (אנו עושים `LEFT JOIN`).
  */
 export async function findAllNotificationsExpanded(): Promise<NotificationListItem[]> {
+  const retention = notificationRetentionInterval();
   const { rows } = await pool.query<NotificationListItem>(
     `SELECT n.id, n.type, n.book_id, n.supplier_id, n.message, n.is_read, n.created_at,
             b.title             AS book_title,
@@ -50,14 +63,21 @@ export async function findAllNotificationsExpanded(): Promise<NotificationListIt
        LEFT JOIN books     b  ON b.id  = n.book_id
        LEFT JOIN suppliers s  ON s.id  = n.supplier_id
        LEFT JOIN suppliers sb ON sb.id = b.supplier_id
+      WHERE n.created_at >= now() - $1::interval
       ORDER BY n.is_read ASC, n.created_at DESC`,
+    [retention],
   );
   return rows;
 }
 
 export async function findUnreadNotificationCount(): Promise<number> {
+  const retention = notificationRetentionInterval();
   const { rows } = await pool.query<{ count: string }>(
-    "SELECT COUNT(*)::text AS count FROM notifications WHERE is_read = FALSE",
+    `SELECT COUNT(*)::text AS count
+       FROM notifications
+      WHERE is_read = FALSE
+        AND created_at >= now() - $1::interval`,
+    [retention],
   );
   return Number.parseInt(rows[0]!.count, 10);
 }
@@ -89,8 +109,13 @@ interface OpenNotificationFilter {
  * שימוש: לפני יצירת התראה חדשה במחזור ה־`cron`, כדי לא להציף את המסך.
  */
 export async function existsOpenNotification(filter: OpenNotificationFilter): Promise<boolean> {
-  const conditions: string[] = ["type = $1", "is_read = FALSE"];
-  const params: unknown[] = [filter.type];
+  const retention = notificationRetentionInterval();
+  const conditions: string[] = [
+    "type = $1",
+    "is_read = FALSE",
+    `created_at >= now() - $${2}::interval`,
+  ];
+  const params: unknown[] = [filter.type, retention];
   if (filter.book_id !== undefined) {
     if (filter.book_id === null) conditions.push("book_id IS NULL");
     else {
@@ -136,4 +161,13 @@ export async function upsertOpenLowStockNotification(input: {
     message: input.message,
     is_read: false,
   });
+}
+
+/** מוחק פיזית התראות ישנות מחלון retention (ל-cron יומי). */
+export async function deleteNotificationsOlderThan(interval: string): Promise<number> {
+  const { rowCount } = await pool.query(
+    `DELETE FROM notifications WHERE created_at < now() - $1::interval`,
+    [interval],
+  );
+  return rowCount ?? 0;
 }

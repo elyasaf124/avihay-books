@@ -12,6 +12,14 @@ const env = {
   EXPO_NO_METRO_WORKSPACE_ROOT: "1",
 };
 
+const check = spawnSync("node", ["scripts/check-google-services.cjs", "--strict"], {
+  cwd: mobileRoot,
+  stdio: "inherit",
+});
+if (check.status !== 0) {
+  process.exit(check.status ?? 1);
+}
+
 const result = spawnSync(
   "npx",
   [

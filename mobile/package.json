@@ -21,7 +21,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "prebuild:android": "node scripts/run-with-monorepo-root.cjs npx expo prebuild --platform android",
+    "prebuild:android": "node scripts/check-google-services.cjs && node scripts/run-with-monorepo-root.cjs npx expo prebuild --platform android",
     "apk:release": "node scripts/apk-release.cjs",
     "apk:release:gradle": "node scripts/gradle-assemble-release.cjs",
     "eas:build:android:development": "dotenv -e .env.development -- npx eas-cli@latest build --profile development --platform android",
