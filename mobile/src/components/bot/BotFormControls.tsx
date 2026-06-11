@@ -52,7 +52,7 @@ export function LabeledInput({
         multiline={multiline}
         keyboardType={keyboardType}
         maxLength={maxLength}
-        textAlign="left"
+        textAlign="right"
       />
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>

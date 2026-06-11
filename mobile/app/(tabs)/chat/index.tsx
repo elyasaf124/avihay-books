@@ -79,7 +79,7 @@ export default function ChatListScreen(): JSX.Element {
           onChangeText={setSearch}
           placeholder={he.chat.searchPlaceholder}
           placeholderTextColor={wa.inkSecondary}
-          textAlign="left"
+          textAlign="right"
         />
       </View>
 

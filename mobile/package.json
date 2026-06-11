@@ -12,10 +12,11 @@
   },
   "scripts": {
     "postinstall": "node scripts/link-hoisted-native-deps.cjs && npm run build --prefix ../shared",
-    "start": "expo start",
+    "start": "node scripts/metro-dev.cjs",
     "start:dev": "node scripts/metro-dev.cjs",
     "android": "expo run:android",
     "android:dev": "node scripts/android-dev.cjs",
+    "android:dev:fresh": "node scripts/android-dev.cjs --fresh",
     "android:dev:build": "node scripts/android-dev.cjs --build",
     "ios": "expo run:ios",
     "web": "expo start --web",

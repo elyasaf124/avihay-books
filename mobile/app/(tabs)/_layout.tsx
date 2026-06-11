@@ -84,7 +84,10 @@ export default function TabsLayout(): JSX.Element {
           ),
         }}
       />
-      <Tabs.Screen name="chat" options={{ href: null, title: he.tabs.chat }} />
+      <Tabs.Screen
+        name="chat"
+        options={{ href: null, title: he.tabs.chat, headerShown: false }}
+      />
       <Tabs.Screen
         name="notifications"
         options={{
