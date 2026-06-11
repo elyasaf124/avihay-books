@@ -709,7 +709,7 @@ export const he = {
     cardFlowsTitle: "זרימות מותאמות",
     cardFlowsDesc: "הענפים שבנית בעצמך",
 
-    storeInfoTitle: "1פרטי חנות",
+    storeInfoTitle: "פרטי חנות",
     fieldStoreName: "שם החנות",
     fieldStoreAddress: "כתובת",
     fieldHoursText: "שעות פעילות",

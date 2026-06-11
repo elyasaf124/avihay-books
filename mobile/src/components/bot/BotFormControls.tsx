@@ -1,4 +1,12 @@
-import { type ReactNode } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+} from "react";
 import {
   ActivityIndicator,
   Pressable,
@@ -6,6 +14,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   type KeyboardTypeOptions,
   type ScrollViewProps,
   type StyleProp,
@@ -15,6 +24,13 @@ import {
 import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
+
+type BotScrollContextValue = {
+  registerInput: (key: string, node: TextInput | null) => void;
+  onInputFocus: (key: string) => void;
+};
+
+const BotScrollContext = createContext<BotScrollContextValue | null>(null);
 
 /** מזהה ייחודי קצר לשימוש בזרימות/כפתורים/פריטים שנוצרים באפליקציה. */
 export function genId(prefix: string): string {
@@ -40,10 +56,14 @@ export function LabeledInput({
   keyboardType?: KeyboardTypeOptions;
   maxLength?: number;
 }): JSX.Element {
+  const inputKey = useId();
+  const botScroll = useContext(BotScrollContext);
+
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
       <TextInput
+        ref={(node) => botScroll?.registerInput(inputKey, node)}
         style={[styles.input, multiline && styles.inputMultiline]}
         value={value}
         onChangeText={onChangeText}
@@ -53,6 +73,7 @@ export function LabeledInput({
         keyboardType={keyboardType}
         maxLength={maxLength}
         textAlign="right"
+        onFocus={() => botScroll?.onInputFocus(inputKey)}
       />
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
@@ -159,26 +180,85 @@ export function CenterState({
 export function BotKeyboardScrollView({
   children,
   contentStyle,
+  style,
   ...props
 }: ScrollViewProps & {
   contentStyle?: StyleProp<ViewStyle>;
 }): JSX.Element {
   const keyboardHeight = useKeyboardHeight();
+  const { height: windowH } = useWindowDimensions();
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollOffsetRef = useRef(0);
+  const inputRefs = useRef<Map<string, TextInput>>(new Map());
+  const focusedInputKeyRef = useRef<string | null>(null);
+
+  const registerInput = useCallback((key: string, node: TextInput | null) => {
+    if (node) inputRefs.current.set(key, node);
+    else inputRefs.current.delete(key);
+  }, []);
+
+  /** גולל את הטופס כך שהאינפוט הממוקד יישב מעל המקלדת — כמו ב-add-remove. */
+  const ensureInputVisible = useCallback(
+    (key: string) => {
+      if (keyboardHeight <= 0) return;
+      const node = inputRefs.current.get(key);
+      if (!node) return;
+      node.measureInWindow((_x, y, _w, height) => {
+        const keyboardTop = windowH - keyboardHeight;
+        const margin = theme.spacing.lg;
+        const overflow = y + height - (keyboardTop - margin);
+        if (overflow > 0) {
+          scrollRef.current?.scrollTo({
+            y: Math.max(0, scrollOffsetRef.current + overflow),
+            animated: true,
+          });
+        }
+      });
+    },
+    [keyboardHeight, windowH],
+  );
+
+  const onInputFocus = useCallback(
+    (key: string) => {
+      focusedInputKeyRef.current = key;
+      ensureInputVisible(key);
+    },
+    [ensureInputVisible],
+  );
+
+  useEffect(() => {
+    if (keyboardHeight <= 0 || !focusedInputKeyRef.current) return undefined;
+    const key = focusedInputKeyRef.current;
+    const t = setTimeout(() => ensureInputVisible(key), 60);
+    return () => clearTimeout(t);
+  }, [keyboardHeight, ensureInputVisible]);
+
   return (
-    <ScrollView
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={[
-        contentStyle,
-        { paddingBottom: keyboardHeight + theme.spacing.xl },
-      ]}
-      {...props}
-    >
-      {children}
-    </ScrollView>
+    <BotScrollContext.Provider value={{ registerInput, onInputFocus }}>
+      <ScrollView
+        ref={scrollRef}
+        style={[styles.keyboardScroll, style]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets={false}
+        scrollEventThrottle={16}
+        onScroll={(e) => {
+          scrollOffsetRef.current = e.nativeEvent.contentOffset.y;
+        }}
+        contentContainerStyle={[
+          contentStyle,
+          { paddingBottom: keyboardHeight + theme.spacing.xl },
+        ]}
+        {...props}
+      >
+        {children}
+      </ScrollView>
+    </BotScrollContext.Provider>
   );
 }
 
 const styles = StyleSheet.create({
+  keyboardScroll: { flex: 1 },
   field: { gap: theme.spacing.xs, marginBottom: theme.spacing.md },
   label: {
     ...theme.typography.labelMd,
