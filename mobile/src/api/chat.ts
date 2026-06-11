@@ -113,3 +113,19 @@ export function useMarkChatRead() {
     },
   });
 }
+
+/** סיום מענה אנושי — הלקוח מקבל הודעת סיום והשיחה נסגרת. */
+export function useEndHandover(phone: string) {
+  const client = useQueryClient();
+  return useMutation<void, AxiosError, void>({
+    mutationFn: async () => {
+      await api.post(`/chat/${encodeURIComponent(phone)}/end-handover`);
+    },
+    onSuccess: async () => {
+      await Promise.all([
+        client.refetchQueries({ queryKey: chatMessagesKey(phone) }),
+        refetchChatLists(client),
+      ]);
+    },
+  });
+}

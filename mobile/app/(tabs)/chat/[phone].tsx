@@ -19,6 +19,7 @@ import { he } from "../../../src/i18n/he";
 import {
   chatSendErrorCode,
   useConversations,
+  useEndHandover,
   useMarkChatRead,
   useMessages,
   useSendMessage,
@@ -26,6 +27,7 @@ import {
 import { useChatStream } from "../../../src/hooks/useChatStream";
 import { useKeyboardFrame } from "../../../src/hooks/useKeyboardHeight";
 import { MessageBubble } from "../../../src/components/chat/MessageBubble";
+import { ConfirmDialog } from "../../../src/components/ConfirmDialog";
 import { wa, avatarColor, avatarInitial } from "../../../src/components/chat/waTheme";
 
 const SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -42,11 +44,14 @@ export default function ConversationScreen(): JSX.Element {
   useChatStream();
   const messagesQuery = useMessages(phone);
   const sendMutation = useSendMessage(phone);
+  const endHandoverMutation = useEndHandover(phone);
   const markRead = useMarkChatRead();
   const conversationsQuery = useConversations();
 
   const [draft, setDraft] = useState("");
   const [sendError, setSendError] = useState<string | null>(null);
+  const [endDialogVisible, setEndDialogVisible] = useState(false);
+  const [endError, setEndError] = useState<string | null>(null);
 
   const messages = useMemo(() => messagesQuery.data ?? [], [messagesQuery.data]);
 
@@ -138,6 +143,19 @@ export default function ConversationScreen(): JSX.Element {
 
   const canSend = draft.trim().length > 0 && !outsideWindow && !sendMutation.isPending;
 
+  const handleEndHandover = async (): Promise<void> => {
+    setEndError(null);
+    try {
+      await endHandoverMutation.mutateAsync();
+      setEndDialogVisible(false);
+    } catch (err) {
+      const code = chatSendErrorCode(err);
+      if (code === "not_in_handover") setEndError(he.chat.endHandoverError);
+      else setEndError(he.chat.sendErrorGeneric);
+      setEndDialogVisible(false);
+    }
+  };
+
   const handleSend = async (): Promise<void> => {
     const text = draft.trim();
     if (text.length === 0 || sendMutation.isPending) return;
@@ -180,7 +198,34 @@ export default function ConversationScreen(): JSX.Element {
               </View>
             </View>
           ),
+          headerRight: conversation?.bot_paused
+            ? () => (
+                <Pressable
+                  onPress={() => setEndDialogVisible(true)}
+                  disabled={endHandoverMutation.isPending}
+                  style={styles.headerEndBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel={he.chat.endHandover}
+                >
+                  {endHandoverMutation.isPending ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.headerEndText}>{he.chat.endHandover}</Text>
+                  )}
+                </Pressable>
+              )
+            : undefined,
         }}
+      />
+
+      <ConfirmDialog
+        visible={endDialogVisible}
+        title={he.chat.endHandoverTitle}
+        message={he.chat.endHandoverMessage}
+        confirmLabel={he.chat.endHandover}
+        destructive
+        onConfirm={() => void handleEndHandover()}
+        onCancel={() => setEndDialogVisible(false)}
       />
 
       {isLoading ? (
@@ -213,6 +258,11 @@ export default function ConversationScreen(): JSX.Element {
         <View style={styles.errorBanner}>
           <Ionicons name="alert-circle-outline" size={16} color="#7A1B1B" />
           <Text style={styles.errorText}>{sendError}</Text>
+        </View>
+      ) : endError ? (
+        <View style={styles.errorBanner}>
+          <Ionicons name="alert-circle-outline" size={16} color="#7A1B1B" />
+          <Text style={styles.errorText}>{endError}</Text>
         </View>
       ) : null}
 
@@ -290,6 +340,8 @@ const styles = StyleSheet.create({
   headerTexts: { justifyContent: "center" },
   headerName: { color: "#FFFFFF", fontSize: 16, fontWeight: "700", textAlign: "left" },
   headerStatus: { color: "#D8F3E9", fontSize: 11, textAlign: "left" },
+  headerEndBtn: { paddingHorizontal: 4, paddingVertical: 6 },
+  headerEndText: { color: "#FFFFFF", fontSize: 14, fontWeight: "600" },
   loadingBox: { flex: 1, alignItems: "center", justifyContent: "center", gap: 8 },
   loadingText: { color: wa.inkSecondary, fontSize: 14, textAlign: "left" },
   listContent: { paddingVertical: 10 },

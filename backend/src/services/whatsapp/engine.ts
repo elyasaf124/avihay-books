@@ -11,7 +11,7 @@ import { logger } from "../../utils/logger.js";
 import { fuzzySearchBooks, findBookById } from "../../repos/books.repo.js";
 import { getBookLocationPaths } from "../bookLocation.js";
 import { createWhatsappOrderGroup } from "../../repos/orders.repo.js";
-import { upsertNotification } from "../../repos/notifications.repo.js";
+import { isActiveHumanHandover, notifyWhatsappHumanHandover } from "./handoverPush.js";
 import {
   createSession,
   findSessionByPhone,
@@ -171,11 +171,17 @@ export async function handleIncomingMessage(args: {
     profile_name: profileName ?? session.profile_name,
   });
 
-  // מענה אנושי פעיל: הבוט שותק עד שעובר חלון ההשהיה.
+  const token = inbound.replyId?.trim() ?? "";
+
+  // מענה אנושי פעיל: הבוט שותק עד שעובר חלון ההשהיה (מלבד כפתור «סיימתי»).
   if (session.status === "human_handover") {
     const pausedUntil = session.bot_paused_until ? new Date(session.bot_paused_until).getTime() : 0;
     if (pausedUntil > Date.now()) {
-      logger.info({ from }, "[whatsapp] session in human_handover — bot paused");
+      if (token === BTN.handoverEnd) {
+        await endHumanHandover(from, session, "customer");
+      } else {
+        logger.info({ from }, "[whatsapp] session in human_handover — bot paused");
+      }
       return;
     }
     session = await updateSession(session.id, {
@@ -185,8 +191,6 @@ export async function handleIncomingMessage(args: {
       bot_paused_until: null,
     });
   }
-
-  const token = inbound.replyId?.trim() ?? "";
   const text = inbound.text?.trim() ?? "";
   const norm = normalize(text);
 
@@ -217,6 +221,7 @@ export async function handleIncomingMessage(args: {
 export async function handleStaffEcho(from: string): Promise<void> {
   let session = await findSessionByPhone(from);
   if (!session) session = await createSession(from, null);
+  const isNew = isNewHandoverEntry(session);
   const cfg = getWhatsappConfig();
   const until = new Date(Date.now() + cfg.handoverTimeoutMin * 60 * 1000);
   await updateSession(session.id, {
@@ -224,6 +229,7 @@ export async function handleStaffEcho(from: string): Promise<void> {
     current_node: NODES.HANDOVER,
     bot_paused_until: until,
   });
+  if (isNew) await sendHandoverEndButton(from);
   logger.info({ from }, "[whatsapp] staff echo — bot paused for human handover");
 }
 
@@ -733,12 +739,12 @@ async function finishOrder(from: string, session: WhatsappSession, text: string)
       notes,
       lines,
     });
-    await upsertNotification({
-      type: "whatsapp_human_handover",
+    await notifyWhatsappHumanHandover({
+      phone: from,
       message:
         `הזמנת וואטסאפ חדשה (${ctx.fulfillment_type === "delivery" ? "משלוח" : "איסוף"}) ` +
         `מ-${ctx.customer_name ?? from} · ${lines.length} פריטים`,
-      is_read: false,
+      pushBody: `הזמנת וואטסאפ חדשה מ-${ctx.customer_name ?? from}`,
     });
   }
 
@@ -908,10 +914,10 @@ async function handleSupportMenu(
         { id: BTN.toPayment, title: "💳 אפשרויות תשלום" },
         { id: BTN.finish, title: "✅ סיום" },
       ]);
-      await upsertNotification({
-        type: "whatsapp_human_handover",
+      await notifyWhatsappHumanHandover({
+        phone: from,
         message: `וואטסאפ: דווח על תקלה בעמדת התשלום (${from})`,
-        is_read: false,
+        pushBody: "תקלה בעמדת התשלום",
       });
       return setNode(session, NODES.B8_POS);
     case BTN.supportOther:
@@ -937,10 +943,10 @@ async function handleSupportBookReport(
     await sendText(from, T.supportAskBook);
     return;
   }
-  await upsertNotification({
-    type: "whatsapp_human_handover",
+  await notifyWhatsappHumanHandover({
+    phone: from,
     message: `וואטסאפ: דווח שספר לא נמצא בתא — "${text}" (${from})`,
-    is_read: false,
+    pushBody: `ספר לא בתא: ${text.slice(0, 80)}`,
   });
   await sendText(from, T.supportReportSaved);
   return goEndLoop(from, session);
@@ -985,10 +991,10 @@ async function handleSupportQuestion(
     await sendText(from, T.supportOffHours(humanHours().start, humanHours().end));
     return;
   }
-  await upsertNotification({
-    type: "whatsapp_human_handover",
+  await notifyWhatsappHumanHandover({
+    phone: from,
     message: `וואטסאפ: שאלה מחוץ לשעות מ-${from}: "${text}"`,
-    is_read: false,
+    pushBody: text.slice(0, 120) || "שאלה מחוץ לשעות",
   });
   await sendText(from, T.supportQuestionSaved);
   return goEndLoop(from, session);
@@ -999,11 +1005,13 @@ async function handleSupportQuestion(
 // ---------------------------------------------------------------------------
 
 async function handover(from: string, session: WhatsappSession, reason: string): Promise<void> {
+  const isNew = isNewHandoverEntry(session);
   const cfg = getWhatsappConfig();
-  await upsertNotification({
-    type: "whatsapp_human_handover",
+  await notifyWhatsappHumanHandover({
+    phone: from,
+    profileName: session.profile_name,
     message: `וואטסאפ: דרוש מענה אנושי ל-${from} (${reason})`,
-    is_read: false,
+    pushBody: `דרוש מענה אנושי (${reason})`,
   });
   const until = new Date(Date.now() + cfg.handoverTimeoutMin * 60 * 1000);
   await updateSession(session.id, {
@@ -1011,6 +1019,41 @@ async function handover(from: string, session: WhatsappSession, reason: string):
     current_node: NODES.HANDOVER,
     bot_paused_until: until,
   });
+  if (isNew) await sendHandoverEndButton(from);
+}
+
+/** האם זו כניסה ראשונה למענה אנושי (לא הארכה של handover קיים). */
+function isNewHandoverEntry(session: WhatsappSession): boolean {
+  if (session.status !== "human_handover") return true;
+  const pausedUntil = session.bot_paused_until ? new Date(session.bot_paused_until).getTime() : 0;
+  return pausedUntil <= Date.now();
+}
+
+async function sendHandoverEndButton(from: string): Promise<void> {
+  const botConfig = await getBotConfig();
+  setActiveTextOverrides(botConfig.text_overrides);
+  await sendReplyButtons(from, T.handoverEndHint, [
+    { id: BTN.handoverEnd, title: T.handoverEndButton },
+  ]);
+}
+
+/** סיום מפורש של מענה אנושי — מעובד (אפליקציה) או לקוח (כפתור וואטסאפ). */
+export async function endHumanHandover(
+  from: string,
+  session: WhatsappSession,
+  source: "staff" | "customer",
+): Promise<boolean> {
+  if (!isActiveHumanHandover(session)) return false;
+  const content = currentBotContent();
+  await sendText(from, T.closing(content.storeName));
+  await updateSession(session.id, {
+    status: "closed",
+    current_node: NODES.CLOSED,
+    bot_paused_until: null,
+    context: {},
+  });
+  logger.info({ from, source }, "[whatsapp] human handover ended");
+  return true;
 }
 
 // ---------------------------------------------------------------------------

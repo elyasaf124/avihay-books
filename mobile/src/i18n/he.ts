@@ -45,6 +45,11 @@ export const he = {
     sendErrorWindow: "מחוץ לחלון 24 השעות — הלקוח צריך לכתוב קודם.",
     sendErrorNotConfigured: "וואטסאפ לא מוגדר בשרת — בדוק את החיבור.",
     sendErrorGeneric: "השליחה נכשלה. נסה שוב.",
+    endHandover: "סיים שיחה",
+    endHandoverTitle: "לסיים את השיחה?",
+    endHandoverMessage:
+      "הלקוח יקבל הודעת סיום. בהודעה הבאה שלו יוצג התפריט.",
+    endHandoverError: "לא ניתן לסיים — השיחה לא במצב מענה אנושי",
     pushChannelName: "צ'אט וואטסאפ",
   },
 

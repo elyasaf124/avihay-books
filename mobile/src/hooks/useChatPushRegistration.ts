@@ -5,6 +5,7 @@ import { useRouter } from "expo-router";
 import { AxiosError } from "axios";
 import { api } from "../api/client";
 import { he } from "../i18n/he";
+import { ensureNotificationPermission } from "../utils/notificationPermissions";
 
 const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
@@ -35,7 +36,7 @@ export function useChatPushRegistration(): void {
       const Notifications = await import("expo-notifications");
       if (cancelled) return;
 
-      const granted = await ensurePermission(Notifications);
+      const granted = await ensureNotificationPermission(Notifications);
       if (!granted) {
         logPushRegister("notification permission not granted — enable in device settings");
         return;
@@ -108,27 +109,4 @@ export function useChatPushRegistration(): void {
       appStateSub.remove();
     };
   }, [router]);
-}
-
-async function ensurePermission(
-  Notifications: typeof import("expo-notifications"),
-): Promise<boolean> {
-  try {
-    const settings = await Notifications.getPermissionsAsync();
-    if (
-      settings.granted ||
-      settings.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
-    ) {
-      return true;
-    }
-    const ask = await Notifications.requestPermissionsAsync({
-      ios: { allowAlert: true, allowBadge: true, allowSound: true },
-    });
-    return ask.granted || ask.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
-  } catch (err) {
-    logPushRegister("permission request failed", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return false;
-  }
 }

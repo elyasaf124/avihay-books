@@ -4,7 +4,7 @@
  */
 import type { Book, WhatsappSession } from "@avihay-books/shared";
 import { pool } from "../../db/pool.js";
-import { handleIncomingMessage, handleStaffEcho } from "./engine.js";
+import { handleIncomingMessage, handleStaffEcho, endHumanHandover } from "./engine.js";
 import {
   clearOutboundRecords,
   getOutboundRecords,
@@ -149,6 +149,12 @@ export async function selectMenu(phone: string, menuId: string): Promise<Outboun
 
 export async function staffEcho(phone: string): Promise<void> {
   await handleStaffEcho(phone);
+}
+
+export async function endHandoverFromStaff(phone: string): Promise<boolean> {
+  const session = await getSession(phone);
+  if (!session) return false;
+  return endHumanHandover(phone, session, "staff");
 }
 
 export function assertSomeBodyContains(records: OutboundRecord[], substr: string): void {

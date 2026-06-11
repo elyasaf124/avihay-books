@@ -67,6 +67,7 @@ export const BTN = {
   toHuman: "support:human",
   b1ImageRetry: "b1:image_retry",
   statusToHuman: "status:human",
+  handoverEnd: "handover:end",
 } as const;
 
 export const STATUS_PICK_PREFIX = "status:order:";
@@ -192,6 +193,12 @@ export const T = {
       .replaceAll("{end}", String(end)),
   get supportQuestionSaved(): string {
     return ov("supportQuestionSaved", "שאלתך נשמרה ונציג יחזור אליך עם תחילת שעות הפעילות. תודה!");
+  },
+  get handoverEndHint(): string {
+    return ov("handoverEndHint", "נציג יענה בקרוב. לסיום השיחה, לחץ על הכפתור:");
+  },
+  get handoverEndButton(): string {
+    return ov("handoverEndButton", "✅ סיימתי");
   },
 
   get endLoopPrompt(): string {

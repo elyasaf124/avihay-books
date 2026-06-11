@@ -84,6 +84,8 @@ const LABELS: Record<BotTextKey, string> = {
   supportHumanInHours: "מעבר לנציג",
   supportOffHours: "מחוץ לשעות מענה",
   supportQuestionSaved: "אישור שמירת שאלה",
+  handoverEndHint: "הנחיית כפתור סיום (מענה אנושי)",
+  handoverEndButton: "טקסט כפתור «סיימתי»",
   catalogCaption: "כיתוב קטלוג",
   catalogMissing: "קטלוג לא זמין",
   b3NoOrders: "אין הזמנות פעילות",
@@ -104,7 +106,17 @@ const GROUPS: { title: string; keys: BotTextKey[] }[] = [
   { title: "סטטוס וקטלוג", keys: ["b3NoOrders", "b3MultipleOrders", "catalogCaption", "catalogMissing", "quoteHandover"] },
   {
     title: "תמיכה ומענה אנושי",
-    keys: ["supportPrompt", "supportAskBook", "supportReportSaved", "supportPosText", "supportHumanInHours", "supportOffHours", "supportQuestionSaved"],
+    keys: [
+      "supportPrompt",
+      "supportAskBook",
+      "supportReportSaved",
+      "supportPosText",
+      "supportHumanInHours",
+      "supportOffHours",
+      "supportQuestionSaved",
+      "handoverEndHint",
+      "handoverEndButton",
+    ],
   },
 ];
 

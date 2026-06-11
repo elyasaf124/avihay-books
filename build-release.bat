@@ -46,6 +46,7 @@ if exist "android\app\build\outputs\apk\release\app-release.apk" (
     echo.
     echo ========================================
     echo APK ready: %MOBILE_DIR%android\app\build\outputs\apk\release\app-release.apk
+    echo Install on phone: scripts\install-release-apk.bat
     echo ========================================
 ) else (
     echo Build may have failed - check output above

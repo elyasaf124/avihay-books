@@ -12,9 +12,13 @@ import { logger } from "../../utils/logger.js";
 import { getWhatsappConfig } from "../../services/whatsapp/config.js";
 import { handleIncomingMessage, handleStaffEcho } from "../../services/whatsapp/engine.js";
 import { logWhatsappMessage } from "../../repos/whatsappMessages.repo.js";
-import { upsertNotification } from "../../repos/notifications.repo.js";
+import { findSessionByPhone } from "../../repos/whatsappSessions.repo.js";
 import { broadcast } from "../../services/chatBus.js";
-import { sendChatPush } from "../../services/push.js";
+import {
+  isActiveHumanHandover,
+  notifyWhatsappHumanHandover,
+  sendOngoingHandoverPush,
+} from "../../services/whatsapp/handoverPush.js";
 
 export const whatsappWebhookRouter = Router();
 
@@ -106,10 +110,9 @@ async function handleAccountUpdate(value: WaValue, wabaId?: string): Promise<voi
   if (event === "PARTNER_REMOVED" || event === "ACCOUNT_OFFBOARDED") {
     const reason = value.disconnection_info?.reason ?? event;
     const initiatedBy = value.disconnection_info?.initiated_by ?? "unknown";
-    await upsertNotification({
-      type: "whatsapp_human_handover",
+    await notifyWhatsappHumanHandover({
       message: `ניתוק Coexistence מ-WhatsApp (${reason}, ${initiatedBy}). יש לחבר מחדש דרך /api/v1/whatsapp-onboard`,
-      is_read: false,
+      pushBody: `ניתוק WhatsApp (${reason})`,
     });
   } else if (event === "ACCOUNT_RECONNECTED") {
     logger.info({ wabaId }, "[whatsapp] coexistence account reconnected");
@@ -179,18 +182,24 @@ async function processBody(body: WaBody): Promise<void> {
           body: inbound.text ?? inbound.replyId ?? null,
           payload: msg,
         });
+        const sessionBefore = await findSessionByPhone(msg.from);
+        const wasInHandover = isActiveHumanHandover(sessionBefore);
+
         await handleIncomingMessage({ from: msg.from, profileName, inbound });
 
-        // עדכון real-time לתיבת הצ'אט + התראת Push למכשירי העובדים.
+        // עדכון real-time לתיבת הצ'אט; Push רק על הודעות נוספות בזמן מענה אנושי פעיל.
         broadcast({ type: "message", phone: msg.from });
-        const preview = (inbound.text ?? inbound.replyId ?? "📎").slice(0, 120);
-        await sendChatPush({
-          title: profileName ?? msg.from,
-          body: preview,
-          phone: msg.from,
-        }).catch((err: unknown) => {
-          logger.warn({ err }, "[whatsapp] chat push failed");
-        });
+        const sessionAfter = await findSessionByPhone(msg.from);
+        if (wasInHandover && isActiveHumanHandover(sessionAfter)) {
+          const preview = (inbound.text ?? inbound.replyId ?? "📎").slice(0, 120);
+          await sendOngoingHandoverPush({
+            phone: msg.from,
+            profileName,
+            preview,
+          }).catch((err: unknown) => {
+            logger.warn({ err }, "[whatsapp] handover push failed");
+          });
+        }
       }
     }
   }

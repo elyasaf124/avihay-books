@@ -22,6 +22,7 @@ import {
   countWhatsappOrders,
   dbAvailable,
   expireHandover,
+  endHandoverFromStaff,
   getInStockBook,
   getOutOfStockBook,
   getSession,
@@ -697,6 +698,75 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
 
       const paused = await sendInbound(phone, { text: "hello" });
       assert.equal(paused.length, 0);
+      await cleanupTestPhone(phone);
+    });
+
+    test("D5: handover sends end button; staff can end", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+      const out = await selectMenu(phone, MENU_IDS.quote);
+      assertSomeBodyContains(out, T.handoverEndHint);
+
+      const ended = await endHandoverFromStaff(phone);
+      assert.equal(ended, true);
+
+      const session = await getSession(phone);
+      assert.equal(session?.status, "closed");
+      assert.equal(session?.bot_paused_until, null);
+      await cleanupTestPhone(phone);
+    });
+
+    test("D6: customer end button closes handover", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+      await selectMenu(phone, MENU_IDS.quote);
+
+      const out = await sendInbound(phone, { replyId: BTN.handoverEnd });
+      assertSomeBodyContains(out, "שמחתי מאוד לעזור");
+
+      const session = await getSession(phone);
+      assert.equal(session?.status, "closed");
+      await cleanupTestPhone(phone);
+    });
+
+    test("D7: after handover end next message shows main menu", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+      await selectMenu(phone, MENU_IDS.quote);
+      await sendInbound(phone, { replyId: BTN.handoverEnd });
+
+      const out = await sendInbound(phone, { text: "שלום" });
+      assertSomeBodyContains(out, "ברוך הבא");
+
+      const session = await getSession(phone);
+      assert.equal(session?.status, "active");
+      await cleanupTestPhone(phone);
+    });
+
+    test("D8: staff end when not in handover returns false", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+
+      const ended = await endHandoverFromStaff(phone);
+      assert.equal(ended, false);
+      await cleanupTestPhone(phone);
+    });
+
+    test("D9: text «סיום» during handover does not end session", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+      await selectMenu(phone, MENU_IDS.quote);
+
+      const out = await sendInbound(phone, { text: "סיום" });
+      assert.equal(out.length, 0);
+
+      const session = await getSession(phone);
+      assert.equal(session?.status, "human_handover");
       await cleanupTestPhone(phone);
     });
   });

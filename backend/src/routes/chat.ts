@@ -12,8 +12,9 @@ import {
 } from "../repos/whatsappMessages.repo.js";
 import { findSessionByPhone } from "../repos/whatsappSessions.repo.js";
 import { sendText } from "../services/whatsapp/client.js";
-import { handleStaffEcho } from "../services/whatsapp/engine.js";
+import { endHumanHandover, handleStaffEcho } from "../services/whatsapp/engine.js";
 import { isWhatsappConfigured } from "../services/whatsapp/config.js";
+import { isActiveHumanHandover } from "../services/whatsapp/handoverPush.js";
 import { broadcast, subscribe } from "../services/chatBus.js";
 import type { ChatMessageView } from "@avihay-books/shared";
 
@@ -110,5 +111,25 @@ chatRouter.post(
       created_at: new Date().toISOString(),
     };
     res.status(201).json({ ok: true, message });
+  }),
+);
+
+chatRouter.post(
+  "/:phone/end-handover",
+  asyncHandler(async (req, res) => {
+    const phone = req.params.phone!;
+    if (!isWhatsappConfigured()) {
+      throw new HttpError(503, "whatsapp_not_configured");
+    }
+
+    const session = await findSessionByPhone(phone);
+    if (!session || !isActiveHumanHandover(session)) {
+      throw new HttpError(409, "not_in_handover");
+    }
+
+    await endHumanHandover(phone, session, "staff");
+    broadcast({ type: "conversation_update", phone });
+    broadcast({ type: "message", phone });
+    res.status(204).end();
   }),
 );
