@@ -197,6 +197,9 @@ export const T = {
   get handoverEndHint(): string {
     return ov("handoverEndHint", "נציג יענה בקרוב. לסיום השיחה, לחץ על הכפתור:");
   },
+  get handoverEndHintRepeat(): string {
+    return ov("handoverEndHintRepeat", "לסיום השיחה:");
+  },
   get handoverEndButton(): string {
     return ov("handoverEndButton", "✅ סיימתי");
   },

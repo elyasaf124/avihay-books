@@ -15,6 +15,7 @@ import {
 import {
   assertLastMsgType,
   assertSomeBodyContains,
+  backdateHandoverButton,
   botConfigTableAvailable,
   cleanupTestPhone,
   countMessages,
@@ -37,7 +38,7 @@ import {
   uniqueCustomerPhone,
   uniqueTestPhone,
 } from "./testHarness.js";
-import { getOutboundRecords } from "./outboundCapture.js";
+import { getOutboundRecords, clearOutboundRecords } from "./outboundCapture.js";
 
 const skip = !(await dbAvailable());
 
@@ -687,7 +688,7 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       await cleanupTestPhone(phone);
     });
 
-    test("D4: staff echo pauses bot", async () => {
+    test("D4: staff echo pauses bot; customer refreshes end button after debounce", async () => {
       const phone = uniqueTestPhone();
       await resetPhone(phone);
       await goToMainMenu(phone);
@@ -696,8 +697,12 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       const session = await getSession(phone);
       assert.equal(session?.status, "human_handover");
 
-      const paused = await sendInbound(phone, { text: "hello" });
-      assert.equal(paused.length, 0);
+      let out = await sendInbound(phone, { text: "hello" });
+      assert.equal(out.length, 0);
+
+      await backdateHandoverButton(phone);
+      out = await sendInbound(phone, { text: "hello again" });
+      assertSomeBodyContains(out, T.handoverEndHintRepeat);
       await cleanupTestPhone(phone);
     });
 
@@ -767,6 +772,47 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
 
       const session = await getSession(phone);
       assert.equal(session?.status, "human_handover");
+      await cleanupTestPhone(phone);
+    });
+
+    test("D10: second staff echo sends repeat end button hint", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+      await selectMenu(phone, MENU_IDS.quote);
+      clearOutboundRecords();
+      await staffEcho(phone);
+      const out = getOutboundRecords();
+      assertSomeBodyContains(out, T.handoverEndHintRepeat);
+      await cleanupTestPhone(phone);
+    });
+
+    test("D11: two customer messages within debounce send one refresh button", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+      await selectMenu(phone, MENU_IDS.quote);
+      await backdateHandoverButton(phone);
+      clearOutboundRecords();
+      const out1 = await sendInbound(phone, { text: "a" });
+      assertSomeBodyContains(out1, T.handoverEndHintRepeat);
+      const out2 = await sendInbound(phone, { text: "b" });
+      assert.equal(out2.length, 0);
+      await cleanupTestPhone(phone);
+    });
+
+    test("D12: customer messages after debounce window send button twice", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+      await selectMenu(phone, MENU_IDS.quote);
+      await backdateHandoverButton(phone);
+      clearOutboundRecords();
+      let out = await sendInbound(phone, { text: "first" });
+      assertSomeBodyContains(out, T.handoverEndHintRepeat);
+      await backdateHandoverButton(phone);
+      out = await sendInbound(phone, { text: "second" });
+      assertSomeBodyContains(out, T.handoverEndHintRepeat);
       await cleanupTestPhone(phone);
     });
   });

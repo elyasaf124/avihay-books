@@ -180,7 +180,7 @@ export async function handleIncomingMessage(args: {
       if (token === BTN.handoverEnd) {
         await endHumanHandover(from, session, "customer");
       } else {
-        logger.info({ from }, "[whatsapp] session in human_handover — bot paused");
+        await refreshHandoverEndButton(from, session, { force: false });
       }
       return;
     }
@@ -221,15 +221,14 @@ export async function handleIncomingMessage(args: {
 export async function handleStaffEcho(from: string): Promise<void> {
   let session = await findSessionByPhone(from);
   if (!session) session = await createSession(from, null);
-  const isNew = isNewHandoverEntry(session);
   const cfg = getWhatsappConfig();
   const until = new Date(Date.now() + cfg.handoverTimeoutMin * 60 * 1000);
-  await updateSession(session.id, {
+  session = await updateSession(session.id, {
     status: "human_handover",
     current_node: NODES.HANDOVER,
     bot_paused_until: until,
   });
-  if (isNew) await sendHandoverEndButton(from);
+  await refreshHandoverEndButton(from, session, { force: true });
   logger.info({ from }, "[whatsapp] staff echo — bot paused for human handover");
 }
 
@@ -1005,7 +1004,6 @@ async function handleSupportQuestion(
 // ---------------------------------------------------------------------------
 
 async function handover(from: string, session: WhatsappSession, reason: string): Promise<void> {
-  const isNew = isNewHandoverEntry(session);
   const cfg = getWhatsappConfig();
   await notifyWhatsappHumanHandover({
     phone: from,
@@ -1014,27 +1012,40 @@ async function handover(from: string, session: WhatsappSession, reason: string):
     pushBody: `דרוש מענה אנושי (${reason})`,
   });
   const until = new Date(Date.now() + cfg.handoverTimeoutMin * 60 * 1000);
-  await updateSession(session.id, {
+  session = await updateSession(session.id, {
     status: "human_handover",
     current_node: NODES.HANDOVER,
     bot_paused_until: until,
   });
-  if (isNew) await sendHandoverEndButton(from);
+  await refreshHandoverEndButton(from, session, { force: true });
 }
 
-/** האם זו כניסה ראשונה למענה אנושי (לא הארכה של handover קיים). */
-function isNewHandoverEntry(session: WhatsappSession): boolean {
-  if (session.status !== "human_handover") return true;
-  const pausedUntil = session.bot_paused_until ? new Date(session.bot_paused_until).getTime() : 0;
-  return pausedUntil <= Date.now();
-}
+const HANDOVER_BUTTON_DEBOUNCE_MS = 60_000;
 
-async function sendHandoverEndButton(from: string): Promise<void> {
+async function sendHandoverEndButton(from: string, opts: { repeat?: boolean } = {}): Promise<void> {
   const botConfig = await getBotConfig();
   setActiveTextOverrides(botConfig.text_overrides);
-  await sendReplyButtons(from, T.handoverEndHint, [
-    { id: BTN.handoverEnd, title: T.handoverEndButton },
-  ]);
+  const hint = opts.repeat ? T.handoverEndHintRepeat : T.handoverEndHint;
+  await sendReplyButtons(from, hint, [{ id: BTN.handoverEnd, title: T.handoverEndButton }]);
+}
+
+/** מצמיד/מרענן כפתור «סיימתi» — בתחתית השיחה במהלך handover. */
+export async function refreshHandoverEndButton(
+  from: string,
+  session: WhatsappSession,
+  opts: { force?: boolean } = {},
+): Promise<void> {
+  const ctx = ctxOf(session);
+  const lastAtRaw = ctx.last_handover_button_at;
+  const lastAt = typeof lastAtRaw === "string" ? new Date(lastAtRaw).getTime() : 0;
+  if (!opts.force && lastAt > 0 && Date.now() - lastAt < HANDOVER_BUTTON_DEBOUNCE_MS) {
+    return;
+  }
+
+  await sendHandoverEndButton(from, { repeat: lastAt > 0 });
+  await updateSession(session.id, {
+    context: { ...ctx, last_handover_button_at: new Date().toISOString() },
+  });
 }
 
 /** סיום מפורש של מענה אנושי — מעובד (אפליקציה) או לקוח (כפתור וואטסאפ). */

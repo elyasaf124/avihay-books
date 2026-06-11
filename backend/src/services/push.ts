@@ -30,35 +30,48 @@ export async function sendChatPush(args: {
   phone: string;
 }): Promise<void> {
   const tokens = await listPushTokens();
-  if (tokens.length === 0) return;
-
-  const messages: PushMessage[] = tokens.map((to) => ({
-    to,
-    title: args.title,
-    body: args.body,
-    data: { kind: "chat", phone: args.phone },
-    sound: "default",
-    priority: "high",
-  }));
-
-  try {
-    const res = await fetch(EXPO_PUSH_URL, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(messages),
-    });
-    const json = (await res.json().catch(() => ({}))) as { data?: ExpoTicket[] };
-    if (!res.ok) {
-      logger.warn({ status: res.status, json }, "[push] expo push send failed");
-      return;
-    }
-    await pruneInvalidTokens(tokens, json.data ?? []);
-  } catch (err) {
-    logger.warn({ err }, "[push] expo push send error");
+  if (tokens.length === 0) {
+    logger.info("[push] no registered tokens — skipping");
+    return;
   }
+
+  // Expo דוחה batch עם טוקנים מפרויקטים שונים (PUSH_TOO_MANY_EXPERIENCE_IDS) — שולחים לכל טוקן בנפרד.
+  await Promise.all(
+    tokens.map(async (to) => {
+      const message: PushMessage = {
+        to,
+        title: args.title,
+        body: args.body,
+        data: { kind: "chat", phone: args.phone },
+        sound: "default",
+        priority: "high",
+      };
+      try {
+        const res = await fetch(EXPO_PUSH_URL, {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify([message]),
+        });
+        const json = (await res.json().catch(() => ({}))) as { data?: ExpoTicket[] };
+        if (!res.ok) {
+          logger.warn({ status: res.status, json, to: to.slice(0, 30) }, "[push] expo push send failed");
+          return;
+        }
+        await pruneInvalidTokens([to], json.data ?? []);
+        const ticket = json.data?.[0];
+        if (ticket?.status === "ok") {
+          logger.info({ to: to.slice(0, 30) }, "[push] sent ok");
+        } else if (ticket?.status === "error") {
+          logger.warn({ to: to.slice(0, 30), ticket }, "[push] ticket error");
+        }
+      } catch (err) {
+        logger.warn({ err, to: to.slice(0, 30) }, "[push] expo push send error");
+      }
+    }),
+  );
 }
 
 /** מסיר טוקנים שהוחזרו כ-DeviceNotRegistered כדי לא לשלוח אליהם שוב. */

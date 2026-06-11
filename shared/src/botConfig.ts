@@ -135,6 +135,7 @@ export const BOT_TEXT_KEYS = [
   "supportOffHours",
   "supportQuestionSaved",
   "handoverEndHint",
+  "handoverEndHintRepeat",
   "handoverEndButton",
   "endLoopPrompt",
   "catalogCaption",

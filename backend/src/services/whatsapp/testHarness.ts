@@ -127,6 +127,17 @@ export async function expireHandover(phone: string): Promise<void> {
   );
 }
 
+/** מזיז את חותמת כפתור הסיום אחורה — לבדיקות debounce. */
+export async function backdateHandoverButton(phone: string, minutesAgo = 2): Promise<void> {
+  const stale = new Date(Date.now() - minutesAgo * 60_000).toISOString();
+  await pool.query(
+    `UPDATE whatsapp_sessions
+     SET context = COALESCE(context, '{}'::jsonb) || $2::jsonb
+     WHERE phone_number = $1`,
+    [phone, JSON.stringify({ last_handover_button_at: stale })],
+  );
+}
+
 export function setHumanHoursIncludingNow(): void {
   // Wide window: withinHumanHours uses h >= start && h < end
   process.env.WHATSAPP_HUMAN_HOURS = "0-24";
