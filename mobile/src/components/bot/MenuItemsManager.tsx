@@ -1,17 +1,15 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
   Alert,
-  KeyboardAvoidingView,
   Modal,
-  Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -49,6 +47,10 @@ export function MenuItemsManager(): JSX.Element {
   const configQuery = useBotConfig();
   const saveMutation = useSaveBotConfig();
   const keyboardHeight = useKeyboardHeight();
+  const { height: windowH } = useWindowDimensions();
+  const inputRefs = useRef<Map<string, TextInput>>(new Map());
+  const focusedInputKeyRef = useRef<string | null>(null);
+  const [modalShift, setModalShift] = useState(0);
   const [draft, setDraft] = useState<BotConfigData | null>(null);
   const [editTarget, setEditTarget] = useState<MenuItemConfig | null>(null);
   const [editTitle, setEditTitle] = useState("");
@@ -66,6 +68,48 @@ export function MenuItemsManager(): JSX.Element {
 
   const items = draft?.menu_items ?? [];
   const enabledCount = items.filter((it) => it.enabled).length;
+
+  const ensureInputVisible = useCallback(
+    (key: string) => {
+      if (keyboardHeight <= 0) return;
+      const node = inputRefs.current.get(key);
+      if (!node) return;
+      node.measureInWindow((_x, y, _w, height) => {
+        const keyboardTop = windowH - keyboardHeight;
+        const margin = theme.spacing.lg;
+        const overflow = y + height - (keyboardTop - margin);
+        const baseShift = theme.spacing.xl;
+        setModalShift(overflow > 0 ? overflow : baseShift);
+      });
+    },
+    [keyboardHeight, windowH],
+  );
+
+  const onModalInputFocus = useCallback(
+    (key: string) => {
+      focusedInputKeyRef.current = key;
+      ensureInputVisible(key);
+    },
+    [ensureInputVisible],
+  );
+
+  useEffect(() => {
+    if (keyboardHeight <= 0 || !focusedInputKeyRef.current) return undefined;
+    const key = focusedInputKeyRef.current;
+    const t = setTimeout(() => ensureInputVisible(key), 60);
+    return () => clearTimeout(t);
+  }, [keyboardHeight, ensureInputVisible]);
+
+  useEffect(() => {
+    if (!creating && editTarget == null) {
+      focusedInputKeyRef.current = null;
+      setModalShift(0);
+    }
+  }, [creating, editTarget]);
+
+  useEffect(() => {
+    if (keyboardHeight <= 0) setModalShift(0);
+  }, [keyboardHeight]);
 
   const { syncSaved } = useBotAutoSave(draft, draft != null);
 
@@ -256,72 +300,92 @@ export function MenuItemsManager(): JSX.Element {
       </CenterState>
 
       <Modal visible={creating} transparent animationType="fade" onRequestClose={() => setCreating(false)}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.modalRoot}
-        >
+        <View style={styles.modalRoot}>
           <Pressable style={styles.backdrop} onPress={() => setCreating(false)}>
-            <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-              <ScrollView
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ paddingBottom: keyboardHeight }}
-              >
-                <Text style={styles.modalTitle}>{he.bot.createFlowTitle}</Text>
-                <Text style={styles.modalLabel}>{he.bot.fieldItemTitle}</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  value={createTitle}
-                  onChangeText={setCreateTitle}
-                  maxLength={24}
-                  textAlign="left"
-                  autoFocus
-                />
-                <View style={styles.modalActions}>
-                  <Pressable style={[styles.modalBtn, styles.modalCancel]} onPress={() => setCreating(false)}>
-                    <Text style={styles.modalCancelText}>{he.generic.cancel}</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.modalBtn, styles.modalConfirm]}
-                    onPress={() => void confirmCreate()}
-                    disabled={saveMutation.isPending}
-                  >
-                    <Text style={styles.modalConfirmText}>{he.generic.save}</Text>
-                  </Pressable>
-                </View>
-              </ScrollView>
+            <Pressable
+              style={[styles.modalCard, modalShift > 0 && { transform: [{ translateY: -modalShift }] }]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <Text style={styles.modalTitle}>{he.bot.createFlowTitle}</Text>
+              <Text style={styles.modalLabel}>{he.bot.fieldItemTitle}</Text>
+              <TextInput
+                ref={(node) => {
+                  const key = "create:title";
+                  if (node) inputRefs.current.set(key, node);
+                  else inputRefs.current.delete(key);
+                }}
+                style={styles.modalInput}
+                value={createTitle}
+                onChangeText={setCreateTitle}
+                maxLength={24}
+                textAlign="right"
+                autoFocus
+                onFocus={() => onModalInputFocus("create:title")}
+              />
+              <View style={styles.modalActions}>
+                <Pressable style={[styles.modalBtn, styles.modalCancel]} onPress={() => setCreating(false)}>
+                  <Text style={styles.modalCancelText}>{he.generic.cancel}</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.modalBtn, styles.modalConfirm]}
+                  onPress={() => void confirmCreate()}
+                  disabled={saveMutation.isPending}
+                >
+                  <Text style={styles.modalConfirmText}>{he.generic.save}</Text>
+                </Pressable>
+              </View>
             </Pressable>
           </Pressable>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       <Modal visible={editTarget != null} transparent animationType="fade" onRequestClose={() => setEditTarget(null)}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          style={styles.modalRoot}
-        >
+        <View style={styles.modalRoot}>
           <Pressable style={styles.backdrop} onPress={() => setEditTarget(null)}>
-            <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
-              <ScrollView
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ paddingBottom: keyboardHeight }}
-              >
-                <Text style={styles.modalTitle}>{he.bot.editItem}</Text>
-                <Text style={styles.modalLabel}>{he.bot.fieldItemTitle}</Text>
-                <TextInput style={styles.modalInput} value={editTitle} onChangeText={setEditTitle} maxLength={24} textAlign="left" />
-                <Text style={styles.modalLabel}>{he.bot.fieldItemDescription}</Text>
-                <TextInput style={styles.modalInput} value={editDesc} onChangeText={setEditDesc} maxLength={72} textAlign="left" />
-                <View style={styles.modalActions}>
-                  <Pressable style={[styles.modalBtn, styles.modalCancel]} onPress={() => setEditTarget(null)}>
-                    <Text style={styles.modalCancelText}>{he.generic.cancel}</Text>
-                  </Pressable>
-                  <Pressable style={[styles.modalBtn, styles.modalConfirm]} onPress={applyEdit}>
-                    <Text style={styles.modalConfirmText}>{he.generic.save}</Text>
-                  </Pressable>
-                </View>
-              </ScrollView>
+            <Pressable
+              style={[styles.modalCard, modalShift > 0 && { transform: [{ translateY: -modalShift }] }]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <Text style={styles.modalTitle}>{he.bot.editItem}</Text>
+              <Text style={styles.modalLabel}>{he.bot.fieldItemTitle}</Text>
+              <TextInput
+                ref={(node) => {
+                  const key = "edit:title";
+                  if (node) inputRefs.current.set(key, node);
+                  else inputRefs.current.delete(key);
+                }}
+                style={styles.modalInput}
+                value={editTitle}
+                onChangeText={setEditTitle}
+                maxLength={24}
+                textAlign="right"
+                onFocus={() => onModalInputFocus("edit:title")}
+              />
+              <Text style={styles.modalLabel}>{he.bot.fieldItemDescription}</Text>
+              <TextInput
+                ref={(node) => {
+                  const key = "edit:desc";
+                  if (node) inputRefs.current.set(key, node);
+                  else inputRefs.current.delete(key);
+                }}
+                style={styles.modalInput}
+                value={editDesc}
+                onChangeText={setEditDesc}
+                maxLength={72}
+                textAlign="right"
+                onFocus={() => onModalInputFocus("edit:desc")}
+              />
+              <View style={styles.modalActions}>
+                <Pressable style={[styles.modalBtn, styles.modalCancel]} onPress={() => setEditTarget(null)}>
+                  <Text style={styles.modalCancelText}>{he.generic.cancel}</Text>
+                </Pressable>
+                <Pressable style={[styles.modalBtn, styles.modalConfirm]} onPress={applyEdit}>
+                  <Text style={styles.modalConfirmText}>{he.generic.save}</Text>
+                </Pressable>
+              </View>
             </Pressable>
           </Pressable>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       <ConfirmDialog
@@ -401,6 +465,8 @@ const styles = StyleSheet.create({
   modalCard: {
     width: "100%",
     maxWidth: 420,
+    alignSelf: "center",
+    flexShrink: 1,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.xl,
     padding: theme.spacing.lg,

@@ -30,7 +30,7 @@ type BotScrollContextValue = {
   onInputFocus: (key: string) => void;
 };
 
-const BotScrollContext = createContext<BotScrollContextValue | null>(null);
+export const BotScrollContext = createContext<BotScrollContextValue | null>(null);
 
 /** מזהה ייחודי קצר לשימוש בזרימות/כפתורים/פריטים שנוצרים באפליקציה. */
 export function genId(prefix: string): string {
