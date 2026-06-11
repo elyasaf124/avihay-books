@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -6,8 +6,52 @@ import type { BotTextKey, BotTextOverrides } from "@avihay-books/shared";
 import { useBotConfig } from "../../api/botConfig";
 import { he } from "../../i18n/he";
 import { theme } from "../../theme";
-import { BotKeyboardScrollView, CenterState } from "./BotFormControls";
+import { BotKeyboardScrollView, BotScrollContext, CenterState } from "./BotFormControls";
 import { useBotAutoSave } from "./useBotAutoSave";
+
+function TextOverrideField({
+  fieldKey,
+  label,
+  value,
+  onChangeText,
+  onReset,
+  showDefaultBadge,
+}: {
+  fieldKey: BotTextKey;
+  label: string;
+  value: string;
+  onChangeText: (v: string) => void;
+  onReset: () => void;
+  showDefaultBadge: boolean;
+}): JSX.Element {
+  const botScroll = useContext(BotScrollContext);
+
+  return (
+    <View style={styles.field}>
+      <View style={styles.fieldHeader}>
+        <Text style={styles.label}>{label}</Text>
+        {showDefaultBadge ? (
+          <Text style={styles.defaultBadge}>{he.bot.textDefaultLabel}</Text>
+        ) : (
+          <Pressable onPress={onReset} hitSlop={8}>
+            <Ionicons name="refresh-outline" size={16} color={theme.colors.primary} />
+          </Pressable>
+        )}
+      </View>
+      <TextInput
+        ref={(node) => botScroll?.registerInput(fieldKey, node)}
+        style={styles.input}
+        value={value}
+        onChangeText={onChangeText}
+        multiline
+        textAlign="right"
+        placeholder={he.bot.textDefaultLabel}
+        placeholderTextColor={theme.colors.onSurfaceVariant}
+        onFocus={() => botScroll?.onInputFocus(fieldKey)}
+      />
+    </View>
+  );
+}
 
 const LABELS: Record<BotTextKey, string> = {
   welcome: "הודעת פתיחה",
@@ -102,27 +146,15 @@ export function TextOverridesEditor(): JSX.Element {
               {group.keys.map((key) => {
                 const value = draft?.[key] ?? "";
                 return (
-                  <View key={key} style={styles.field}>
-                    <View style={styles.fieldHeader}>
-                      <Text style={styles.label}>{LABELS[key]}</Text>
-                      {value.length > 0 ? (
-                        <Pressable onPress={() => set(key, "")} hitSlop={8}>
-                          <Ionicons name="refresh-outline" size={16} color={theme.colors.primary} />
-                        </Pressable>
-                      ) : (
-                        <Text style={styles.defaultBadge}>{he.bot.textDefaultLabel}</Text>
-                      )}
-                    </View>
-                    <TextInput
-                      style={styles.input}
-                      value={value}
-                      onChangeText={(v) => set(key, v)}
-                      multiline
-                      textAlign="left"
-                      placeholder={he.bot.textDefaultLabel}
-                      placeholderTextColor={theme.colors.onSurfaceVariant}
-                    />
-                  </View>
+                  <TextOverrideField
+                    key={key}
+                    fieldKey={key}
+                    label={LABELS[key]}
+                    value={value}
+                    onChangeText={(v) => set(key, v)}
+                    onReset={() => set(key, "")}
+                    showDefaultBadge={value.length === 0}
+                  />
                 );
               })}
             </View>
