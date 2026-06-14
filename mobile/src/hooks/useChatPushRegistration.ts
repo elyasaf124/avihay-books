@@ -20,14 +20,14 @@ function logPushRegister(message: string, extra?: Record<string, unknown>): void
 
 /**
  * רושם את טוקן ה-Expo Push של המכשיר בשרת (`/devices/register`) ומאזין להקשה
- * על התראת צ'אט כדי לנווט ישירות לשיחה. דורש dev/standalone build (לא Expo Go).
+ * על התראת צ'אט כדי לנווט ישירות לשיחה. פעיל רק ב-production build (לא `__DEV__`, לא Expo Go).
  */
 export function useChatPushRegistration(): void {
   const router = useRouter();
   const lastTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (Platform.OS === "web" || isExpoGo) return;
+    if (__DEV__ || Platform.OS === "web" || isExpoGo) return;
 
     let cancelled = false;
     let sub: { remove: () => void } | undefined;
