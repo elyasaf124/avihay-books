@@ -142,6 +142,9 @@ export const BOT_TEXT_KEYS = [
   "catalogMissing",
   "b3NoOrders",
   "b3MultipleOrders",
+  "navBackButton",
+  "navHint",
+  "navBackUnavailable",
 ] as const;
 export type BotTextKey = (typeof BOT_TEXT_KEYS)[number];
 

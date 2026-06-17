@@ -1081,4 +1081,68 @@ describe("WhatsApp Bot — Dynamic config", { skip: botCfgSkip }, () => {
     assertSomeBodyContains(out, "תפריט מותאם אישית:");
     await cleanupTestPhone(phone);
   });
+
+  // -------------------------------------------------------------------------
+  // Test I: Back / main menu navigation
+  // -------------------------------------------------------------------------
+  describe("I — Back and main menu navigation", () => {
+    test("I1: back keyword from order name step returns to order type", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+      await selectMenu(phone, MENU_IDS.order);
+      await sendInbound(phone, { replyId: BTN.orderPickup });
+      let session = await getSession(phone);
+      assert.equal(session?.current_node, "b2_name");
+      const out = await sendInbound(phone, { text: "חזור" });
+      assertSomeBodyContains(out, T.orderAskType);
+      session = await getSession(phone);
+      assert.equal(session?.current_node, "b2_type");
+      await cleanupTestPhone(phone);
+    });
+
+    test("I2: nav back button from order phone step returns to name", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+      await selectMenu(phone, MENU_IDS.order);
+      await sendInbound(phone, { replyId: BTN.orderPickup });
+      await sendInbound(phone, { text: "ישראל ישראלי" });
+      let session = await getSession(phone);
+      assert.equal(session?.current_node, "b2_phone");
+      const out = await sendInbound(phone, { replyId: BTN.navBack });
+      assertSomeBodyContains(out, T.askName);
+      session = await getSession(phone);
+      assert.equal(session?.current_node, "b2_name");
+      await cleanupTestPhone(phone);
+    });
+
+    test("I3: menu keyword mid-order resets to main menu", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+      await selectMenu(phone, MENU_IDS.order);
+      await sendInbound(phone, { replyId: BTN.orderPickup });
+      await sendInbound(phone, { text: "ישראל ישראלי" });
+      const out = await sendInbound(phone, { text: "תפריט" });
+      assertSomeBodyContains(out, T.menuPrompt);
+      const session = await getSession(phone);
+      assert.equal(session?.current_node, "main_menu");
+      await cleanupTestPhone(phone);
+    });
+
+    test("I4: nav main menu button from stock search returns to menu", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+      await selectMenu(phone, MENU_IDS.stock);
+      let session = await getSession(phone);
+      assert.equal(session?.current_node, "b1_title");
+      const out = await sendInbound(phone, { replyId: BTN.navMainMenu });
+      assertSomeBodyContains(out, T.menuPrompt);
+      session = await getSession(phone);
+      assert.equal(session?.current_node, "main_menu");
+      await cleanupTestPhone(phone);
+    });
+  });
 });

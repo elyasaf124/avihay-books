@@ -8,7 +8,6 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  useWindowDimensions,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -38,8 +37,7 @@ export default function ConversationScreen(): JSX.Element {
   const params = useLocalSearchParams<{ phone: string }>();
   const phone = typeof params.phone === "string" ? params.phone : "";
   const insets = useSafeAreaInsets();
-  const { height: keyboardHeight, screenY: keyboardScreenY } = useKeyboardFrame();
-  const { height: windowH } = useWindowDimensions();
+  const { screenY: keyboardScreenY } = useKeyboardFrame();
 
   useChatStream();
   const messagesQuery = useMessages(phone);
@@ -95,31 +93,6 @@ export default function ConversationScreen(): JSX.Element {
     const t = setTimeout(apply, 60);
     return () => clearTimeout(t);
   }, [keyboardScreenY]);
-
-  useEffect(() => {
-    if (!__DEV__) return;
-    console.log("[chat-keyboard] layout", {
-      platform: Platform.OS,
-      windowH,
-      keyboardHeight,
-      insetsTop: insets.top,
-      insetsBottom: insets.bottom,
-      keyboardVerticalOffset,
-      inputPaddingBottom,
-      kavBehavior: Platform.OS === "ios" ? "padding" : undefined,
-      keyboardScreenY,
-      androidKeyboardMargin,
-    });
-  }, [
-    windowH,
-    keyboardHeight,
-    insets.top,
-    insets.bottom,
-    keyboardVerticalOffset,
-    inputPaddingBottom,
-    keyboardScreenY,
-    androidKeyboardMargin,
-  ]);
 
   // חלון 24 שעות: מאתרים את ההודעה הנכנסת האחרונה (הרשימה ממוינת חדש→ישן).
   const outsideWindow = useMemo(() => {
@@ -272,26 +245,6 @@ export default function ConversationScreen(): JSX.Element {
           styles.inputBar,
           { paddingBottom: inputPaddingBottom, marginBottom: androidKeyboardMargin },
         ]}
-        onLayout={() => {
-          if (!__DEV__) return;
-          inputBarRef.current?.measureInWindow((x, y, width, height) => {
-            const barBottomWindow = y + height;
-            const contentBottomWindow = barBottomWindow - inputPaddingBottom;
-            console.log("[chat-keyboard] inputBar onLayout", {
-              x,
-              y,
-              width,
-              height,
-              paddingBottom: inputPaddingBottom,
-              marginBottom: androidKeyboardMarginRef.current,
-              contentBottomWindow,
-              keyboardScreenY,
-              gapToKeyboard:
-                keyboardScreenY != null ? keyboardScreenY - contentBottomWindow : null,
-              distanceFromWindowBottom: windowH - barBottomWindow,
-            });
-          });
-        }}
       >
         <View style={styles.inputWrap}>
           <TextInput
@@ -303,9 +256,6 @@ export default function ConversationScreen(): JSX.Element {
             multiline
             editable={!outsideWindow}
             textAlign="right"
-            onFocus={() => {
-              if (__DEV__) console.log("[chat-keyboard] input focused");
-            }}
           />
         </View>
         <Pressable

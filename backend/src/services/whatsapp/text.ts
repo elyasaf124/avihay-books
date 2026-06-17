@@ -68,6 +68,8 @@ export const BTN = {
   b1ImageRetry: "b1:image_retry",
   statusToHuman: "status:human",
   handoverEnd: "handover:end",
+  navBack: "nav:back",
+  navMainMenu: "nav:main_menu",
 } as const;
 
 export const STATUS_PICK_PREFIX = "status:order:";
@@ -236,6 +238,16 @@ export const T = {
   },
   get b3MultipleOrders(): string {
     return ov("b3MultipleOrders", "מצאתי מספר הזמנות פעילות על שמך, באיזו מהן תרצה להתעדכן?");
+  },
+
+  get navBackButton(): string {
+    return ov("navBackButton", "⬅️ חזור");
+  },
+  get navHint(): string {
+    return ov("navHint", "ניווט:");
+  },
+  get navBackUnavailable(): string {
+    return ov("navBackUnavailable", "אין שלב קודם — חוזרים לתפריט הראשי.");
   },
 };
 

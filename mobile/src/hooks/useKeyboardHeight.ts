@@ -7,8 +7,6 @@ import {
   type KeyboardEvent,
 } from "react-native";
 
-const DEBUG_KEYBOARD = __DEV__;
-
 export interface KeyboardFrame {
   /** גובה ל-padding (iOS: height, Android: overlap). */
   height: number;
@@ -30,15 +28,6 @@ export function useKeyboardFrame(): KeyboardFrame {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
       const { height, screenY } = e.endCoordinates;
       const windowH = Dimensions.get("window").height;
-      if (DEBUG_KEYBOARD) {
-        console.log("[useKeyboardHeight] show", {
-          platform: Platform.OS,
-          height,
-          screenY,
-          windowH,
-          overlap: Math.max(0, windowH - screenY),
-        });
-      }
       const overlap = Math.max(0, windowH - screenY);
       setFrame({
         height: Platform.OS === "android" ? overlap : height,
@@ -48,9 +37,6 @@ export function useKeyboardFrame(): KeyboardFrame {
 
     const onHide = (): void => {
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      if (DEBUG_KEYBOARD) {
-        console.log("[useKeyboardHeight] hide", { platform: Platform.OS });
-      }
       setFrame({ height: 0, screenY: null });
     };
 

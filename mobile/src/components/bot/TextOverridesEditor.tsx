@@ -91,10 +91,13 @@ const LABELS: Record<BotTextKey, string> = {
   catalogMissing: "קטלוג לא זמין",
   b3NoOrders: "אין הזמנות פעילות",
   b3MultipleOrders: "מספר הזמנות פעילות",
+  navBackButton: "כפתור «חזור»",
+  navHint: "כותרת כפתורי ניווט",
+  navBackUnavailable: "אין שלב קודם",
 };
 
 const GROUPS: { title: string; keys: BotTextKey[] }[] = [
-  { title: "כללי", keys: ["welcome", "menuButton", "menuPrompt", "closing", "endLoopPrompt"] },
+  { title: "כללי", keys: ["welcome", "menuButton", "menuPrompt", "closing", "endLoopPrompt", "navBackButton", "navHint", "navBackUnavailable"] },
   { title: "בירור מלאי", keys: ["b1AskTitle", "b1ManyMatches", "b1NoMatch", "b1ImageFallback"] },
   {
     title: "הזמנה",
