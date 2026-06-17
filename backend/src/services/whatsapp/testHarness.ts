@@ -73,7 +73,26 @@ export async function getSession(phone: string): Promise<WhatsappSession | null>
 
 export async function getInStockBook(): Promise<Book | null> {
   const { rows } = await pool.query<Book>(
-    `SELECT * FROM books WHERE is_active = TRUE AND stock_quantity > 0 ORDER BY title LIMIT 1`,
+    `SELECT b.*
+       FROM books b
+      WHERE b.is_active = TRUE
+        AND b.stock_quantity > 0
+        AND (
+          NOT EXISTS (SELECT 1 FROM book_locations bl WHERE bl.book_id = b.id)
+          OR EXISTS (
+            SELECT 1
+              FROM book_locations bl
+             WHERE bl.book_id = b.id
+               AND NOT EXISTS (
+                 SELECT 1
+                   FROM shortage_list sl
+                  WHERE sl.location_id = bl.id
+                    AND sl.status <> 'completed'
+               )
+          )
+        )
+      ORDER BY b.title
+      LIMIT 1`,
   );
   return rows[0] ?? null;
 }
@@ -83,6 +102,31 @@ export async function getOutOfStockBook(): Promise<Book | null> {
     `SELECT * FROM books WHERE is_active = TRUE AND stock_quantity <= 0 ORDER BY title LIMIT 1`,
   );
   return rows[0] ?? null;
+}
+
+/** ספר עם מלאי ≥ 2 ומיקום יחיד במדף — לבדיקת חוסר שמשאיר מלאי כללי אך לא זמין במדף. */
+export async function getInStockBookWithSingleShelfLocation(): Promise<{
+  book: Book;
+  locationId: string;
+} | null> {
+  const { rows } = await pool.query<Book & { location_id: string; loc_count: string }>(
+    `SELECT b.*, bl.id AS location_id, COUNT(*) OVER ()::text AS loc_count
+       FROM books b
+       JOIN book_locations bl ON bl.book_id = b.id
+      WHERE b.is_active = TRUE
+        AND b.stock_quantity >= 2
+        AND NOT EXISTS (
+          SELECT 1
+            FROM shortage_list sl
+           WHERE sl.location_id = bl.id
+             AND sl.status <> 'completed'
+        )
+      ORDER BY b.title, bl.position_in_cell`,
+  );
+  const row = rows.find((r) => Number.parseInt(r.loc_count, 10) === 1);
+  if (!row) return null;
+  const { location_id, loc_count: _locCount, ...book } = row;
+  return { book: book as Book, locationId: location_id };
 }
 
 export async function countWhatsappOrders(customerPhone: string): Promise<number> {

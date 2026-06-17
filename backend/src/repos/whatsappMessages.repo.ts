@@ -1,4 +1,5 @@
 import { pool } from "../db/pool.js";
+import { deleteSessionsByPhone } from "./whatsappSessions.repo.js";
 import type {
   ChatConversation,
   ChatMessageView,
@@ -145,4 +146,20 @@ export async function markConversationRead(phone: string): Promise<void> {
     `UPDATE whatsapp_sessions SET staff_last_read_at = now() WHERE phone_number = $1`,
     [phone],
   );
+}
+
+/** מוחק שיחה לצמיתות — כל ההודעות וכל הסשנים של המספר (טרנזקציה). */
+export async function deleteConversationByPhone(phone: string): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`DELETE FROM whatsapp_messages WHERE phone_number = $1`, [phone]);
+    await deleteSessionsByPhone(phone, client);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 }

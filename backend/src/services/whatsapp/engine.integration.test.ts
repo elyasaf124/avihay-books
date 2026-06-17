@@ -5,8 +5,9 @@
 import assert from "node:assert/strict";
 import { after, afterEach, before, describe, test } from "node:test";
 import type { Book, BotConfigData } from "@avihay-books/shared";
+import { createShortageAfterShelfSale } from "../shortage.js";
 import { pool } from "../../db/pool.js";
-import { BTN, MENU_IDS, PICK_PREFIX, STATUS_PICK_PREFIX, T } from "./text.js";
+import { BTN, MENU_IDS, ORDER_EDIT, ORDER_EDIT_BOOK_PREFIX, PICK_PREFIX, STATUS_PICK_PREFIX, T } from "./text.js";
 import {
   buildDefaultBotConfig,
   resetBotConfigForTests,
@@ -25,6 +26,7 @@ import {
   expireHandover,
   endHandoverFromStaff,
   getInStockBook,
+  getInStockBookWithSingleShelfLocation,
   getOutOfStockBook,
   getSession,
   goToMainMenu,
@@ -62,7 +64,7 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       const phone = uniqueTestPhone();
       await resetPhone(phone);
       const out = await sendInbound(phone, { text: "שלום" });
-      assertSomeBodyContains(out, "ברוך הבא");
+      assertSomeBodyContains(out, "ברוכים הבאים");
       assertSomeBodyContains(out, T.menuPrompt);
       assert.ok(out.some((r) => r.msgType === "interactive.list"));
       const session = await getSession(phone);
@@ -75,7 +77,7 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       await resetPhone(phone);
       await sendInbound(phone, { text: "שלום" });
       const out = await sendInbound(phone, { text: "שלום" });
-      assertSomeBodyContains(out, "ברוך הבא");
+      assertSomeBodyContains(out, "ברוכים הבאים");
       await cleanupTestPhone(phone);
     });
 
@@ -84,7 +86,7 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       await resetPhone(phone);
       await selectMenu(phone, MENU_IDS.stock);
       const out = await sendInbound(phone, { text: "תפריט" });
-      assert.ok(!out.some((r) => r.body.includes("ברוך הבא")));
+      assert.ok(!out.some((r) => r.body.includes("ברוכים הבאים")));
       assertSomeBodyContains(out, T.menuPrompt);
       await cleanupTestPhone(phone);
     });
@@ -150,6 +152,38 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       const out = await sendInbound(phone, { replyId: `${PICK_PREFIX}${outOfStockBook.id}` });
       assertSomeBodyContains(out, "חסר כרגע במלאי");
       await cleanupTestPhone(phone);
+    });
+
+    test("B1.4b: shelf shortage with remaining stock hides misleading location", async () => {
+      const fixture = await getInStockBookWithSingleShelfLocation();
+      if (!fixture) return;
+      const { book, locationId } = fixture;
+      const phone = uniqueTestPhone();
+      let shortageId: string | null = null;
+      try {
+        const shortage = await createShortageAfterShelfSale({
+          bookId: book.id,
+          soldQuantity: 1,
+          locationId,
+        });
+        shortageId = shortage.id;
+
+        await resetPhone(phone);
+        await goToMainMenu(phone);
+        await selectMenu(phone, MENU_IDS.stock);
+        await sendInbound(phone, { text: book.title });
+        const out = await sendInbound(phone, { replyId: `${PICK_PREFIX}${book.id}` });
+        assertSomeBodyContains(out, "חסר כרגע במלאי");
+        assert.ok(!out.some((r) => r.body.includes("מיקום בחנות")));
+      } finally {
+        if (shortageId) {
+          await pool.query(`DELETE FROM shortage_list WHERE id = $1`, [shortageId]);
+        }
+        await pool.query(`UPDATE books SET stock_quantity = stock_quantity + 1 WHERE id = $1`, [
+          book.id,
+        ]);
+        await cleanupTestPhone(phone);
+      }
     });
 
     test("B1.5: search again re-asks title", async () => {
@@ -224,35 +258,45 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       await cleanupTestPhone(phone);
     });
 
-    test("B1.11: image sends fallback with retry button", async () => {
+    test("B1.11: image sends media unsupported message", async () => {
       const phone = uniqueTestPhone();
       await resetPhone(phone);
       await goToMainMenu(phone);
       await selectMenu(phone, MENU_IDS.stock);
       const out = await sendInbound(phone, { text: "", msgType: "image" });
-      assertSomeBodyContains(out, T.b1ImageFallback);
-      assert.ok(out.some((r) => r.msgType === "interactive.button"));
+      assertSomeBodyContains(out, T.mediaUnsupported);
       await cleanupTestPhone(phone);
     });
 
-    test("B1.12: retry button after image returns to title input", async () => {
+    test("B1.12: text after image continues stock search", async () => {
       const phone = uniqueTestPhone();
       await resetPhone(phone);
       await goToMainMenu(phone);
       await selectMenu(phone, MENU_IDS.stock);
       await sendInbound(phone, { text: "", msgType: "image" });
-      const out = await sendInbound(phone, { replyId: BTN.b1ImageRetry });
-      assertSomeBodyContains(out, T.b1AskTitle);
+      const book = await getInStockBook();
+      assert.ok(book);
+      const out = await sendInbound(phone, { text: book!.title.slice(0, 8) });
+      assertSomeBodyContains(out, T.b1ManyMatches);
       await cleanupTestPhone(phone);
     });
 
-    test("B1.13: sticker also triggers image fallback", async () => {
+    test("B1.13: sticker also triggers media unsupported", async () => {
       const phone = uniqueTestPhone();
       await resetPhone(phone);
       await goToMainMenu(phone);
       await selectMenu(phone, MENU_IDS.stock);
       const out = await sendInbound(phone, { text: "", msgType: "sticker" });
-      assertSomeBodyContains(out, "בוט צעיר");
+      assertSomeBodyContains(out, T.mediaUnsupported);
+      await cleanupTestPhone(phone);
+    });
+
+    test("B1.14: image on main menu sends media unsupported", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+      const out = await sendInbound(phone, { text: "", msgType: "image" });
+      assertSomeBodyContains(out, T.mediaUnsupported);
       await cleanupTestPhone(phone);
     });
   });
@@ -309,15 +353,18 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       await cleanupTestPhone(phone);
     });
 
-    test("B7.2: updates without URL shows rep message", async () => {
-      const prev = process.env.BOT_UPDATES_GROUP_URL;
-      delete process.env.BOT_UPDATES_GROUP_URL;
+    test("B7.2: updates without URL shows fallback message", async () => {
       const phone = uniqueTestPhone();
       await resetPhone(phone);
+      const base = buildDefaultBotConfig();
+      await saveBotConfig({
+        ...base,
+        store_info: { ...base.store_info, updates_group_url: null },
+      });
       await goToMainMenu(phone);
       const out = await selectMenu(phone, MENU_IDS.updates);
-      assertSomeBodyContains(out, "נציג ישלח");
-      if (prev) process.env.BOT_UPDATES_GROUP_URL = prev;
+      assertSomeBodyContains(out, "הקישור אינו זמין");
+      await resetBotConfigForTests();
       await cleanupTestPhone(phone);
     });
 
@@ -327,7 +374,7 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       await resetPhone(phone);
       await goToMainMenu(phone);
       const out = await selectMenu(phone, MENU_IDS.updates);
-      assertSomeBodyContains(out, "chat.whatsapp.com");
+      assertSomeBodyContains(out, "מצורף קישור");
       delete process.env.BOT_UPDATES_GROUP_URL;
       await cleanupTestPhone(phone);
     });
@@ -383,6 +430,7 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       const out = await selectMenu(phone, MENU_IDS.orderStatus);
       assertSomeBodyContains(out, "מצאתי את ההזמנה שלך");
       assertSomeBodyContains(out, "ספר בדיקה B3");
+      assertSomeBodyContains(out, "× 1");
       assertSomeBodyContains(out, "הוזמן");
       assertSomeBodyContains(out, T.endLoopPrompt);
       await pool.query(`DELETE FROM orders WHERE customer_phone = $1 AND manual_book_title = 'ספר בדיקה B3'`, [phone]);
@@ -414,10 +462,40 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       out = await sendInbound(phone, { replyId: `status:order:${r2[0]!.id}` });
       assertSomeBodyContains(out, "מצאתי את ההזמנה שלך");
       assertSomeBodyContains(out, "ספר שני");
+      assertSomeBodyContains(out, "× 2");
       assertSomeBodyContains(out, "הגיע לחנות");
 
       await pool.query(`DELETE FROM orders WHERE id IN ($1, $2)`, [r1[0]!.id, r2[0]!.id]);
       await cleanupTestPhone(phone);
+    });
+
+    test("B3d: grouped order shows all book quantities", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      const { rows: groupRows } = await pool.query<{ id: string }>(
+        "SELECT gen_random_uuid() AS id",
+      );
+      const groupId = groupRows[0]!.id;
+      try {
+        await pool.query(
+          `INSERT INTO orders (book_id, supplier_id, order_type, quantity,
+             customer_name, customer_phone, manual_book_title, status, order_group_id)
+           VALUES
+             (NULL, NULL, 'whatsapp', 2, 'Test', $1, 'ספר א׳', 'pending', $2),
+             (NULL, NULL, 'whatsapp', 3, 'Test', $1, 'ספר ב׳', 'pending', $2)`,
+          [phone, groupId],
+        );
+        await goToMainMenu(phone);
+        const out = await selectMenu(phone, MENU_IDS.orderStatus);
+        assertSomeBodyContains(out, "מצאתי את ההזמנה שלך");
+        assertSomeBodyContains(out, "ספר א׳");
+        assertSomeBodyContains(out, "× 2");
+        assertSomeBodyContains(out, "ספר ב׳");
+        assertSomeBodyContains(out, "× 3");
+      } finally {
+        await pool.query(`DELETE FROM orders WHERE order_group_id = $1`, [groupId]);
+        await cleanupTestPhone(phone);
+      }
     });
 
     test("B3: phone normalization — WhatsApp 972 finds order with 0 prefix", async () => {
@@ -459,7 +537,10 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       assertSomeBodyContains(out, T.askPhone);
 
       out = await sendInbound(phone, { text: "123" });
-      assertSomeBodyContains(out, T.askPhone);
+      assertSomeBodyContains(out, T.invalidPhone);
+
+      out = await sendInbound(phone, { text: "1234567" });
+      assertSomeBodyContains(out, T.invalidPhone);
 
       out = await sendInbound(phone, { text: customerPhone });
       assertSomeBodyContains(out, T.askBookTitle);
@@ -483,7 +564,12 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       out = await sendInbound(phone, { replyId: BTN.moreNo });
       assertSomeBodyContains(out, T.askNotesPickup);
 
-      out = await sendInbound(phone, { text: "אין" });
+      out = await sendInbound(phone, { replyId: BTN.notesNo });
+      assertSomeBodyContains(out, T.orderSummaryIntro);
+      assertSomeBodyContains(out, "ספר בדיקה א");
+      assertSomeBodyContains(out, T.orderSummaryConfirmQuestion);
+
+      out = await sendInbound(phone, { replyId: BTN.orderConfirm });
       assertSomeBodyContains(out, T.orderDonePickup);
       assertSomeBodyContains(out, T.endLoopPrompt);
 
@@ -495,6 +581,136 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
 
       const session = await getSession(phone);
       assert.equal(session?.current_node, "end_loop");
+
+      await cleanupTestPhone(phone, customerPhone);
+    });
+
+    test("B2: notes yes saves customer comment", async () => {
+      const phone = uniqueTestPhone();
+      const customerPhone = uniqueCustomerPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+
+      await selectMenu(phone, MENU_IDS.order);
+      await sendInbound(phone, { replyId: BTN.orderPickup });
+      await sendInbound(phone, { text: "ישראל ישראלי" });
+      await sendInbound(phone, { text: customerPhone });
+      await sendInbound(phone, { text: "ספר עם הערה" });
+      await sendInbound(phone, { text: "1" });
+      await sendInbound(phone, { replyId: BTN.moreNo });
+
+      let out = await sendInbound(phone, { replyId: BTN.notesYes });
+      assertSomeBodyContains(out, T.askNotesDetailPickup);
+
+      out = await sendInbound(phone, { text: "אפשר לאסוף בערב" });
+      assertSomeBodyContains(out, T.orderSummaryIntro);
+
+      out = await sendInbound(phone, { replyId: BTN.orderConfirm });
+      assertSomeBodyContains(out, T.orderDonePickup);
+
+      const { rows } = await pool.query<{ notes: string | null }>(
+        `SELECT notes FROM orders WHERE customer_phone = $1 AND order_type = 'whatsapp' LIMIT 1`,
+        [customerPhone],
+      );
+      assert.equal(rows[0]?.notes, "אפשר לאסוף בערב");
+
+      await cleanupTestPhone(phone, customerPhone);
+    });
+
+    test("B2: summary edit name then confirm", async () => {
+      const phone = uniqueTestPhone();
+      const customerPhone = uniqueCustomerPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+
+      await selectMenu(phone, MENU_IDS.order);
+      await sendInbound(phone, { replyId: BTN.orderPickup });
+      await sendInbound(phone, { text: "שם ישן" });
+      await sendInbound(phone, { text: customerPhone });
+      await sendInbound(phone, { text: "ספר לעריכה" });
+      await sendInbound(phone, { text: "1" });
+      await sendInbound(phone, { replyId: BTN.moreNo });
+      await sendInbound(phone, { replyId: BTN.notesNo });
+
+      let out = await sendInbound(phone, { replyId: BTN.orderEdit });
+      assertSomeBodyContains(out, T.orderEditListTitle);
+
+      out = await sendInbound(phone, { replyId: ORDER_EDIT.name });
+      assertSomeBodyContains(out, T.askName);
+
+      out = await sendInbound(phone, { text: "שם מעודכן" });
+      assertSomeBodyContains(out, "שם מעודכן");
+
+      out = await sendInbound(phone, { replyId: BTN.orderConfirm });
+      assertSomeBodyContains(out, T.orderDonePickup);
+
+      const { rows } = await pool.query<{ customer_name: string }>(
+        `SELECT customer_name FROM orders WHERE customer_phone = $1 AND order_type = 'whatsapp' LIMIT 1`,
+        [customerPhone],
+      );
+      assert.equal(rows[0]?.customer_name, "שם מעודכן");
+
+      await cleanupTestPhone(phone, customerPhone);
+    });
+
+    test("B2: summary edit book quantity", async () => {
+      const phone = uniqueTestPhone();
+      const customerPhone = uniqueCustomerPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+
+      await selectMenu(phone, MENU_IDS.order);
+      await sendInbound(phone, { replyId: BTN.orderPickup });
+      await sendInbound(phone, { text: "ישראל ישראלי" });
+      await sendInbound(phone, { text: customerPhone });
+      await sendInbound(phone, { text: "ספר כמות" });
+      await sendInbound(phone, { text: "2" });
+      await sendInbound(phone, { replyId: BTN.moreNo });
+      await sendInbound(phone, { replyId: BTN.notesNo });
+
+      await sendInbound(phone, { replyId: BTN.orderEdit });
+      await sendInbound(phone, { replyId: ORDER_EDIT.books });
+      let out = await sendInbound(phone, { replyId: `${ORDER_EDIT_BOOK_PREFIX}0` });
+      assertSomeBodyContains(out, T.askQuantity);
+
+      out = await sendInbound(phone, { text: "5" });
+      assertSomeBodyContains(out, T.orderEditBooksTitle);
+
+      out = await sendInbound(phone, { replyId: ORDER_EDIT.booksDone });
+      assertSomeBodyContains(out, "× 5");
+
+      out = await sendInbound(phone, { replyId: BTN.orderConfirm });
+      assertSomeBodyContains(out, T.orderDonePickup);
+
+      const { rows } = await pool.query<{ quantity: number }>(
+        `SELECT quantity FROM orders WHERE customer_phone = $1 AND order_type = 'whatsapp' LIMIT 1`,
+        [customerPhone],
+      );
+      assert.equal(rows[0]?.quantity, 5);
+
+      await cleanupTestPhone(phone, customerPhone);
+    });
+
+    test("B2: cancel from summary creates no order", async () => {
+      const phone = uniqueTestPhone();
+      const customerPhone = uniqueCustomerPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+
+      await selectMenu(phone, MENU_IDS.order);
+      await sendInbound(phone, { replyId: BTN.orderPickup });
+      await sendInbound(phone, { text: "ביטול בדיקה" });
+      await sendInbound(phone, { text: customerPhone });
+      await sendInbound(phone, { text: "ספר ביטול" });
+      await sendInbound(phone, { text: "1" });
+      await sendInbound(phone, { replyId: BTN.moreNo });
+      await sendInbound(phone, { replyId: BTN.notesNo });
+
+      const out = await sendInbound(phone, { replyId: BTN.orderCancel });
+      assertSomeBodyContains(out, T.orderCancelled);
+
+      const orderCount = await countWhatsappOrders(customerPhone);
+      assert.equal(orderCount, 0);
 
       await cleanupTestPhone(phone, customerPhone);
     });
@@ -512,17 +728,22 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
 
       await selectMenu(phone, MENU_IDS.order);
       await sendInbound(phone, { replyId: BTN.orderDelivery });
-      await sendInbound(phone, { text: "דנה כהן" });
+      let out = await sendInbound(phone, { text: "דנה כהן" });
+      assertSomeBodyContains(out, T.askPhoneDelivery);
       await sendInbound(phone, { text: customerPhone });
       await sendInbound(phone, { text: "תל אביב, הרצל 1" });
 
-      let out = await sendInbound(phone, { replyId: BTN.deliveryHome });
+      out = await sendInbound(phone, { replyId: BTN.deliveryHome });
       assertSomeBodyContains(out, T.askBookTitle);
 
       await sendInbound(phone, { text: "ספר משלוח" });
       await sendInbound(phone, { text: "1" });
       await sendInbound(phone, { replyId: BTN.moreNo });
-      out = await sendInbound(phone, { text: "אין" });
+      out = await sendInbound(phone, { replyId: BTN.notesNo });
+      assertSomeBodyContains(out, T.orderSummaryIntro);
+      assertSomeBodyContains(out, "תל אביב, הרצל 1");
+
+      out = await sendInbound(phone, { replyId: BTN.orderConfirm });
       assertSomeBodyContains(out, T.orderDoneDelivery);
 
       const { rows } = await pool.query<{ fulfillment_type: string; delivery_method: string; delivery_fee: string }>(
@@ -552,7 +773,8 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       await sendInbound(phone, { text: "ספר נקודה" });
       await sendInbound(phone, { text: "1" });
       await sendInbound(phone, { replyId: BTN.moreNo });
-      await sendInbound(phone, { text: "אין" });
+      await sendInbound(phone, { replyId: BTN.notesNo });
+      await sendInbound(phone, { replyId: BTN.orderConfirm });
 
       const { rows } = await pool.query<{ delivery_method: string; delivery_fee: string }>(
         `SELECT delivery_method, delivery_fee::text FROM orders
@@ -681,14 +903,14 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
 
       await expireHandover(phone);
       const out = await sendInbound(phone, { text: "שלום" });
-      assertSomeBodyContains(out, "ברוך הבא");
+      assertSomeBodyContains(out, "ברוכים הבאים");
 
       session = await getSession(phone);
       assert.equal(session?.status, "active");
       await cleanupTestPhone(phone);
     });
 
-    test("D4: staff echo pauses bot; customer refreshes end button after debounce", async () => {
+    test("D4: staff echo pauses bot without sending bot messages to customer", async () => {
       const phone = uniqueTestPhone();
       await resetPhone(phone);
       await goToMainMenu(phone);
@@ -702,7 +924,7 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
 
       await backdateHandoverButton(phone);
       out = await sendInbound(phone, { text: "hello again" });
-      assertSomeBodyContains(out, T.handoverEndHintRepeat);
+      assert.equal(out.length, 0);
       await cleanupTestPhone(phone);
     });
 
@@ -744,7 +966,7 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       await sendInbound(phone, { replyId: BTN.handoverEnd });
 
       const out = await sendInbound(phone, { text: "שלום" });
-      assertSomeBodyContains(out, "ברוך הבא");
+      assertSomeBodyContains(out, "ברוכים הבאים");
 
       const session = await getSession(phone);
       assert.equal(session?.status, "active");
@@ -775,19 +997,18 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       await cleanupTestPhone(phone);
     });
 
-    test("D10: second staff echo sends repeat end button hint", async () => {
+    test("D10: staff echo after handover does not send bot hint", async () => {
       const phone = uniqueTestPhone();
       await resetPhone(phone);
       await goToMainMenu(phone);
       await selectMenu(phone, MENU_IDS.quote);
       clearOutboundRecords();
       await staffEcho(phone);
-      const out = getOutboundRecords();
-      assertSomeBodyContains(out, T.handoverEndHintRepeat);
+      assert.equal(getOutboundRecords().length, 0);
       await cleanupTestPhone(phone);
     });
 
-    test("D11: two customer messages within debounce send one refresh button", async () => {
+    test("D11: customer messages during handover stay silent", async () => {
       const phone = uniqueTestPhone();
       await resetPhone(phone);
       await goToMainMenu(phone);
@@ -795,13 +1016,13 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       await backdateHandoverButton(phone);
       clearOutboundRecords();
       const out1 = await sendInbound(phone, { text: "a" });
-      assertSomeBodyContains(out1, T.handoverEndHintRepeat);
+      assert.equal(out1.length, 0);
       const out2 = await sendInbound(phone, { text: "b" });
       assert.equal(out2.length, 0);
       await cleanupTestPhone(phone);
     });
 
-    test("D12: customer messages after debounce window send button twice", async () => {
+    test("D12: repeated customer messages during handover stay silent", async () => {
       const phone = uniqueTestPhone();
       await resetPhone(phone);
       await goToMainMenu(phone);
@@ -809,10 +1030,22 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       await backdateHandoverButton(phone);
       clearOutboundRecords();
       let out = await sendInbound(phone, { text: "first" });
-      assertSomeBodyContains(out, T.handoverEndHintRepeat);
+      assert.equal(out.length, 0);
       await backdateHandoverButton(phone);
       out = await sendInbound(phone, { text: "second" });
-      assertSomeBodyContains(out, T.handoverEndHintRepeat);
+      assert.equal(out.length, 0);
+      await cleanupTestPhone(phone);
+    });
+
+    test("D13: staff end handover does not send closing message", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+      await selectMenu(phone, MENU_IDS.quote);
+      clearOutboundRecords();
+      const ended = await endHandoverFromStaff(phone);
+      assert.equal(ended, true);
+      assert.equal(getOutboundRecords().length, 0);
       await cleanupTestPhone(phone);
     });
   });
@@ -838,7 +1071,7 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       assert.equal(session?.status, "closed");
 
       out = await sendInbound(phone, { text: "שלום" });
-      assertSomeBodyContains(out, "ברוך הבא");
+      assertSomeBodyContains(out, "ברוכים הבאים");
       session = await getSession(phone);
       assert.equal(session?.status, "active");
       await cleanupTestPhone(phone);
@@ -922,7 +1155,8 @@ describe("WhatsApp Bot — Full Test Plan", { skip }, () => {
       await sendInbound(phone, { text: "ספר DB" });
       await sendInbound(phone, { text: "1" });
       await sendInbound(phone, { replyId: BTN.moreNo });
-      await sendInbound(phone, { text: "אין" });
+      await sendInbound(phone, { replyId: BTN.notesNo });
+      await sendInbound(phone, { replyId: BTN.orderConfirm });
 
       const session = await getSession(phone);
       assert.ok(session);
@@ -1050,7 +1284,7 @@ describe("WhatsApp Bot — Dynamic config", { skip: botCfgSkip }, () => {
             start: {
               id: "start",
               type: "buttons",
-              text: "בחר אפשרות:",
+              text: "בחרו אפשרות:",
               buttons: [{ id: "opt_a", title: "א", action: "goto", target_node_id: "done" }],
             },
             done: { id: "done", type: "text", text: "תודה על הבחירה!", after: "end_loop" },

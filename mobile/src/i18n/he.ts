@@ -51,6 +51,11 @@ export const he = {
       "הלקוח יקבל הודעת סיום. בהודעה הבאה שלו יוצג התפריט.",
     endHandoverError: "לא ניתן לסיים — השיחה לא במצב מענה אנושי",
     pushChannelName: "צ'אט וואטסאפ",
+    deleteConfirmTitle: "למחוק את השיחה?",
+    deleteConfirmMessage:
+      "«{{name}}» — כל ההודעות יימחקו ולא ניתן לשחזר. הלקוח יתחיל שיחה חדשה בפעם הבאה שיכתוב.",
+    deleteFailed: "מחיקת השיחה נכשלה",
+    deleteBlockedOffline: "לא ניתן למחוק — השרת לא זמין",
   },
 
   home: {

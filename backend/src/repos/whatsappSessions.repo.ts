@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { pool } from "../db/pool.js";
 import type { WhatsappSession, WhatsappSessionStatus } from "@avihay-books/shared";
 
@@ -78,4 +79,10 @@ export async function updateSession(id: string, patch: SessionPatch): Promise<Wh
     params,
   );
   return rows[0]!;
+}
+
+/** מוחק את כל רשומות הסשן של מספר טלפון (למחיקת שיחה ידנית). */
+export async function deleteSessionsByPhone(phone: string, client?: PoolClient): Promise<void> {
+  const q = client ?? pool;
+  await q.query(`DELETE FROM whatsapp_sessions WHERE phone_number = $1`, [phone]);
 }

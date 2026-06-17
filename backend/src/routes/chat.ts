@@ -6,6 +6,7 @@ import { Router } from "express";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import {
   countUnreadChat,
+  deleteConversationByPhone,
   getMessages,
   listConversations,
   markConversationRead,
@@ -130,6 +131,16 @@ chatRouter.post(
     await endHumanHandover(phone, session, "staff");
     broadcast({ type: "conversation_update", phone });
     broadcast({ type: "message", phone });
+    res.status(204).end();
+  }),
+);
+
+chatRouter.delete(
+  "/:phone",
+  asyncHandler(async (req, res) => {
+    const phone = req.params.phone!;
+    await deleteConversationByPhone(phone);
+    broadcast({ type: "conversation_update", phone });
     res.status(204).end();
   }),
 );

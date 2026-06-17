@@ -35,7 +35,7 @@ export interface WhatsappRuntimeConfig {
 }
 
 function parseHoursRange(raw: string | undefined): { start: number; end: number } {
-  const fallback = { start: 14, end: 18 };
+  const fallback = { start: 13, end: 18 };
   if (!raw) return fallback;
   const m = /^(\d{1,2})\s*-\s*(\d{1,2})$/.exec(raw);
   if (!m) return fallback;
@@ -99,7 +99,7 @@ export function botStoreInfoDefaults(): BotStoreInfo {
       env("BOT_STORE_ADDRESS") ?? "בניין הישיבה הגבוהה - קומה ראשונה, רחוב הארז, עלי",
     hours_text:
       env("BOT_HOURS_TEXT") ??
-      "ימים א'-ה': 07:00 - 22:00 (מענה אנושי בחנות בין השעות 13:30-15:00)\nימי ו': 07:00 - 14:00",
+      "ימים א'-ה': 07:00 - 22:00\nמענה אנושי בחנות בין השעות 13:30-15:00\nימי ו': 07:00 - 14:00",
     waze_url: env("BOT_WAZE_URL") ?? null,
     bank_details: env("BOT_BANK_DETAILS") ?? "נועם הספר\nבנק הפועלים\nסניף 286\nחשבון 78929",
     payment_credit_url:
@@ -109,7 +109,8 @@ export function botStoreInfoDefaults(): BotStoreInfo {
       "https://meshulam.co.il/quick_payment?b=7583d8adc7013c94a822b5f0d7a2d711",
     payment_paybox_url: env("BOT_PAYMENT_PAYBOX_URL") ?? null,
     catalog_pdf_url: env("BOT_CATALOG_PDF_URL") ?? null,
-    updates_group_url: env("BOT_UPDATES_GROUP_URL") ?? null,
+    updates_group_url:
+      env("BOT_UPDATES_GROUP_URL") ?? "https://chat.whatsapp.com/FMAgvMLixUT1Lia4DnA3Fh",
     delivery_home_fee: envNum("BOT_DELIVERY_HOME_FEE", 39),
     delivery_point_fee: envNum("BOT_DELIVERY_POINT_FEE", 25),
     human_hours_start: hours.start,

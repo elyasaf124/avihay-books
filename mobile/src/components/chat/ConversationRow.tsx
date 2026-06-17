@@ -9,9 +9,10 @@ import { formatListTime, messagePreview } from "./chatFormat";
 interface Props {
   conversation: ChatConversation;
   onPress: (phone: string) => void;
+  onLongPress?: (phone: string) => void;
 }
 
-function ConversationRowBase({ conversation, onPress }: Props): JSX.Element {
+function ConversationRowBase({ conversation, onPress, onLongPress }: Props): JSX.Element {
   const {
     phone_number,
     profile_name,
@@ -31,9 +32,11 @@ function ConversationRowBase({ conversation, onPress }: Props): JSX.Element {
   return (
     <Pressable
       onPress={() => onPress(phone_number)}
+      onLongPress={() => onLongPress?.(phone_number)}
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
       accessibilityRole="button"
       accessibilityLabel={title}
+      accessibilityHint={onLongPress ? he.chat.deleteConfirmTitle : undefined}
     >
       <View style={[styles.avatar, { backgroundColor: avatarColor(phone_number) }]}>
         <Text style={styles.avatarText}>{avatarInitial(profile_name, phone_number)}</Text>

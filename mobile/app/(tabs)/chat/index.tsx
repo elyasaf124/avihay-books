@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -13,17 +14,24 @@ import { Ionicons } from "@expo/vector-icons";
 import { Stack, useFocusEffect, useRouter } from "expo-router";
 import type { ChatConversation } from "@avihay-books/shared";
 import { he } from "../../../src/i18n/he";
-import { useConversations } from "../../../src/api/chat";
+import { useConversations, useDeleteConversation } from "../../../src/api/chat";
 import { useChatStream } from "../../../src/hooks/useChatStream";
 import { ConversationRow } from "../../../src/components/chat/ConversationRow";
+import { ConfirmDialog } from "../../../src/components/ConfirmDialog";
 import { wa } from "../../../src/components/chat/waTheme";
+
+function interpolate(template: string, vars: Record<string, string>): string {
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? "");
+}
 
 export default function ChatListScreen(): JSX.Element {
   const router = useRouter();
   const conversationsQuery = useConversations();
+  const deleteConversation = useDeleteConversation();
   useChatStream();
 
   const [search, setSearch] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<ChatConversation | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -49,6 +57,35 @@ export default function ChatListScreen(): JSX.Element {
     },
     [router],
   );
+
+  const handleLongPress = useCallback(
+    (phone: string) => {
+      if (isOffline) {
+        Alert.alert(he.generic.errorTitle, he.chat.deleteBlockedOffline);
+        return;
+      }
+      const conversation = conversations.find((c) => c.phone_number === phone);
+      if (conversation) setDeleteTarget(conversation);
+    },
+    [conversations, isOffline],
+  );
+
+  const handleDeleteConfirm = useCallback(async (): Promise<void> => {
+    if (!deleteTarget) return;
+    const phone = deleteTarget.phone_number;
+    try {
+      await deleteConversation.mutateAsync(phone);
+      setDeleteTarget(null);
+    } catch {
+      setDeleteTarget(null);
+      Alert.alert(he.generic.errorTitle, he.chat.deleteFailed);
+    }
+  }, [deleteConversation, deleteTarget]);
+
+  const deleteDisplayName =
+    deleteTarget != null
+      ? (deleteTarget.profile_name ?? "").trim() || deleteTarget.phone_number
+      : "";
 
   const isLoading = conversationsQuery.isLoading;
   const refreshing = conversationsQuery.isFetching && !isLoading;
@@ -99,7 +136,13 @@ export default function ChatListScreen(): JSX.Element {
         <FlatList<ChatConversation>
           data={filtered}
           keyExtractor={(item) => item.phone_number}
-          renderItem={({ item }) => <ConversationRow conversation={item} onPress={openChat} />}
+          renderItem={({ item }) => (
+            <ConversationRow
+              conversation={item}
+              onPress={openChat}
+              onLongPress={handleLongPress}
+            />
+          )}
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
@@ -117,6 +160,22 @@ export default function ChatListScreen(): JSX.Element {
           contentContainerStyle={filtered.length === 0 ? styles.emptyContainer : undefined}
         />
       )}
+
+      <ConfirmDialog
+        visible={deleteTarget != null}
+        title={he.chat.deleteConfirmTitle}
+        message={
+          deleteTarget
+            ? interpolate(he.chat.deleteConfirmMessage, { name: deleteDisplayName })
+            : undefined
+        }
+        confirmLabel={he.generic.delete}
+        destructive
+        onConfirm={() => void handleDeleteConfirm()}
+        onCancel={() => {
+          if (!deleteConversation.isPending) setDeleteTarget(null);
+        }}
+      />
     </View>
   );
 }

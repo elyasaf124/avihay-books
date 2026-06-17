@@ -9,7 +9,10 @@
 import type { CustomFlow, FulfillmentType, DeliveryMethod, WhatsappSession } from "@avihay-books/shared";
 import { logger } from "../../utils/logger.js";
 import { fuzzySearchBooks, findBookById } from "../../repos/books.repo.js";
-import { getBookLocationPaths } from "../bookLocation.js";
+import {
+  getAvailableBookLocationPaths,
+  isBookAvailableForCustomer,
+} from "../bookLocation.js";
 import { createWhatsappOrderGroup } from "../../repos/orders.repo.js";
 import { isActiveHumanHandover, notifyWhatsappHumanHandover } from "./handoverPush.js";
 import {
@@ -34,6 +37,9 @@ import {
 import {
   BTN,
   hoursMessage,
+  ORDER_EDIT,
+  ORDER_EDIT_BOOK_PREFIX,
+  ORDER_EDIT_BOOK_REMOVE_PREFIX,
   ORDER_STATUS_LABELS,
   paymentMessage,
   PICK_PREFIX,
@@ -68,7 +74,12 @@ const NODES = {
   B2_BOOK_TITLE: "b2_book_title",
   B2_BOOK_QTY: "b2_book_qty",
   B2_MORE: "b2_more",
-  B2_NOTES: "b2_notes",
+  B2_NOTES_ASK: "b2_notes_ask",
+  B2_NOTES_TEXT: "b2_notes_text",
+  B2_SUMMARY: "b2_summary",
+  B2_EDIT_PICK: "b2_edit_pick",
+  B2_EDIT_BOOKS: "b2_edit_books",
+  B2_EDIT_BOOK_QTY: "b2_edit_book_qty",
   B8_MENU: "b8_menu",
   B8_BOOK_TITLE: "b8_book_title",
   B8_POS: "b8_pos",
@@ -107,8 +118,12 @@ interface Ctx {
   customer_name?: string;
   customer_phone?: string;
   address?: string;
+  order_notes?: string | null;
   current_book_title?: string;
   books?: { title: string; quantity: number }[];
+  b2_return_summary?: boolean;
+  edit_book_index?: number;
+  edit_book_add?: boolean;
   nav_stack?: string[];
   [key: string]: unknown;
 }
@@ -207,8 +222,6 @@ export async function handleIncomingMessage(args: {
     if (pausedUntil > Date.now()) {
       if (token === BTN.handoverEnd) {
         await endHumanHandover(from, session, "customer");
-      } else {
-        await refreshHandoverEndButton(from, session, { force: false });
       }
       return;
     }
@@ -260,24 +273,27 @@ export async function handleIncomingMessage(args: {
   }
 }
 
-/** מענה אנושי ידני מאפליקציית WhatsApp Business (smb_message_echoes) — השהיית הבוט. */
+/** מענה אנושי ידני מאפליקציית WhatsApp Business (smb_message_echoes) או מאפליקציית הצ'אט — השהיית הבוט בלבד. */
 export async function handleStaffEcho(from: string): Promise<void> {
   let session = await findSessionByPhone(from);
   if (!session) session = await createSession(from, null);
   const cfg = getWhatsappConfig();
   const until = new Date(Date.now() + cfg.handoverTimeoutMin * 60 * 1000);
+  const ctx = ctxOf(session);
   session = await updateSession(session.id, {
     status: "human_handover",
     current_node: NODES.HANDOVER,
     bot_paused_until: until,
+    context: { ...ctx, staff_engaged_at: new Date().toISOString() },
   });
-  await refreshHandoverEndButton(from, session, { force: true });
   logger.info({ from }, "[whatsapp] staff echo — bot paused for human handover");
 }
 
 // ---------------------------------------------------------------------------
 // Dispatch לפי מצב נוכחי
 // ---------------------------------------------------------------------------
+
+const MEDIA_TYPES = new Set(["image", "sticker", "video", "audio", "voice", "document"]);
 
 async function dispatch(
   from: string,
@@ -286,6 +302,10 @@ async function dispatch(
   text: string,
   msgType?: string,
 ): Promise<void> {
+  if (!token && msgType && MEDIA_TYPES.has(msgType)) {
+    await sendText(from, T.mediaUnsupported);
+    return;
+  }
   if (session.current_node.startsWith(CUSTOM_PREFIX)) {
     return handleCustomFlowButton(from, session, token);
   }
@@ -293,7 +313,7 @@ async function dispatch(
     case NODES.MAIN_MENU:
       return handleMainMenu(from, session, token);
     case NODES.B1_TITLE:
-      return handleB1Title(from, session, text, msgType);
+      return handleB1Title(from, session, text);
     case NODES.B1_PICK:
       return handleB1Pick(from, session, token);
     case NODES.B2_TYPE:
@@ -312,8 +332,18 @@ async function dispatch(
       return handleB2BookQty(from, session, text);
     case NODES.B2_MORE:
       return handleB2More(from, session, token);
-    case NODES.B2_NOTES:
-      return finishOrder(from, session, text);
+    case NODES.B2_NOTES_ASK:
+      return handleB2NotesAsk(from, session, token);
+    case NODES.B2_NOTES_TEXT:
+      return handleB2NotesText(from, session, text);
+    case NODES.B2_SUMMARY:
+      return handleB2Summary(from, session, token);
+    case NODES.B2_EDIT_PICK:
+      return handleB2EditPick(from, session, token);
+    case NODES.B2_EDIT_BOOKS:
+      return handleB2EditBooks(from, session, token);
+    case NODES.B2_EDIT_BOOK_QTY:
+      return handleB2EditBookQty(from, session, text);
     case NODES.B3_STATUS:
       return handleB3Status(from, session, token);
     case NODES.B3_PICK:
@@ -435,7 +465,7 @@ async function runFlowNode(
       .slice(0, 3)
       .map((b) => ({ id: b.id, title: b.title }));
     if (buttons.length === 0) return goEndLoop(from, session);
-    const body = node.text.trim() || "בחר אפשרות:";
+    const body = node.text.trim() || "בחרו אפשרות:";
     await sendReplyButtonsWithNav(from, body, buttons);
     await transitionToNode(session, `${CUSTOM_PREFIX}${flowId}:${nodeId}`);
     return;
@@ -507,8 +537,8 @@ async function handleCustomFlowButton(
 
 async function goEndLoop(from: string, session: WhatsappSession): Promise<void> {
   await sendReplyButtons(from, T.endLoopPrompt, [
-    { id: BTN.loopYes, title: "כן 👍" },
-    { id: BTN.loopNo, title: "לא 👎" },
+    { id: BTN.loopYes, title: T.loopYesButton },
+    { id: BTN.loopNo, title: T.loopNoButton },
   ]);
   const ctx = ctxOf(session);
   const stack = getNavStack(ctx);
@@ -525,8 +555,8 @@ async function handleEndLoop(from: string, session: WhatsappSession, token: stri
     return;
   }
   await sendReplyButtons(from, T.endLoopPrompt, [
-    { id: BTN.loopYes, title: "כן 👍" },
-    { id: BTN.loopNo, title: "לא 👎" },
+    { id: BTN.loopYes, title: T.loopYesButton },
+    { id: BTN.loopNo, title: T.loopNoButton },
   ]);
 }
 
@@ -534,15 +564,7 @@ async function handleEndLoop(from: string, session: WhatsappSession, token: stri
 // ענף 1 — בירור מלאי, מחיר ומיקום
 // ---------------------------------------------------------------------------
 
-const MEDIA_TYPES = new Set(["image", "sticker", "video", "audio", "voice", "document"]);
-
-async function handleB1Title(from: string, session: WhatsappSession, text: string, msgType?: string): Promise<void> {
-  if (msgType && MEDIA_TYPES.has(msgType)) {
-    await sendReplyButtonsWithNav(from, T.b1ImageFallback, [
-      { id: BTN.b1ImageRetry, title: "🔄 נסה שוב" },
-    ]);
-    return;
-  }
+async function handleB1Title(from: string, session: WhatsappSession, text: string): Promise<void> {
   if (text.length === 0) {
     await sendTextPrompt(from, T.b1AskTitle);
     return;
@@ -562,7 +584,7 @@ async function handleB1Title(from: string, session: WhatsappSession, text: strin
     description: `${b.author} · ₪${b.price}`,
   }));
   rows.push({ id: BTN.pickNone, title: "אף אחד מהם", description: "אף אחת מהאפשרויות" });
-  await sendListWithNav(from, T.b1ManyMatches, "בחר ספר", rows);
+  await sendListWithNav(from, T.b1ManyMatches, "בחרו ספר", rows);
   return setNode(session, NODES.B1_PICK);
 }
 
@@ -574,9 +596,9 @@ async function handleB1Pick(from: string, session: WhatsappSession, token: strin
       await sendTextPrompt(from, T.b1AskTitle);
       return setNode(session, NODES.B1_TITLE);
     }
-    const locations = await getBookLocationPaths(bookId);
-    const inStock = Number(book.stock_quantity) > 0;
+    const inStock = await isBookAvailableForCustomer(bookId, book.stock_quantity);
     if (inStock) {
+      const locations = await getAvailableBookLocationPaths(bookId);
       const where = locations[0]?.short_path ?? "פנה לנציג בחנות";
       const msg =
         `שם הספר: ${book.title} | מחבר: ${book.author} | מחיר: ${book.price} ש"ח\n` +
@@ -618,6 +640,167 @@ async function handleB1Pick(from: string, session: WhatsappSession, token: strin
 // ענף 2 — הזמנה חדשה (איסוף / משלוח)
 // ---------------------------------------------------------------------------
 
+function phonePrompt(ctx: Ctx): string {
+  return ctx.fulfillment_type === "delivery" ? T.askPhoneDelivery : T.askPhone;
+}
+
+function notesAskPrompt(ctx: Ctx): string {
+  return ctx.fulfillment_type === "delivery" ? T.askNotesDelivery : T.askNotesPickup;
+}
+
+function notesDetailPrompt(ctx: Ctx): string {
+  return ctx.fulfillment_type === "delivery" ? T.askNotesDetailDelivery : T.askNotesDetailPickup;
+}
+
+function deliveryPointButtonTitle(fee: number): string {
+  return `📦 נקודת איסוף הקרובה לביתך ₪${fee}`;
+}
+
+function normalizeOrderNotes(text: string): string | null {
+  const trimmed = text.trim();
+  return trimmed === "" || trimmed === "אין" ? null : trimmed;
+}
+
+function deliveryMethodSummaryLabel(ctx: Ctx): string {
+  if (ctx.delivery_method === "home") return `עד הבית (₪${ctx.delivery_fee ?? 0})`;
+  if (ctx.delivery_method === "pickup_point") return `נקודת איסוף (₪${ctx.delivery_fee ?? 0})`;
+  return "—";
+}
+
+function buildOrderSummaryText(ctx: Ctx): string {
+  const parts: string[] = [T.orderSummaryIntro, ""];
+  parts.push(`📋 *סוג:* ${ctx.fulfillment_type === "delivery" ? "משלוח 🚚" : "איסוף עצמי 📦"}`);
+  parts.push(`👤 *שם:* ${ctx.customer_name ?? "—"}`);
+  parts.push(`📞 *טלפון:* ${ctx.customer_phone ?? "—"}`);
+  if (ctx.fulfillment_type === "delivery") {
+    parts.push(`📍 *כתובת:* ${ctx.address ?? "—"}`);
+    parts.push(`🚚 *משלוח:* ${deliveryMethodSummaryLabel(ctx)}`);
+  }
+  parts.push("", "📚 *ספרים:*");
+  for (const [i, book] of (ctx.books ?? []).entries()) {
+    parts.push(`${i + 1}. «${book.title}» × ${book.quantity}`);
+  }
+  parts.push("", `📝 *הערות:* ${ctx.order_notes ?? "אין"}`, "", T.orderSummaryConfirmQuestion);
+  return parts.join("\n");
+}
+
+function orderBooksWithTitles(ctx: Ctx): { title: string; quantity: number }[] {
+  return (ctx.books ?? []).filter((b) => b.title.trim().length > 0);
+}
+
+async function showOrderSummary(
+  from: string,
+  session: WhatsappSession,
+  ctxPatch?: Partial<Ctx>,
+): Promise<void> {
+  const ctx = { ...ctxOf(session), ...ctxPatch };
+  if (orderBooksWithTitles(ctx).length === 0) {
+    await sendTextPrompt(from, T.orderSummaryNoBooks);
+    await transitionToNode(session, NODES.B2_BOOK_TITLE, ctx);
+    return;
+  }
+  await sendReplyButtonsWithNav(from, buildOrderSummaryText(ctx), [
+    { id: BTN.orderConfirm, title: "✅ אישור הזמנה" },
+    { id: BTN.orderEdit, title: "✏️ עריכה" },
+    { id: BTN.orderCancel, title: "❌ ביטול" },
+  ]);
+  await transitionToNode(session, NODES.B2_SUMMARY, ctx);
+}
+
+async function showOrderEditPickList(from: string, session: WhatsappSession): Promise<void> {
+  const ctx = ctxOf(session);
+  const rows: ListRow[] = [
+    { id: ORDER_EDIT.type, title: "סוג הזמנה", description: ctx.fulfillment_type === "delivery" ? "משלוח" : "איסוף עצמי" },
+    { id: ORDER_EDIT.name, title: "שם", description: ctx.customer_name ?? "" },
+    { id: ORDER_EDIT.phone, title: "טלפון", description: ctx.customer_phone ?? "" },
+  ];
+  if (ctx.fulfillment_type === "delivery") {
+    rows.push(
+      { id: ORDER_EDIT.address, title: "כתובת", description: ctx.address ?? "" },
+      { id: ORDER_EDIT.delivery, title: "סוג משלוח", description: deliveryMethodSummaryLabel(ctx) },
+    );
+  }
+  rows.push(
+    {
+      id: ORDER_EDIT.books,
+      title: "ספרים",
+      description: `${orderBooksWithTitles(ctx).length} פריטים`,
+    },
+    {
+      id: ORDER_EDIT.notes,
+      title: "הערות",
+      description: ctx.order_notes ?? "אין",
+    },
+  );
+  await sendListWithNav(from, T.orderEditListTitle, "בחרו שדה", rows.slice(0, 10));
+  await setNode(session, NODES.B2_EDIT_PICK, ctx);
+}
+
+async function showOrderEditBooksList(from: string, session: WhatsappSession): Promise<void> {
+  const ctx = ctxOf(session);
+  const books = orderBooksWithTitles(ctx);
+  const rows: ListRow[] = books.map((book, index) => ({
+    id: `${ORDER_EDIT_BOOK_PREFIX}${index}`,
+    title: `📖 ${book.title}`,
+    description: `כמות: ${book.quantity} — לחצו לשינוי (0 = מחיקה)`,
+  }));
+  rows.push({ id: ORDER_EDIT.bookAdd, title: "➕ הוסף ספר" });
+  rows.push({ id: ORDER_EDIT.booksDone, title: "✔️ סיום עריכת ספרים" });
+  await sendListWithNav(from, T.orderEditBooksTitle, "בחרו פעולה", rows.slice(0, 10));
+  await setNode(session, NODES.B2_EDIT_BOOKS, ctx);
+}
+
+async function startOrderFieldEdit(
+  from: string,
+  session: WhatsappSession,
+  targetNode: string,
+  ctx: Ctx,
+): Promise<void> {
+  ctx.b2_return_summary = true;
+  const content = currentBotContent();
+  switch (targetNode) {
+    case NODES.B2_TYPE:
+      await sendReplyButtonsWithNav(from, T.orderAskType, [
+        { id: BTN.orderPickup, title: "📦 איסוף עצמי" },
+        { id: BTN.orderDelivery, title: "🚚 משלוח" },
+      ]);
+      break;
+    case NODES.B2_NAME:
+      await sendTextPrompt(from, T.askName);
+      break;
+    case NODES.B2_PHONE:
+      await sendTextPrompt(from, phonePrompt(ctx));
+      break;
+    case NODES.B2_ADDRESS:
+      await sendTextPrompt(from, T.askAddress);
+      break;
+    case NODES.B2_DELIVERY_METHOD:
+      await sendReplyButtonsWithNav(from, T.askDeliveryMethod, [
+        { id: BTN.deliveryHome, title: `🛵 עד הבית ₪${content.deliveryHomeFee}` },
+        { id: BTN.deliveryPoint, title: deliveryPointButtonTitle(content.deliveryPointFee) },
+      ]);
+      break;
+    case NODES.B2_NOTES_ASK:
+      await sendNotesAsk(from, ctx);
+      break;
+    default:
+      return showOrderSummary(from, session, ctx);
+  }
+  await transitionToNode(session, targetNode, ctx);
+}
+
+async function returnToOrderSummary(from: string, session: WhatsappSession, ctx: Ctx): Promise<void> {
+  ctx.b2_return_summary = false;
+  await showOrderSummary(from, session, ctx);
+}
+
+async function sendNotesAsk(from: string, ctx: Ctx): Promise<void> {
+  await sendReplyButtonsWithNav(from, notesAskPrompt(ctx), [
+    { id: BTN.notesYes, title: "כן" },
+    { id: BTN.notesNo, title: "לא" },
+  ]);
+}
+
 async function askOrderType(from: string, session: WhatsappSession): Promise<void> {
   await sendReplyButtonsWithNav(from, T.orderAskType, [
     { id: BTN.orderPickup, title: "📦 איסוף עצמי" },
@@ -638,6 +821,31 @@ async function handleB2Type(from: string, session: WhatsappSession, token: strin
     ]);
     return;
   }
+
+  if (ctx.b2_return_summary) {
+    if (ctx.fulfillment_type === "pickup") {
+      delete ctx.address;
+      delete ctx.delivery_method;
+      delete ctx.delivery_fee;
+      return returnToOrderSummary(from, session, ctx);
+    }
+    if (!ctx.address?.trim()) {
+      await sendTextPrompt(from, T.askAddress);
+      await transitionToNode(session, NODES.B2_ADDRESS, ctx);
+      return;
+    }
+    if (!ctx.delivery_method) {
+      const content = currentBotContent();
+      await sendReplyButtonsWithNav(from, T.askDeliveryMethod, [
+        { id: BTN.deliveryHome, title: `🛵 עד הבית ₪${content.deliveryHomeFee}` },
+        { id: BTN.deliveryPoint, title: deliveryPointButtonTitle(content.deliveryPointFee) },
+      ]);
+      await transitionToNode(session, NODES.B2_DELIVERY_METHOD, ctx);
+      return;
+    }
+    return returnToOrderSummary(from, session, ctx);
+  }
+
   await sendTextPrompt(from, T.askName);
   await transitionToNode(session, NODES.B2_NAME, ctx);
 }
@@ -649,18 +857,29 @@ async function handleB2Name(from: string, session: WhatsappSession, text: string
   }
   const ctx = ctxOf(session);
   ctx.customer_name = text;
-  await sendTextPrompt(from, T.askPhone);
+  if (ctx.b2_return_summary) {
+    return returnToOrderSummary(from, session, ctx);
+  }
+  await sendTextPrompt(from, phonePrompt(ctx));
   await transitionToNode(session, NODES.B2_PHONE, ctx);
 }
 
+const ISRAELI_PHONE_DIGIT_COUNT = 10;
+
+function isValidCustomerPhone(text: string): boolean {
+  return text.replace(/\D/g, "").length === ISRAELI_PHONE_DIGIT_COUNT;
+}
+
 async function handleB2Phone(from: string, session: WhatsappSession, text: string): Promise<void> {
-  const digits = text.replace(/\D/g, "");
-  if (digits.length < 7) {
-    await sendTextPrompt(from, T.askPhone);
+  if (!isValidCustomerPhone(text)) {
+    await sendTextPrompt(from, T.invalidPhone);
     return;
   }
   const ctx = ctxOf(session);
   ctx.customer_phone = text.trim();
+  if (ctx.b2_return_summary) {
+    return returnToOrderSummary(from, session, ctx);
+  }
   if (ctx.fulfillment_type === "delivery") {
     await sendTextPrompt(from, T.askAddress);
     await transitionToNode(session, NODES.B2_ADDRESS, ctx);
@@ -678,9 +897,20 @@ async function handleB2Address(from: string, session: WhatsappSession, text: str
   const ctx = ctxOf(session);
   const content = currentBotContent();
   ctx.address = text;
+  if (ctx.b2_return_summary) {
+    if (!ctx.delivery_method) {
+      await sendReplyButtonsWithNav(from, T.askDeliveryMethod, [
+        { id: BTN.deliveryHome, title: `🛵 עד הבית ₪${content.deliveryHomeFee}` },
+        { id: BTN.deliveryPoint, title: deliveryPointButtonTitle(content.deliveryPointFee) },
+      ]);
+      await transitionToNode(session, NODES.B2_DELIVERY_METHOD, ctx);
+      return;
+    }
+    return returnToOrderSummary(from, session, ctx);
+  }
   await sendReplyButtonsWithNav(from, T.askDeliveryMethod, [
     { id: BTN.deliveryHome, title: `🛵 עד הבית ₪${content.deliveryHomeFee}` },
-    { id: BTN.deliveryPoint, title: `📦 נקודת איסוף ₪${content.deliveryPointFee}` },
+    { id: BTN.deliveryPoint, title: deliveryPointButtonTitle(content.deliveryPointFee) },
   ]);
   await transitionToNode(session, NODES.B2_DELIVERY_METHOD, ctx);
 }
@@ -701,9 +931,12 @@ async function handleB2DeliveryMethod(
   } else {
     await sendReplyButtonsWithNav(from, T.askDeliveryMethod, [
       { id: BTN.deliveryHome, title: `🛵 עד הבית ₪${content.deliveryHomeFee}` },
-      { id: BTN.deliveryPoint, title: `📦 נקודת איסוף ₪${content.deliveryPointFee}` },
+      { id: BTN.deliveryPoint, title: deliveryPointButtonTitle(content.deliveryPointFee) },
     ]);
     return;
+  }
+  if (ctx.b2_return_summary) {
+    return returnToOrderSummary(from, session, ctx);
   }
   await sendTextPrompt(from, T.askBookTitle);
   await transitionToNode(session, NODES.B2_BOOK_TITLE, ctx);
@@ -741,6 +974,12 @@ async function handleB2BookQty(
     ctx.books.push({ title: ctx.current_book_title, quantity: qty });
   }
   ctx.current_book_title = undefined;
+
+  if (ctx.edit_book_add) {
+    ctx.edit_book_add = false;
+    return returnToOrderSummary(from, session, ctx);
+  }
+
   await sendReplyButtonsWithNav(from, T.askMore, [
     { id: BTN.moreYes, title: "כן" },
     { id: BTN.moreNo, title: "לא" },
@@ -755,11 +994,8 @@ async function handleB2More(from: string, session: WhatsappSession, token: strin
     return setNode(session, NODES.B2_BOOK_TITLE);
   }
   if (token === BTN.moreNo) {
-    await sendTextPrompt(
-      from,
-      ctx.fulfillment_type === "delivery" ? T.askNotesDelivery : T.askNotesPickup,
-    );
-    return setNode(session, NODES.B2_NOTES);
+    await sendNotesAsk(from, ctx);
+    return setNode(session, NODES.B2_NOTES_ASK);
   }
   await sendReplyButtonsWithNav(from, T.askMore, [
     { id: BTN.moreYes, title: "כן" },
@@ -767,11 +1003,162 @@ async function handleB2More(from: string, session: WhatsappSession, token: strin
   ]);
 }
 
-async function finishOrder(from: string, session: WhatsappSession, text: string): Promise<void> {
+async function handleB2NotesAsk(
+  from: string,
+  session: WhatsappSession,
+  token: string,
+): Promise<void> {
   const ctx = ctxOf(session);
-  const trimmed = text.trim();
-  const notes = trimmed === "" || trimmed === "אין" ? null : trimmed;
-  const lines = (ctx.books ?? []).filter((b) => b.title.trim().length > 0);
+  if (token === BTN.notesYes) {
+    await sendTextPrompt(from, notesDetailPrompt(ctx));
+    return setNode(session, NODES.B2_NOTES_TEXT);
+  }
+  if (token === BTN.notesNo) {
+    ctx.order_notes = null;
+    if (ctx.b2_return_summary) {
+      return returnToOrderSummary(from, session, ctx);
+    }
+    return showOrderSummary(from, session, ctx);
+  }
+  await sendNotesAsk(from, ctx);
+}
+
+async function handleB2NotesText(
+  from: string,
+  session: WhatsappSession,
+  text: string,
+): Promise<void> {
+  if (text.trim().length === 0) {
+    const ctx = ctxOf(session);
+    await sendTextPrompt(from, notesDetailPrompt(ctx));
+    return;
+  }
+  const ctx = ctxOf(session);
+  ctx.order_notes = normalizeOrderNotes(text);
+  if (ctx.b2_return_summary) {
+    return returnToOrderSummary(from, session, ctx);
+  }
+  return showOrderSummary(from, session, ctx);
+}
+
+async function handleB2Summary(from: string, session: WhatsappSession, token: string): Promise<void> {
+  if (token === BTN.orderConfirm) {
+    return finishOrder(from, session);
+  }
+  if (token === BTN.orderEdit) {
+    return showOrderEditPickList(from, session);
+  }
+  if (token === BTN.orderCancel) {
+    await sendText(from, T.orderCancelled);
+    return startMainMenu(from, session, false);
+  }
+  return showOrderSummary(from, session);
+}
+
+async function handleB2EditPick(from: string, session: WhatsappSession, token: string): Promise<void> {
+  const ctx = ctxOf(session);
+  switch (token) {
+    case ORDER_EDIT.type:
+      return startOrderFieldEdit(from, session, NODES.B2_TYPE, ctx);
+    case ORDER_EDIT.name:
+      return startOrderFieldEdit(from, session, NODES.B2_NAME, ctx);
+    case ORDER_EDIT.phone:
+      return startOrderFieldEdit(from, session, NODES.B2_PHONE, ctx);
+    case ORDER_EDIT.address:
+      return startOrderFieldEdit(from, session, NODES.B2_ADDRESS, ctx);
+    case ORDER_EDIT.delivery:
+      return startOrderFieldEdit(from, session, NODES.B2_DELIVERY_METHOD, ctx);
+    case ORDER_EDIT.books:
+      return showOrderEditBooksList(from, session);
+    case ORDER_EDIT.notes:
+      return startOrderFieldEdit(from, session, NODES.B2_NOTES_ASK, ctx);
+    default:
+      return showOrderEditPickList(from, session);
+  }
+}
+
+async function handleB2EditBooks(from: string, session: WhatsappSession, token: string): Promise<void> {
+  const ctx = ctxOf(session);
+
+  if (token === ORDER_EDIT.booksDone) {
+    return showOrderSummary(from, session, ctx);
+  }
+
+  if (token === ORDER_EDIT.bookAdd) {
+    ctx.edit_book_add = true;
+    await sendTextPrompt(from, T.askBookTitle);
+    await transitionToNode(session, NODES.B2_BOOK_TITLE, ctx);
+    return;
+  }
+
+  if (token.startsWith(ORDER_EDIT_BOOK_REMOVE_PREFIX)) {
+    const index = Number.parseInt(token.slice(ORDER_EDIT_BOOK_REMOVE_PREFIX.length), 10);
+    if (Number.isFinite(index) && ctx.books?.[index]) {
+      ctx.books.splice(index, 1);
+    }
+    if (orderBooksWithTitles(ctx).length === 0) {
+      await sendTextPrompt(from, T.orderSummaryNoBooks);
+      ctx.edit_book_add = true;
+      await transitionToNode(session, NODES.B2_BOOK_TITLE, ctx);
+      return;
+    }
+    return showOrderEditBooksList(from, session);
+  }
+
+  if (token.startsWith(ORDER_EDIT_BOOK_PREFIX)) {
+    const index = Number.parseInt(token.slice(ORDER_EDIT_BOOK_PREFIX.length), 10);
+    if (!Number.isFinite(index) || !ctx.books?.[index]) {
+      return showOrderEditBooksList(from, session);
+    }
+    ctx.edit_book_index = index;
+    await sendTextPrompt(from, `${T.askQuantity}\n(«${ctx.books[index]!.title}» — הקלידו 0 למחיקה)`);
+    await transitionToNode(session, NODES.B2_EDIT_BOOK_QTY, ctx);
+    return;
+  }
+
+  return showOrderEditBooksList(from, session);
+}
+
+async function handleB2EditBookQty(
+  from: string,
+  session: WhatsappSession,
+  text: string,
+): Promise<void> {
+  const match = /\d+/.exec(text);
+  const qty = match ? Number.parseInt(match[0], 10) : NaN;
+  if (!Number.isFinite(qty) || qty < 0) {
+    await sendTextPrompt(from, T.invalidQuantity);
+    return;
+  }
+
+  const ctx = ctxOf(session);
+  const index = ctx.edit_book_index;
+  if (index == null || !ctx.books?.[index]) {
+    delete ctx.edit_book_index;
+    return showOrderEditBooksList(from, session);
+  }
+
+  if (qty === 0) {
+    ctx.books.splice(index, 1);
+  } else {
+    ctx.books[index]!.quantity = qty;
+  }
+  delete ctx.edit_book_index;
+
+  if (orderBooksWithTitles(ctx).length === 0) {
+    await sendTextPrompt(from, T.orderSummaryNoBooks);
+    ctx.edit_book_add = true;
+    await transitionToNode(session, NODES.B2_BOOK_TITLE, ctx);
+    return;
+  }
+
+  return showOrderEditBooksList(from, session);
+}
+
+async function finishOrder(from: string, session: WhatsappSession): Promise<void> {
+  const ctx = ctxOf(session);
+  const notes = ctx.order_notes ?? null;
+  const lines = orderBooksWithTitles(ctx);
 
   if (lines.length > 0) {
     await createWhatsappOrderGroup({
@@ -804,12 +1191,21 @@ async function finishOrder(from: string, session: WhatsappSession, text: string)
 // ענף 3 — בירור סטטוס הזמנה קיימת
 // ---------------------------------------------------------------------------
 
-interface ActiveOrder {
+interface OrderStatusLine {
   id: string;
+  order_group_id: string | null;
   status: string;
+  quantity: number;
   manual_book_title: string | null;
   book_title: string | null;
   created_at: string;
+}
+
+interface OrderStatusGroup {
+  groupKey: string;
+  status: string;
+  created_at: string;
+  lines: OrderStatusLine[];
 }
 
 function phoneVariants(waPhone: string): string[] {
@@ -837,21 +1233,96 @@ function formatDate(iso: string): string {
   }
 }
 
-async function findActiveOrdersByPhone(waPhone: string): Promise<ActiveOrder[]> {
+const ORDER_STATUS_LINE_SQL = `
+  SELECT o.id,
+         o.order_group_id,
+         o.status,
+         o.quantity,
+         o.manual_book_title,
+         b.title AS book_title,
+         o.created_at::text
+    FROM orders o
+    LEFT JOIN books b ON b.id = o.book_id`;
+
+function orderLineTitle(line: OrderStatusLine): string {
+  return line.manual_book_title ?? line.book_title ?? "ספר";
+}
+
+function groupOrderStatusLines(rows: OrderStatusLine[]): OrderStatusGroup[] {
+  const groups = new Map<string, OrderStatusGroup>();
+  for (const row of rows) {
+    const groupKey = row.order_group_id ?? row.id;
+    const existing = groups.get(groupKey);
+    if (existing) {
+      existing.lines.push(row);
+      continue;
+    }
+    groups.set(groupKey, {
+      groupKey,
+      status: row.status,
+      created_at: row.created_at,
+      lines: [row],
+    });
+  }
+  return [...groups.values()].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+  );
+}
+
+function formatOrderBooksSection(lines: OrderStatusLine[]): string {
+  const parts = ["📚 *ספרים:*"];
+  for (const [i, line] of lines.entries()) {
+    parts.push(`${i + 1}. «${orderLineTitle(line)}» × ${line.quantity}`);
+  }
+  return parts.join("\n");
+}
+
+function buildOrderStatusMessage(lines: OrderStatusLine[]): string {
+  const status = lines[0]?.status ?? "pending";
+  return (
+    `מצאתי את ההזמנה שלך! 📋\n` +
+    `${formatOrderBooksSection(lines)}\n` +
+    `סטטוס עדכני: ${statusLabel(status)}\n\n` +
+    "אם יש לך שאלות נוספות, נשמח לעזור."
+  );
+}
+
+function orderGroupListTitle(group: OrderStatusGroup): string {
+  if (group.lines.length === 1) {
+    const title = orderLineTitle(group.lines[0]!);
+    return title.length > 24 ? `${title.slice(0, 23)}…` : title;
+  }
+  const title = `הזמנה (${group.lines.length} ספרים)`;
+  return title.length > 24 ? `${title.slice(0, 23)}…` : title;
+}
+
+function orderGroupListDescription(group: OrderStatusGroup): string {
+  const qty = group.lines.reduce((sum, line) => sum + line.quantity, 0);
+  const qtyLabel = qty === 1 ? "עותק 1" : `${qty} עותקים`;
+  return `${formatDate(group.created_at)} · ${qtyLabel} · ${statusLabel(group.status)}`;
+}
+
+async function findActiveOrderLinesByPhone(waPhone: string): Promise<OrderStatusLine[]> {
   const variants = phoneVariants(waPhone);
   const placeholders = variants.map((_, i) => `$${i + 1}`).join(", ");
-  const { rows } = await pool.query<ActiveOrder>(
-    `SELECT o.id, o.status,
-            o.manual_book_title,
-            b.title AS book_title,
-            o.created_at::text
-       FROM orders o
-       LEFT JOIN books b ON b.id = o.book_id
+  const { rows } = await pool.query<OrderStatusLine>(
+    `${ORDER_STATUS_LINE_SQL}
       WHERE o.customer_phone IN (${placeholders})
         AND o.status IN ('pending', 'sent')
-      ORDER BY o.created_at DESC
-      LIMIT 10`,
+      ORDER BY o.created_at DESC, o.id
+      LIMIT 30`,
     variants,
+  );
+  return rows;
+}
+
+async function findActiveOrderGroupLines(groupKey: string): Promise<OrderStatusLine[]> {
+  const { rows } = await pool.query<OrderStatusLine>(
+    `${ORDER_STATUS_LINE_SQL}
+      WHERE COALESCE(o.order_group_id, o.id) = $1
+        AND o.status IN ('pending', 'sent')
+      ORDER BY o.created_at, o.id`,
+    [groupKey],
   );
   return rows;
 }
@@ -862,9 +1333,9 @@ async function checkOrderStatus(
   opts?: { push?: boolean },
 ): Promise<void> {
   const resend = opts?.push === false;
-  const orders = await findActiveOrdersByPhone(from);
+  const groups = groupOrderStatusLines(await findActiveOrderLinesByPhone(from));
 
-  if (orders.length === 0) {
+  if (groups.length === 0) {
     await sendReplyButtonsWithNav(from, T.b3NoOrders, [
       { id: BTN.statusToHuman, title: "🛠️ מענה אנושי" },
       { id: BTN.finish, title: "✅ סיום" },
@@ -877,27 +1348,17 @@ async function checkOrderStatus(
     return;
   }
 
-  if (orders.length === 1) {
-    const o = orders[0]!;
-    const title = o.manual_book_title ?? o.book_title ?? "הזמנה";
-    const msg =
-      `מצאתי את ההזמנה שלך! 📋\n` +
-      `ספר: ${title}\n` +
-      `סטטוס עדכני: ${statusLabel(o.status)}\n\n` +
-      "אם יש לך שאלות נוספות, נשמח לעזור.";
-    await sendText(from, msg);
+  if (groups.length === 1) {
+    await sendText(from, buildOrderStatusMessage(groups[0]!.lines));
     return goEndLoop(from, session);
   }
 
-  const rows = orders.map((o) => {
-    const title = o.manual_book_title ?? o.book_title ?? "הזמנה";
-    return {
-      id: `${STATUS_PICK_PREFIX}${o.id}`,
-      title: title.length > 24 ? title.slice(0, 23) + "…" : title,
-      description: `${formatDate(o.created_at)} · ${statusLabel(o.status)}`,
-    };
-  });
-  await sendListWithNav(from, T.b3MultipleOrders, "בחר הזמנה", rows);
+  const rows = groups.map((group) => ({
+    id: `${STATUS_PICK_PREFIX}${group.groupKey}`,
+    title: orderGroupListTitle(group),
+    description: orderGroupListDescription(group),
+  }));
+  await sendListWithNav(from, T.b3MultipleOrders, "בחרו הזמנה", rows);
   if (resend) {
     await updateSession(session.id, { current_node: NODES.B3_PICK });
   } else {
@@ -918,29 +1379,13 @@ async function handleB3Status(from: string, session: WhatsappSession, token: str
 
 async function handleB3Pick(from: string, session: WhatsappSession, token: string): Promise<void> {
   if (token.startsWith(STATUS_PICK_PREFIX)) {
-    const orderId = token.slice(STATUS_PICK_PREFIX.length);
-    const { rows } = await pool.query<ActiveOrder>(
-      `SELECT o.id, o.status,
-              o.manual_book_title,
-              b.title AS book_title,
-              o.created_at::text
-         FROM orders o
-         LEFT JOIN books b ON b.id = o.book_id
-        WHERE o.id = $1`,
-      [orderId],
-    );
-    if (rows.length === 0) {
+    const groupKey = token.slice(STATUS_PICK_PREFIX.length);
+    const lines = await findActiveOrderGroupLines(groupKey);
+    if (lines.length === 0) {
       await sendText(from, "לא נמצאה הזמנה. בוא נחזור לתפריט.");
       return startMainMenu(from, session, false);
     }
-    const o = rows[0]!;
-    const title = o.manual_book_title ?? o.book_title ?? "הזמנה";
-    const msg =
-      `מצאתי את ההזמנה שלך! 📋\n` +
-      `ספר: ${title}\n` +
-      `סטטוס עדכני: ${statusLabel(o.status)}\n\n` +
-      "אם יש לך שאלות נוספות, נשמח לעזור.";
-    await sendText(from, msg);
+    await sendText(from, buildOrderStatusMessage(lines));
     return goEndLoop(from, session);
   }
   await checkOrderStatus(from, session);
@@ -1124,8 +1569,10 @@ export async function endHumanHandover(
   source: "staff" | "customer",
 ): Promise<boolean> {
   if (!isActiveHumanHandover(session)) return false;
-  const content = currentBotContent();
-  await sendText(from, T.closing(content.storeName));
+  if (source === "customer") {
+    const content = currentBotContent();
+    await sendText(from, T.closing(content.storeName));
+  }
   await updateSession(session.id, {
     status: "closed",
     current_node: NODES.CLOSED,
@@ -1239,7 +1686,7 @@ async function resendNodePrompt(from: string, session: WhatsappSession): Promise
       .filter((b) => b.title.trim().length > 0)
       .slice(0, 3)
       .map((b) => ({ id: b.id, title: b.title }));
-    const body = flowNode.text.trim() || "בחר אפשרות:";
+    const body = flowNode.text.trim() || "בחרו אפשרות:";
     await sendReplyButtonsWithNav(from, body, buttons);
     return;
   }
@@ -1262,13 +1709,13 @@ async function resendNodePrompt(from: string, session: WhatsappSession): Promise
     case NODES.B2_NAME:
       return sendTextPrompt(from, T.askName);
     case NODES.B2_PHONE:
-      return sendTextPrompt(from, T.askPhone);
+      return sendTextPrompt(from, phonePrompt(ctx));
     case NODES.B2_ADDRESS:
       return sendTextPrompt(from, T.askAddress);
     case NODES.B2_DELIVERY_METHOD:
       await sendReplyButtonsWithNav(from, T.askDeliveryMethod, [
         { id: BTN.deliveryHome, title: `🛵 עד הבית ₪${content.deliveryHomeFee}` },
-        { id: BTN.deliveryPoint, title: `📦 נקודת איסוף ₪${content.deliveryPointFee}` },
+        { id: BTN.deliveryPoint, title: deliveryPointButtonTitle(content.deliveryPointFee) },
       ]);
       return;
     case NODES.B2_BOOK_TITLE:
@@ -1289,12 +1736,26 @@ async function resendNodePrompt(from: string, session: WhatsappSession): Promise
         { id: BTN.moreNo, title: "לא" },
       ]);
       return;
-    case NODES.B2_NOTES:
-      await sendTextPrompt(
-        from,
-        ctx.fulfillment_type === "delivery" ? T.askNotesDelivery : T.askNotesPickup,
-      );
+    case NODES.B2_NOTES_ASK:
+      await sendNotesAsk(from, ctx);
       return;
+    case NODES.B2_NOTES_TEXT:
+      await sendTextPrompt(from, notesDetailPrompt(ctx));
+      return;
+    case NODES.B2_SUMMARY:
+      return showOrderSummary(from, session, ctx);
+    case NODES.B2_EDIT_PICK:
+      return showOrderEditPickList(from, session);
+    case NODES.B2_EDIT_BOOKS:
+      return showOrderEditBooksList(from, session);
+    case NODES.B2_EDIT_BOOK_QTY: {
+      const index = ctx.edit_book_index;
+      const title = index != null ? ctx.books?.[index]?.title : undefined;
+      const prompt = title
+        ? `${T.askQuantity}\n(«${title}» — הקלידו 0 למחיקה)`
+        : T.askQuantity;
+      return sendTextPrompt(from, prompt);
+    }
     case NODES.B3_STATUS:
       await sendReplyButtonsWithNav(from, T.b3NoOrders, [
         { id: BTN.statusToHuman, title: "🛠️ מענה אנושי" },
@@ -1323,8 +1784,8 @@ async function resendNodePrompt(from: string, session: WhatsappSession): Promise
       return;
     case NODES.END_LOOP:
       await sendReplyButtons(from, T.endLoopPrompt, [
-        { id: BTN.loopYes, title: "כן 👍" },
-        { id: BTN.loopNo, title: "לא 👎" },
+        { id: BTN.loopYes, title: T.loopYesButton },
+        { id: BTN.loopNo, title: T.loopNoButton },
       ]);
       return;
     default:

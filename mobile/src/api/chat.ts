@@ -129,3 +129,17 @@ export function useEndHandover(phone: string) {
     },
   });
 }
+
+/** מחיקת שיחה לצמיתות — כל ההודעות וסשן הבוט. */
+export function useDeleteConversation() {
+  const client = useQueryClient();
+  return useMutation<void, AxiosError, string>({
+    mutationFn: async (phone: string) => {
+      await api.delete(`/chat/${encodeURIComponent(phone)}`);
+    },
+    onSuccess: async (_data, phone) => {
+      client.removeQueries({ queryKey: chatMessagesKey(phone) });
+      await refetchChatLists(client);
+    },
+  });
+}
