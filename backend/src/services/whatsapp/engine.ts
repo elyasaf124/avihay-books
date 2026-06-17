@@ -133,6 +133,25 @@ function isBackKeyword(norm: string): boolean {
   return ["חזור", "אחורה", "back", "/back", "שלב אחורה", "צעד אחורה"].includes(norm);
 }
 
+function findEnabledMenuItem(token: string) {
+  return getCachedBotConfig().menu_items.find((m) => m.id === token && m.enabled);
+}
+
+/** מעבר לענף אחר מהתפריט — מאפס context ומנתב מחדש (גם מרשימה ישנה בצ'אט). */
+async function switchToMenuItem(
+  from: string,
+  session: WhatsappSession,
+  menuToken: string,
+): Promise<void> {
+  const updated = await updateSession(session.id, {
+    status: "active",
+    current_node: NODES.MAIN_MENU,
+    context: {},
+    bot_paused_until: null,
+  });
+  await handleMainMenu(from, updated, menuToken);
+}
+
 function isGreeting(norm: string): boolean {
   return ["שלום", "היי", "הי", "הלו", "hi", "hello"].includes(norm);
 }
@@ -215,6 +234,11 @@ export async function handleIncomingMessage(args: {
 
   if (token === BTN.navBack || isBackKeyword(norm)) {
     await goBackOneStep(from, session);
+    return;
+  }
+
+  if (token && session.current_node !== NODES.MAIN_MENU && findEnabledMenuItem(token)) {
+    await switchToMenuItem(from, session, token);
     return;
   }
 
@@ -412,7 +436,7 @@ async function runFlowNode(
       .map((b) => ({ id: b.id, title: b.title }));
     if (buttons.length === 0) return goEndLoop(from, session);
     const body = node.text.trim() || "בחר אפשרות:";
-    await sendReplyButtons(from, body, buttons);
+    await sendReplyButtonsWithNav(from, body, buttons);
     await transitionToNode(session, `${CUSTOM_PREFIX}${flowId}:${nodeId}`);
     return;
   }
@@ -514,7 +538,7 @@ const MEDIA_TYPES = new Set(["image", "sticker", "video", "audio", "voice", "doc
 
 async function handleB1Title(from: string, session: WhatsappSession, text: string, msgType?: string): Promise<void> {
   if (msgType && MEDIA_TYPES.has(msgType)) {
-    await sendReplyButtons(from, T.b1ImageFallback, [
+    await sendReplyButtonsWithNav(from, T.b1ImageFallback, [
       { id: BTN.b1ImageRetry, title: "🔄 נסה שוב" },
     ]);
     return;
@@ -525,7 +549,7 @@ async function handleB1Title(from: string, session: WhatsappSession, text: strin
   }
   const matches = await fuzzySearchBooks(text, 8);
   if (matches.length === 0) {
-    await sendReplyButtons(from, T.b1NoMatch, [
+    await sendReplyButtonsWithNav(from, T.b1NoMatch, [
       { id: BTN.toOrder, title: "🛒 כן, להזמנה" },
       { id: BTN.searchAgain, title: "🔄 נסה שוב" },
       { id: BTN.finish, title: "✅ סיום" },
@@ -538,7 +562,7 @@ async function handleB1Title(from: string, session: WhatsappSession, text: strin
     description: `${b.author} · ₪${b.price}`,
   }));
   rows.push({ id: BTN.pickNone, title: "אף אחד מהם", description: "אף אחת מהאפשרויות" });
-  await sendListMessage(from, T.b1ManyMatches, "בחר ספר", rows);
+  await sendListWithNav(from, T.b1ManyMatches, "בחר ספר", rows);
   return setNode(session, NODES.B1_PICK);
 }
 
@@ -558,14 +582,14 @@ async function handleB1Pick(from: string, session: WhatsappSession, token: strin
         `שם הספר: ${book.title} | מחבר: ${book.author} | מחיר: ${book.price} ש"ח\n` +
         `📍 מיקום בחנות: ${where}\n` +
         "ניתן להגיע לחנות ולרכוש את הספר!";
-      await sendReplyButtons(from, msg, [
+      await sendReplyButtonsWithNav(from, msg, [
         { id: BTN.searchAgain, title: "🔄 חיפוש נוסף" },
         { id: BTN.finish, title: "✅ סיום" },
       ]);
     } else {
       const msg =
         `שם הספר: ${book.title} | מחבר: ${book.author}\n` + "סטטוס: חסר כרגע במלאי.";
-      await sendReplyButtons(from, msg, [
+      await sendReplyButtonsWithNav(from, msg, [
         { id: BTN.toOrder, title: "🛒 להזמנת הספר" },
         { id: BTN.searchAgain, title: "🔄 חיפוש נוסף" },
         { id: BTN.finish, title: "✅ סיום" },
@@ -595,7 +619,7 @@ async function handleB1Pick(from: string, session: WhatsappSession, token: strin
 // ---------------------------------------------------------------------------
 
 async function askOrderType(from: string, session: WhatsappSession): Promise<void> {
-  await sendReplyButtons(from, T.orderAskType, [
+  await sendReplyButtonsWithNav(from, T.orderAskType, [
     { id: BTN.orderPickup, title: "📦 איסוף עצמי" },
     { id: BTN.orderDelivery, title: "🚚 משלוח" },
   ]);
@@ -608,7 +632,7 @@ async function handleB2Type(from: string, session: WhatsappSession, token: strin
   if (token === BTN.orderPickup) ctx.fulfillment_type = "pickup";
   else if (token === BTN.orderDelivery) ctx.fulfillment_type = "delivery";
   else {
-    await sendReplyButtons(from, T.orderAskType, [
+    await sendReplyButtonsWithNav(from, T.orderAskType, [
       { id: BTN.orderPickup, title: "📦 איסוף עצמי" },
       { id: BTN.orderDelivery, title: "🚚 משלוח" },
     ]);
@@ -654,7 +678,7 @@ async function handleB2Address(from: string, session: WhatsappSession, text: str
   const ctx = ctxOf(session);
   const content = currentBotContent();
   ctx.address = text;
-  await sendReplyButtons(from, T.askDeliveryMethod, [
+  await sendReplyButtonsWithNav(from, T.askDeliveryMethod, [
     { id: BTN.deliveryHome, title: `🛵 עד הבית ₪${content.deliveryHomeFee}` },
     { id: BTN.deliveryPoint, title: `📦 נקודת איסוף ₪${content.deliveryPointFee}` },
   ]);
@@ -675,7 +699,7 @@ async function handleB2DeliveryMethod(
     ctx.delivery_method = "pickup_point";
     ctx.delivery_fee = content.deliveryPointFee;
   } else {
-    await sendReplyButtons(from, T.askDeliveryMethod, [
+    await sendReplyButtonsWithNav(from, T.askDeliveryMethod, [
       { id: BTN.deliveryHome, title: `🛵 עד הבית ₪${content.deliveryHomeFee}` },
       { id: BTN.deliveryPoint, title: `📦 נקודת איסוף ₪${content.deliveryPointFee}` },
     ]);
@@ -717,7 +741,7 @@ async function handleB2BookQty(
     ctx.books.push({ title: ctx.current_book_title, quantity: qty });
   }
   ctx.current_book_title = undefined;
-  await sendReplyButtons(from, T.askMore, [
+  await sendReplyButtonsWithNav(from, T.askMore, [
     { id: BTN.moreYes, title: "כן" },
     { id: BTN.moreNo, title: "לא" },
   ]);
@@ -737,7 +761,7 @@ async function handleB2More(from: string, session: WhatsappSession, token: strin
     );
     return setNode(session, NODES.B2_NOTES);
   }
-  await sendReplyButtons(from, T.askMore, [
+  await sendReplyButtonsWithNav(from, T.askMore, [
     { id: BTN.moreYes, title: "כן" },
     { id: BTN.moreNo, title: "לא" },
   ]);
@@ -841,7 +865,7 @@ async function checkOrderStatus(
   const orders = await findActiveOrdersByPhone(from);
 
   if (orders.length === 0) {
-    await sendReplyButtons(from, T.b3NoOrders, [
+    await sendReplyButtonsWithNav(from, T.b3NoOrders, [
       { id: BTN.statusToHuman, title: "🛠️ מענה אנושי" },
       { id: BTN.finish, title: "✅ סיום" },
     ]);
@@ -873,7 +897,7 @@ async function checkOrderStatus(
       description: `${formatDate(o.created_at)} · ${statusLabel(o.status)}`,
     };
   });
-  await sendListMessage(from, T.b3MultipleOrders, "בחר הזמנה", rows);
+  await sendListWithNav(from, T.b3MultipleOrders, "בחר הזמנה", rows);
   if (resend) {
     await updateSession(session.id, { current_node: NODES.B3_PICK });
   } else {
@@ -886,7 +910,7 @@ async function handleB3Status(from: string, session: WhatsappSession, token: str
     return handover(from, session, "בירור סטטוס הזמנה — מענה אנושי");
   }
   if (token === BTN.finish) return goEndLoop(from, session);
-  await sendReplyButtons(from, T.b3NoOrders, [
+  await sendReplyButtonsWithNav(from, T.b3NoOrders, [
     { id: BTN.statusToHuman, title: "🛠️ מענה אנושי" },
     { id: BTN.finish, title: "✅ סיום" },
   ]);
@@ -932,7 +956,7 @@ async function sendSupportMenu(
   opts?: { push?: boolean },
 ): Promise<void> {
   const resend = opts?.push === false;
-  await sendReplyButtons(from, T.supportPrompt, [
+  await sendReplyButtonsWithNav(from, T.supportPrompt, [
     { id: BTN.supportNotFound, title: "📕 ספר לא בתא" },
     { id: BTN.supportPos, title: "🖥️ תקלת תשלום" },
     { id: BTN.supportOther, title: "❓ שאלה אחרת" },
@@ -954,7 +978,7 @@ async function handleSupportMenu(
       await sendTextPrompt(from, T.supportAskBook);
       return setNode(session, NODES.B8_BOOK_TITLE);
     case BTN.supportPos:
-      await sendReplyButtons(from, T.supportPosText, [
+      await sendReplyButtonsWithNav(from, T.supportPosText, [
         { id: BTN.toPayment, title: "💳 אפשרויות תשלום" },
         { id: BTN.finish, title: "✅ סיום" },
       ]);
@@ -966,7 +990,7 @@ async function handleSupportMenu(
       return setNode(session, NODES.B8_POS);
     case BTN.supportOther:
       if (withinHumanHours()) {
-        await sendReplyButtons(from, "אפשר להעביר אותך לנציג אנושי:", [
+        await sendReplyButtonsWithNav(from, "אפשר להעביר אותך לנציג אנושי:", [
           { id: BTN.toHuman, title: "💬 מענה אנושי" },
         ]);
         return setNode(session, NODES.B8_OTHER);
@@ -1006,7 +1030,7 @@ async function handleSupportPos(
     return goEndLoop(from, session);
   }
   if (token === BTN.finish) return goEndLoop(from, session);
-  await sendReplyButtons(from, T.supportPosText, [
+  await sendReplyButtonsWithNav(from, T.supportPosText, [
     { id: BTN.toPayment, title: "💳 אפשרויות תשלום" },
     { id: BTN.finish, title: "✅ סיום" },
   ]);
@@ -1021,7 +1045,7 @@ async function handleSupportOther(
     await sendText(from, T.supportHumanInHours);
     return handover(from, session, "מענה אנושי - שאלה אחרת");
   }
-  await sendReplyButtons(from, "אפשר להעביר אותך לנציג אנושי:", [
+  await sendReplyButtonsWithNav(from, "אפשר להעביר אותך לנציג אנושי:", [
     { id: BTN.toHuman, title: "💬 מענה אנושי" },
   ]);
 }
@@ -1123,6 +1147,25 @@ async function sendNavButtons(from: string): Promise<void> {
   ]);
 }
 
+async function sendReplyButtonsWithNav(
+  from: string,
+  body: string,
+  buttons: { id: string; title: string }[],
+): Promise<void> {
+  await sendReplyButtons(from, body, buttons);
+  await sendNavButtons(from);
+}
+
+async function sendListWithNav(
+  from: string,
+  body: string,
+  buttonLabel: string,
+  rows: ListRow[],
+): Promise<void> {
+  await sendListMessage(from, body, buttonLabel, rows);
+  await sendNavButtons(from);
+}
+
 async function sendTextPrompt(from: string, body: string): Promise<void> {
   await sendText(from, body);
   await sendNavButtons(from);
@@ -1197,7 +1240,7 @@ async function resendNodePrompt(from: string, session: WhatsappSession): Promise
       .slice(0, 3)
       .map((b) => ({ id: b.id, title: b.title }));
     const body = flowNode.text.trim() || "בחר אפשרות:";
-    await sendReplyButtons(from, body, buttons);
+    await sendReplyButtonsWithNav(from, body, buttons);
     return;
   }
 
@@ -1211,7 +1254,7 @@ async function resendNodePrompt(from: string, session: WhatsappSession): Promise
       await updateSession(session.id, { current_node: NODES.B1_TITLE });
       return;
     case NODES.B2_TYPE:
-      await sendReplyButtons(from, T.orderAskType, [
+      await sendReplyButtonsWithNav(from, T.orderAskType, [
         { id: BTN.orderPickup, title: "📦 איסוף עצמי" },
         { id: BTN.orderDelivery, title: "🚚 משלוח" },
       ]);
@@ -1223,7 +1266,7 @@ async function resendNodePrompt(from: string, session: WhatsappSession): Promise
     case NODES.B2_ADDRESS:
       return sendTextPrompt(from, T.askAddress);
     case NODES.B2_DELIVERY_METHOD:
-      await sendReplyButtons(from, T.askDeliveryMethod, [
+      await sendReplyButtonsWithNav(from, T.askDeliveryMethod, [
         { id: BTN.deliveryHome, title: `🛵 עד הבית ₪${content.deliveryHomeFee}` },
         { id: BTN.deliveryPoint, title: `📦 נקודת איסוף ₪${content.deliveryPointFee}` },
       ]);
@@ -1241,7 +1284,7 @@ async function resendNodePrompt(from: string, session: WhatsappSession): Promise
       }
       return sendTextPrompt(from, T.askQuantity);
     case NODES.B2_MORE:
-      await sendReplyButtons(from, T.askMore, [
+      await sendReplyButtonsWithNav(from, T.askMore, [
         { id: BTN.moreYes, title: "כן" },
         { id: BTN.moreNo, title: "לא" },
       ]);
@@ -1253,7 +1296,7 @@ async function resendNodePrompt(from: string, session: WhatsappSession): Promise
       );
       return;
     case NODES.B3_STATUS:
-      await sendReplyButtons(from, T.b3NoOrders, [
+      await sendReplyButtonsWithNav(from, T.b3NoOrders, [
         { id: BTN.statusToHuman, title: "🛠️ מענה אנושי" },
         { id: BTN.finish, title: "✅ סיום" },
       ]);
@@ -1265,13 +1308,13 @@ async function resendNodePrompt(from: string, session: WhatsappSession): Promise
     case NODES.B8_BOOK_TITLE:
       return sendTextPrompt(from, T.supportAskBook);
     case NODES.B8_POS:
-      await sendReplyButtons(from, T.supportPosText, [
+      await sendReplyButtonsWithNav(from, T.supportPosText, [
         { id: BTN.toPayment, title: "💳 אפשרויות תשלום" },
         { id: BTN.finish, title: "✅ סיום" },
       ]);
       return;
     case NODES.B8_OTHER:
-      await sendReplyButtons(from, "אפשר להעביר אותך לנציג אנושי:", [
+      await sendReplyButtonsWithNav(from, "אפשר להעביר אותך לנציג אנושי:", [
         { id: BTN.toHuman, title: "💬 מענה אנושי" },
       ]);
       return;

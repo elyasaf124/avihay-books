@@ -1144,5 +1144,34 @@ describe("WhatsApp Bot — Dynamic config", { skip: botCfgSkip }, () => {
       assert.equal(session?.current_node, "main_menu");
       await cleanupTestPhone(phone);
     });
+
+    test("I5: menu item mid-order resets context and switches branch", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+      await selectMenu(phone, MENU_IDS.order);
+      await sendInbound(phone, { replyId: BTN.orderPickup });
+      await sendInbound(phone, { text: "ישראל ישראלי" });
+      let session = await getSession(phone);
+      assert.equal(session?.current_node, "b2_phone");
+      assert.equal((session?.context as { customer_name?: string }).customer_name, "ישראל ישראלי");
+      const out = await sendInbound(phone, { replyId: MENU_IDS.stock });
+      assertSomeBodyContains(out, T.b1AskTitle);
+      session = await getSession(phone);
+      assert.equal(session?.current_node, "b1_title");
+      assert.equal((session?.context as { customer_name?: string }).customer_name, undefined);
+      await cleanupTestPhone(phone);
+    });
+
+    test("I6: order branch shows nav buttons after type question", async () => {
+      const phone = uniqueTestPhone();
+      await resetPhone(phone);
+      await goToMainMenu(phone);
+      const out = await selectMenu(phone, MENU_IDS.order);
+      assertSomeBodyContains(out, T.orderAskType);
+      assertSomeBodyContains(out, T.navHint);
+      assert.equal(out.filter((r) => r.msgType === "interactive.button").length, 2);
+      await cleanupTestPhone(phone);
+    });
   });
 });
