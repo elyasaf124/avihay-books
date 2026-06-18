@@ -22,6 +22,7 @@
     "web": "expo start --web",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "prebuild:android": "node scripts/check-google-services.cjs && node scripts/run-with-monorepo-root.cjs npx expo prebuild --platform android",
+    "prebuild:android:production": "node scripts/prebuild-android-production.cjs",
     "apk:release": "node scripts/apk-release.cjs",
     "apk:release:gradle": "node scripts/gradle-assemble-release.cjs",
     "eas:credentials": "npx eas-cli@latest credentials",

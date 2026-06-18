@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { BotTextKey, BotTextOverrides } from "@avihay-books/shared";
+import { BOT_TEXT_DEFAULTS, normalizeBotTextOverride } from "@avihay-books/shared";
 import { useBotConfig } from "../../api/botConfig";
 import { he } from "../../i18n/he";
 import { theme } from "../../theme";
@@ -45,8 +46,6 @@ function TextOverrideField({
         onChangeText={onChangeText}
         multiline
         textAlign="right"
-        placeholder={he.bot.textDefaultLabel}
-        placeholderTextColor={theme.colors.onSurfaceVariant}
         onFocus={() => botScroll?.onInputFocus(fieldKey)}
       />
     </View>
@@ -158,8 +157,9 @@ export function TextOverridesEditor(): JSX.Element {
   const set = (key: BotTextKey, value: string): void =>
     setDraft((prev) => {
       const next = { ...(prev ?? {}) };
-      if (value.trim().length === 0) delete next[key];
-      else next[key] = value;
+      const normalized = normalizeBotTextOverride(key, value);
+      if (normalized === undefined) delete next[key];
+      else next[key] = normalized;
       return next;
     });
 
@@ -176,16 +176,17 @@ export function TextOverridesEditor(): JSX.Element {
             <View key={group.title} style={styles.group}>
               <Text style={styles.groupTitle}>{group.title}</Text>
               {group.keys.map((key) => {
-                const value = draft?.[key] ?? "";
+                const override = draft?.[key];
+                const displayValue = override ?? BOT_TEXT_DEFAULTS[key];
                 return (
                   <TextOverrideField
                     key={key}
                     fieldKey={key}
                     label={LABELS[key]}
-                    value={value}
+                    value={displayValue}
                     onChangeText={(v) => set(key, v)}
                     onReset={() => set(key, "")}
-                    showDefaultBadge={value.length === 0}
+                    showDefaultBadge={override === undefined}
                   />
                 );
               })}

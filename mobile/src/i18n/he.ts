@@ -803,7 +803,8 @@ export const he = {
     removeButton: "הסר",
 
     textsTitle: "הודעות הבוט",
-    textsHint: "השאר ריק כדי להשתמש בנוסח ברירת המחדל. {storeName} יוחלף בשם החנות.",
+    textsHint:
+      "מוצג נוסח ברירת המחדל. עריכה שומרת נוסח מותאם; לחצו איפוס לחזרה. {storeName} יוחלף בשם החנות.",
     textDefaultLabel: "ברירת מחדל",
     revertToDefault: "אפס לברירת מחדל",
   },

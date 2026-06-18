@@ -5,7 +5,6 @@ call "%~dp0resolve-android-env.bat"
 
 set "APK=%~dp0..\mobile\android\app\build\outputs\apk\release\app-release.apk"
 set "PKG=com.avihay.books"
-set "PKG_DEV=com.avihay.books.dev"
 set "REQUESTED=%~1"
 set "SERIAL="
 set "HAS_UNAUTHORIZED=0"
@@ -80,7 +79,6 @@ echo.
 
 echo === Uninstalling old app (fixes signature mismatch) ===
 adb -s !SERIAL! uninstall %PKG% 2>nul
-adb -s !SERIAL! uninstall %PKG_DEV% 2>nul
 echo.
 
 echo === Installing ===

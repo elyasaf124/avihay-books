@@ -20,6 +20,7 @@
     "mobile:android:dev": "npm run android:dev --workspace=@avihay-books/mobile",
     "mobile:android:dev:build": "npm run android:dev:build --workspace=@avihay-books/mobile",
     "mobile:prebuild:android": "npm run prebuild:android --workspace=@avihay-books/mobile",
+    "mobile:prebuild:android:production": "npm run prebuild:android:production --workspace=@avihay-books/mobile",
     "mobile:apk:release": "npm run apk:release --workspace=@avihay-books/mobile",
     "compose:up": "docker compose up --build",
     "compose:down": "docker compose down",

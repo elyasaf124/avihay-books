@@ -2,9 +2,6 @@ const path = require("path");
 const fs = require("fs");
 const { loadProjectEnv } = require("@expo/env");
 
-/** שינוי מזהה האפליקציה לפיתוח כדי לא לדרוס את גרסת הייצור בטלפון. שנה ל-false כדי לחזור לפרודקשן בקלות */
-const IS_DEV_PACKAGE = false;
-
 /** מצב טעינת קבצי `.env.*` — מתאים ל־`EAS` (`EAS_BUILD_PROFILE`) או ל־`NODE_ENV` מקומי */
 function getExpoEnvMode() {
   const profile = process.env.EAS_BUILD_PROFILE;
@@ -62,10 +59,9 @@ const googleServicesFile = "./google-services.json";
 const hasGoogleServices = fs.existsSync(path.join(__dirname, googleServicesFile));
 
 module.exports = ({ config }) => {
-  const name = IS_DEV_PACKAGE ? `${config.name}-dev` : config.name;
   const android = {
     ...config.android,
-    package: IS_DEV_PACKAGE ? `${config.android?.package ?? "com.avihay.books"}.dev` : (config.android?.package ?? "com.avihay.books"),
+    package: config.android?.package ?? "com.avihay.books",
     permissions: [
       ...new Set([
         ...(config.android?.permissions ?? []),
@@ -76,14 +72,13 @@ module.exports = ({ config }) => {
   };
   const ios = {
     ...config.ios,
-    bundleIdentifier: IS_DEV_PACKAGE ? `${config.ios?.bundleIdentifier ?? "com.avihay.books"}.dev` : (config.ios?.bundleIdentifier ?? "com.avihay.books"),
+    bundleIdentifier: config.ios?.bundleIdentifier ?? "com.avihay.books",
   };
 
   const updatesEnabled = isProductionBuild && hasEasProjectId;
 
   return {
     ...config,
-    name,
     android,
     ios,
     runtimeVersion: {
