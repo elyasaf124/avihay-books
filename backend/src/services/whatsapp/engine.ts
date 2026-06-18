@@ -1435,7 +1435,7 @@ async function handleSupportMenu(
       return setNode(session, NODES.B8_POS);
     case BTN.supportOther:
       if (withinHumanHours()) {
-        await sendReplyButtonsWithNav(from, "אפשר להעביר אותך לנציג אנושי:", [
+        await sendReplyButtonsWithNav(from, T.supportOfferHuman, [
           { id: BTN.toHuman, title: "💬 מענה אנושי" },
         ]);
         return setNode(session, NODES.B8_OTHER);
@@ -1490,7 +1490,7 @@ async function handleSupportOther(
     await sendText(from, T.supportHumanInHours);
     return handover(from, session, "מענה אנושי - שאלה אחרת");
   }
-  await sendReplyButtonsWithNav(from, "אפשר להעביר אותך לנציג אנושי:", [
+  await sendReplyButtonsWithNav(from, T.supportOfferHuman, [
     { id: BTN.toHuman, title: "💬 מענה אנושי" },
   ]);
 }
@@ -1775,7 +1775,7 @@ async function resendNodePrompt(from: string, session: WhatsappSession): Promise
       ]);
       return;
     case NODES.B8_OTHER:
-      await sendReplyButtonsWithNav(from, "אפשר להעביר אותך לנציג אנושי:", [
+      await sendReplyButtonsWithNav(from, T.supportOfferHuman, [
         { id: BTN.toHuman, title: "💬 מענה אנושי" },
       ]);
       return;

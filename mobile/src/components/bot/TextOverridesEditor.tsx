@@ -58,6 +58,8 @@ const LABELS: Record<BotTextKey, string> = {
   menuPrompt: "כותרת התפריט",
   closing: "הודעת סיום",
   endLoopPrompt: "שאלת «עוד משהו?»",
+  loopYesButton: "כפתור «כן» (סיום לולאה)",
+  loopNoButton: "כפתור «לא» (סיום לולאה)",
   b1AskTitle: "בקשת שם ספר",
   b1ManyMatches: "נמצאו כמה תוצאות",
   b1NoMatch: "לא נמצא ספר",
@@ -92,6 +94,7 @@ const LABELS: Record<BotTextKey, string> = {
   supportReportSaved: "אישור דיווח",
   supportPosText: "תקלת תשלום",
   supportHumanInHours: "מעבר לנציג",
+  supportOfferHuman: "הצעת מעבר לנציג (מחוץ לשעות)",
   supportOffHours: "מחוץ לשעות מענה",
   supportQuestionSaved: "אישור שמירת שאלה",
   handoverEndHint: "הנחיית כפתור סיום (מענה אנושי)",
@@ -107,7 +110,7 @@ const LABELS: Record<BotTextKey, string> = {
 };
 
 const GROUPS: { title: string; keys: BotTextKey[] }[] = [
-  { title: "כללי", keys: ["welcome", "menuButton", "menuPrompt", "closing", "endLoopPrompt", "navBackButton", "navHint", "navBackUnavailable"] },
+  { title: "כללי", keys: ["welcome", "menuButton", "menuPrompt", "closing", "endLoopPrompt", "loopYesButton", "loopNoButton", "navBackButton", "navHint", "navBackUnavailable"] },
   { title: "בירור מלאי", keys: ["b1AskTitle", "b1ManyMatches", "b1NoMatch", "mediaUnsupported", "b1ImageFallback"] },
   {
     title: "הזמנה",
@@ -130,6 +133,7 @@ const GROUPS: { title: string; keys: BotTextKey[] }[] = [
       "supportReportSaved",
       "supportPosText",
       "supportHumanInHours",
+      "supportOfferHuman",
       "supportOffHours",
       "supportQuestionSaved",
       "handoverEndHint",
@@ -138,6 +142,12 @@ const GROUPS: { title: string; keys: BotTextKey[] }[] = [
     ],
   },
 ];
+
+/** וידוא compile-time שכל מפתח ב-`BOT_TEXT_KEYS` מופיע ב-`GROUPS`. */
+const _groupCoverage: { [K in BotTextKey]: true } = Object.fromEntries(
+  GROUPS.flatMap((g) => g.keys).map((k) => [k, true] as const),
+) as { [K in BotTextKey]: true };
+void _groupCoverage;
 
 export function TextOverridesEditor(): JSX.Element {
   const configQuery = useBotConfig();

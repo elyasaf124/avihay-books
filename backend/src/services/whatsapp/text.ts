@@ -214,6 +214,9 @@ export const T = {
   get supportHumanInHours(): string {
     return ov("supportHumanInHours");
   },
+  get supportOfferHuman(): string {
+    return ov("supportOfferHuman");
+  },
   supportOffHours: (start: number, end: number): string =>
     ov("supportOffHours")
       .replaceAll("{start}", String(start))
@@ -234,14 +237,13 @@ export const T = {
   get endLoopPrompt(): string {
     return ov("endLoopPrompt");
   },
-  closing: (_storeName: string): string => ov("closing"),
-
   get loopYesButton(): string {
-    return "כן, אשמח😊";
+    return ov("loopYesButton");
   },
   get loopNoButton(): string {
-    return "לא, תודה רבה 🙏";
+    return ov("loopNoButton");
   },
+  closing: (_storeName: string): string => ov("closing"),
 
   get catalogCaption(): string {
     return ov("catalogCaption");

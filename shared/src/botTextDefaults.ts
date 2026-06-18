@@ -61,6 +61,7 @@ export const BOT_TEXT_DEFAULTS: Record<BotTextKey, string> = {
     "הדיווח הועבר למנהל החנות לטיפול מיידי. בינתיים, ניתן לבצע תשלום בחנות במזומן, " +
     "העברה בנקאית או דרך הקישורים הדיגיטליים הניידים.",
   supportHumanInHours: "מעבירים אתכם לנציג אנושי, אנא המתינו 🙂",
+  supportOfferHuman: "אפשר להעביר אותך לנציג אנושי:",
   supportOffHours:
     "המענה האנושי שלנו פעיל בימים א'-ה' בין השעות {start}:00 ל-{end}:00.\n" +
     "באפשרותך לכתוב כאן את שאלתך בטקסט חופשי, ונציג יחזור אליך במהלך שעות הפעילות!",
@@ -69,6 +70,8 @@ export const BOT_TEXT_DEFAULTS: Record<BotTextKey, string> = {
   handoverEndHintRepeat: "לסיום השיחה:",
   handoverEndButton: "✅ סיימתי",
   endLoopPrompt: "האם יש עוד משהו שנוכל לעזור לכם בו?",
+  loopYesButton: "כן, אשמח😊",
+  loopNoButton: "לא, תודה רבה 🙏",
   catalogCaption:
     "מצורף קטלוג הספרים המלא והמעודכן של החנות! מקווים שתמצאו בו את מה שאתם מחפשים!",
   catalogMissing: "סליחה, הקטלוג אינו זמין כרגע. נציג יחזור אליכם עם הקטלוג בהקדם.",
