@@ -221,6 +221,12 @@ export const mockOrderList: OrderListItem[] = [
     supplier_name: sup(1).name,
     supplier_color: sup(1).color_hex,
     supplier_email: sup(1).email,
+    fulfillment_type: "delivery",
+    delivery_method: "home",
+    delivery_fee: "25.00",
+    address: "רחוב הרצל 12, תל אביב",
+    notes: "להשאיר ליד הדלת",
+    order_group_id: "a0000000-0000-4000-8000-000000000015",
   },
   {
     id: uid(16),

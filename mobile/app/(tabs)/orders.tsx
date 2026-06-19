@@ -32,6 +32,7 @@ import {
   summedCustomerAndWhatsappQtyByBookSupplier,
   summedInventoryBaseQtyBySupplierBook,
   useOrdersGroupedByCustomer,
+  useOrdersGroupedForWhatsapp,
   useOrdersGroupedBySupplier,
   filterActiveDemandOrders,
   isArchivedOrder,
@@ -42,10 +43,11 @@ import {
   useToggleInventoryLineOrderedStatus,
   useToggleInventorySupplierOrderedStatus,
   useUpdateInventoryOrderQuantity,
+  whatsappOrderGroupKey,
 } from "../../src/api/orders";
 import { ConfirmDialog } from "../../src/components/ConfirmDialog";
 import { CustomerDemandOrderModal } from "../../src/components/orders/CustomerDemandOrderModal";
-import { CustomerOrderCard, customerGroupListKey } from "../../src/components/orders/CustomerOrderCard";
+import { CustomerOrderCard, customerGroupListKey, whatsappGroupListKey } from "../../src/components/orders/CustomerOrderCard";
 import { InventoryOrderCreateModal } from "../../src/components/orders/InventoryOrderCreateModal";
 import { InventoryOrderQtyModal } from "../../src/components/orders/InventoryOrderQtyModal";
 import { mockOrderList } from "../../src/mocks/shortageOrders";
@@ -312,7 +314,7 @@ export default function OrdersScreen(): JSX.Element {
 
   const inventorySupplierGroups = useOrdersGroupedBySupplier(inventoryItems, "inventory");
   const customerGroups = useOrdersGroupedByCustomer(customerItemsActive, "customer");
-  const whatsappGroups = useOrdersGroupedByCustomer(whatsappItemsActive, "whatsapp");
+  const whatsappGroups = useOrdersGroupedForWhatsapp(whatsappItemsActive);
 
   const extraCustomerWhatsappByBookSupplier = useMemo(
     () =>
@@ -452,11 +454,12 @@ export default function OrdersScreen(): JSX.Element {
       Alert.alert(he.orders.removeBlockedOffline);
       return;
     }
-    const key = customerOrderBundleKey(line);
+    const key =
+      orderType === "whatsapp" ? whatsappOrderGroupKey(line) : customerOrderBundleKey(line);
     const source = orderType === "customer" ? customerQuery.data : whatsappQuery.data;
-    const bundle = (source ?? []).filter(
-      (o) => customerOrderBundleKey(o) === key && !isArchivedOrder(o),
-    );
+    const matchKey = (o: OrderListItem) =>
+      orderType === "whatsapp" ? whatsappOrderGroupKey(o) : customerOrderBundleKey(o);
+    const bundle = (source ?? []).filter((o) => matchKey(o) === key && !isArchivedOrder(o));
     if (bundle.length === 0) return;
     setEditDemandBundle({ orderType, items: bundle });
   };
@@ -611,7 +614,7 @@ export default function OrdersScreen(): JSX.Element {
       ) : (
         <FlatList
           data={demandGroups}
-          keyExtractor={customerGroupListKey}
+          keyExtractor={activeTab === "whatsapp" ? whatsappGroupListKey : customerGroupListKey}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
           ListHeaderComponent={
@@ -653,6 +656,7 @@ export default function OrdersScreen(): JSX.Element {
             <CustomerOrderCard
               group={item}
               showOrderedIndicator={activeTab === "customer"}
+              showWhatsappDetails={activeTab === "whatsapp"}
               onRemoveOrderLine={isOffline ? undefined : askRemoveOrderLine}
               onFinishOrderLine={isOffline ? undefined : askFinishOrderLine}
               onEditOrderLine={isOffline ? undefined : openEditOrderLine}
