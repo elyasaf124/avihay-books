@@ -1,4 +1,6 @@
 import "./config/loadEnv.js";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -58,6 +60,9 @@ app.use(
     },
   }),
 );
+
+// קובץ אימות דומיין Meta — חייב בשורש הדומיין, לא תחת /api/v1.
+app.use(express.static(join(dirname(fileURLToPath(import.meta.url)), "../public")));
 
 app.use("/api/v1", apiRouter);
 app.use(notFoundHandler);
