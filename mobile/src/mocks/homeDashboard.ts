@@ -4,7 +4,9 @@ import type {
   StoreMapBook,
   StoreMapCell,
   StoreMapShelf,
+  StoreMapSummary,
   StoreMapUnit,
+  StoreMapUnitSummary,
   Supplier,
 } from "@avihay-books/shared";
 
@@ -496,6 +498,79 @@ export function deriveHomeFloorStock(map: StoreMap | undefined): DerivedHomeFloo
   }
   return {
     totalStockFormatted: summed.toLocaleString("he-IL"),
+    usedRealFloorTotal: true,
+  };
+}
+
+function summarizeMockUnit(u: StoreMapUnit): StoreMapUnitSummary {
+  const shelves = u.has_sides ? u.sides.flatMap((s) => s.shelves) : u.shelves;
+  let cellCount = 0;
+  let totalCopies = 0;
+  let newCount = 0;
+  const titles = new Set<string>();
+  for (const shelf of shelves) {
+    cellCount += shelf.cells.length;
+    for (const cell of shelf.cells) {
+      for (const b of cell.books) {
+        titles.add(b.book_id);
+        totalCopies += b.quantity_in_cell;
+        if (b.is_new) newCount += 1;
+      }
+    }
+  }
+  return {
+    id: u.id,
+    name: u.name,
+    store_position: u.store_position,
+    has_sides: u.has_sides,
+    is_display_unit: u.is_display_unit,
+    display_order: u.display_order,
+    shelf_count: shelves.length,
+    cell_count: cellCount,
+    total_copies: totalCopies,
+    new_count: newCount,
+    unique_titles: titles.size,
+  };
+}
+
+/** סיכום דמה למסכי בית/מלאי כש־`/store-map/summary` לא זמין. */
+export function mockStoreMapSummary(): StoreMapSummary {
+  const topics = new Set<string>();
+  for (const u of mockStoreMap.units) {
+    const shelves = u.has_sides ? u.sides.flatMap((s) => s.shelves) : u.shelves;
+    for (const shelf of shelves) {
+      for (const cell of shelf.cells) {
+        for (const b of cell.books) {
+          const t = (b.topic ?? "").trim();
+          if (t) topics.add(t);
+        }
+      }
+    }
+  }
+  return {
+    units: mockStoreMap.units.map(summarizeMockUnit),
+    topics: [...topics].sort((a, b) => a.localeCompare(b, "he")),
+  };
+}
+
+export function deriveHomeFloorStockFromSummary(
+  summary: StoreMapSummary | undefined,
+): DerivedHomeFloorStock {
+  if (!summary || summary.units.length === 0) {
+    return {
+      totalStockFormatted: mockHomeStats.totalStock,
+      usedRealFloorTotal: false,
+    };
+  }
+  const total = summary.units.reduce((s, u) => s + u.total_copies, 0);
+  if (total === 0) {
+    return {
+      totalStockFormatted: mockHomeStats.totalStock,
+      usedRealFloorTotal: false,
+    };
+  }
+  return {
+    totalStockFormatted: total.toLocaleString("he-IL"),
     usedRealFloorTotal: true,
   };
 }

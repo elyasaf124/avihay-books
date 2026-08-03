@@ -1,16 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { isFlatSurfacePosition, type StoreMapBook, type StoreMapShelf } from "@avihay-books/shared";
 import { theme } from "../../../src/theme";
 import { he } from "../../../src/i18n/he";
-import { useStoreMap } from "../../../src/api/storeMap";
+import { useStoreMap, useStoreMapUnit } from "../../../src/api/storeMap";
 import {
   useAddShortage,
   useMoveBook,
   useSuppliersWithFallback,
-  useUnitFromMap,
 } from "../../../src/api/unit";
 import { mockStoreMap } from "../../../src/mocks/homeDashboard";
 import { useCancelShelfShortage } from "../../../src/api/shortage";
@@ -35,17 +43,33 @@ function isLocationShortaged(book: StoreMapBook, shortagedIds: Set<string>): boo
   return shortagedIds.has(book.location_id) || Boolean(book.is_pending_shortage);
 }
 
+function resolveParam(value: string | string[] | undefined): string | null {
+  if (typeof value === "string" && value.length > 0) return value;
+  if (Array.isArray(value) && typeof value[0] === "string" && value[0].length > 0) {
+    return value[0];
+  }
+  return null;
+}
+
 export default function UnitScreen(): JSX.Element {
   const router = useRouter();
-  const { unitId } = useLocalSearchParams<{ unitId: string }>();
-  const unitIdStr = typeof unitId === "string" ? unitId : null;
+  const { unitId } = useLocalSearchParams<{ unitId: string | string[] }>();
+  const unitIdStr = resolveParam(unitId);
 
-  const storeMapQuery = useStoreMap();
-  const isOffline = storeMapQuery.isError;
-  const effectiveMap =
-    storeMapQuery.data != null && !storeMapQuery.isError ? storeMapQuery.data : mockStoreMap;
-
-  const { unit } = useUnitFromMap(unitIdStr ?? undefined, effectiveMap);
+  const unitQuery = useStoreMapUnit(unitIdStr);
+  const isOffline = unitQuery.isError;
+  const isLoadingUnit =
+    !!unitIdStr && (unitQuery.isPending || (unitQuery.isFetching && unitQuery.data == null));
+  const mockUnit = useMemo(
+    () => mockStoreMap.units.find((u) => u.id === unitIdStr) ?? null,
+    [unitIdStr],
+  );
+  const unit =
+    unitQuery.data != null && !unitQuery.isError
+      ? unitQuery.data
+      : isOffline
+        ? mockUnit
+        : null;
 
   const suppliers = useSuppliersWithFallback();
   const { filters, setFilters } = useStoreMapFilters();
@@ -55,6 +79,13 @@ export default function UnitScreen(): JSX.Element {
 
   const [detailsFor, setDetailsFor] = useState<StoreMapBook | null>(null);
   const [moveFor, setMoveFor] = useState<StoreMapBook | null>(null);
+  const placementMapQuery = useStoreMap({ enabled: moveFor != null });
+  const effectiveMap =
+    placementMapQuery.data != null && !placementMapQuery.isError
+      ? placementMapQuery.data
+      : placementMapQuery.isError
+        ? mockStoreMap
+        : null;
   const [saleFor, setSaleFor] = useState<DisplayBookAggregate | null>(null);
   const [undoShortageTargets, setUndoShortageTargets] = useState<StoreMapBook[]>([]);
 
@@ -63,6 +94,7 @@ export default function UnitScreen(): JSX.Element {
   const pendingUndoLocationsRef = useRef<Set<string>>(new Set());
 
   const [moveError, setMoveError] = useState<string | null>(null);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
 
   const addShortage = useAddShortage();
   const cancelShelfShortage = useCancelShelfShortage();
@@ -139,12 +171,12 @@ export default function UnitScreen(): JSX.Element {
   );
 
   const stacksSetsAll = useMemo(
-    () => expandStacksFromShelves(shelves, allCellBooksMap),
-    [shelves, allCellBooksMap],
+    () => expandStacksFromShelves(shelves, allCellBooksMap, optimisticShortage),
+    [shelves, allCellBooksMap, optimisticShortage],
   );
   const stacksSetsFiltered = useMemo(
-    () => expandStacksFromShelves(shelves, filteredCellBooks),
-    [shelves, filteredCellBooks],
+    () => expandStacksFromShelves(shelves, filteredCellBooks, optimisticShortage),
+    [shelves, filteredCellBooks, optimisticShortage],
   );
 
   const isStacksUnit = unit?.store_position === "stacks";
@@ -226,7 +258,7 @@ export default function UnitScreen(): JSX.Element {
                 ? he.unit.undoShortageOffline
                 : he.unit.undoShortageFailed;
           Alert.alert(he.generic.errorTitle, message);
-          void storeMapQuery.refetch();
+          void unitQuery.refetch();
           return;
         }
       }
@@ -237,11 +269,11 @@ export default function UnitScreen(): JSX.Element {
         );
         if (!awaitingAdd) {
           Alert.alert(he.generic.errorTitle, he.unit.undoShortageNotFound);
-          void storeMapQuery.refetch();
+          void unitQuery.refetch();
         }
       }
     },
-    [cancelShelfShortage, removeOptimisticShortage, clearShortageVisual, storeMapQuery],
+    [cancelShelfShortage, removeOptimisticShortage, clearShortageVisual, unitQuery],
   );
 
   const addBookToShortage = useCallback(
@@ -322,7 +354,7 @@ export default function UnitScreen(): JSX.Element {
     <>
       <Stack.Screen
         options={{
-          title: unit?.name ?? he.unit.notFoundTitle,
+          title: unit?.name ?? (isLoadingUnit ? he.unit.loadingMap : he.unit.notFoundTitle),
           headerBackTitle: he.unit.backToStoreMap,
         }}
       />
@@ -332,8 +364,11 @@ export default function UnitScreen(): JSX.Element {
         contentContainerStyle={styles.content}
         refreshControl={
           <RefreshControl
-            refreshing={storeMapQuery.isFetching}
-            onRefresh={() => void storeMapQuery.refetch()}
+            refreshing={manualRefreshing}
+            onRefresh={() => {
+              setManualRefreshing(true);
+              void unitQuery.refetch().finally(() => setManualRefreshing(false));
+            }}
             tintColor={theme.colors.primary}
           />
         }
@@ -349,7 +384,12 @@ export default function UnitScreen(): JSX.Element {
           </View>
         ) : null}
 
-        {!unit ? (
+        {isLoadingUnit ? (
+          <View style={styles.notFoundCard}>
+            <ActivityIndicator color={theme.colors.primary} />
+            <Text style={styles.notFoundDescription}>{he.unit.loadingMap}</Text>
+          </View>
+        ) : !unit ? (
           <View style={styles.notFoundCard}>
             <Ionicons name="warning-outline" size={32} color={theme.colors.primary} />
             <Text style={styles.notFoundTitle}>{he.unit.notFoundTitle}</Text>
@@ -522,7 +562,7 @@ export default function UnitScreen(): JSX.Element {
         visible={saleFor !== null}
         aggregate={saleFor}
         onClose={() => setSaleFor(null)}
-        onDone={() => void storeMapQuery.refetch()}
+        onDone={() => void unitQuery.refetch()}
       />
 
       <MoveBookModal

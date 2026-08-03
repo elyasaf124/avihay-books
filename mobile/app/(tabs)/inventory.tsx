@@ -9,39 +9,19 @@ import {
   View,
 } from "react-native";
 import { useRouter } from "expo-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
-import type { StoreMapShelf, StoreMapUnit, StorePosition } from "@avihay-books/shared";
+import type { StoreMapUnitSummary, StorePosition } from "@avihay-books/shared";
 import { theme } from "../../src/theme";
 import { he } from "../../src/i18n/he";
-import { useStoreMap } from "../../src/api/storeMap";
-import { mockStoreMap } from "../../src/mocks/homeDashboard";
+import {
+  fetchStoreMapUnit,
+  storeMapUnitKey,
+  useStoreMapSummary,
+} from "../../src/api/storeMap";
+import { mockStoreMapSummary } from "../../src/mocks/homeDashboard";
 
 /** מסך מלאי: רשימת כל ארונות החנות עם סיכום מדפים/תאים/כותרים והקשר ל־`unit/[unitId]`. */
-
-function shelvesOfUnit(unit: StoreMapUnit): StoreMapShelf[] {
-  return unit.has_sides ? unit.sides.flatMap((s) => s.shelves) : unit.shelves;
-}
-
-function summarizeUnit(unit: StoreMapUnit): {
-  shelfCount: number;
-  cellCount: number;
-  uniqueTitles: number;
-} {
-  const shelves = shelvesOfUnit(unit);
-  let cellCount = 0;
-  const titleKeys = new Set<string>();
-  for (const shelf of shelves) {
-    cellCount += shelf.cells.length;
-    for (const cell of shelf.cells) {
-      for (const b of cell.books) titleKeys.add(b.book_id);
-    }
-  }
-  return {
-    shelfCount: shelves.length,
-    cellCount,
-    uniqueTitles: titleKeys.size,
-  };
-}
 
 const POSITION_LABEL: Record<StorePosition, string> = {
   front: he.units.front,
@@ -51,10 +31,11 @@ const POSITION_LABEL: Record<StorePosition, string> = {
   display: he.units.display,
   stacks: he.units.stacks,
   pocket: he.units.pocket,
+  brochure: he.units.brochure,
 };
 
 interface UnitCardModel {
-  unit: StoreMapUnit;
+  unit: StoreMapUnitSummary;
   shelfCount: number;
   cellCount: number;
   uniqueTitles: number;
@@ -62,19 +43,31 @@ interface UnitCardModel {
 
 export default function InventoryScreen(): JSX.Element {
   const router = useRouter();
-  const query = useStoreMap();
+  const queryClient = useQueryClient();
+  const query = useStoreMapSummary();
+
+  const openUnit = (unitId: string) => {
+    void queryClient.prefetchQuery({
+      queryKey: storeMapUnitKey(unitId),
+      queryFn: () => fetchStoreMapUnit(unitId),
+      staleTime: 30_000,
+    });
+    router.push(`/unit/${unitId}`);
+  };
 
   const isOffline = query.isError;
-  const rawMap =
-    query.data != null && !query.isError ? query.data : mockStoreMap;
+  const rawSummary =
+    query.data != null && !query.isError ? query.data : mockStoreMapSummary();
 
   const unitsSorted: UnitCardModel[] = useMemo(() => {
-    const list = [...rawMap.units].sort((a, b) => a.display_order - b.display_order);
-    return list.map((unit) => {
-      const s = summarizeUnit(unit);
-      return { unit, ...s };
-    });
-  }, [rawMap]);
+    const list = [...rawSummary.units].sort((a, b) => a.display_order - b.display_order);
+    return list.map((unit) => ({
+      unit,
+      shelfCount: unit.shelf_count,
+      cellCount: unit.cell_count,
+      uniqueTitles: unit.unique_titles,
+    }));
+  }, [rawSummary]);
 
   const totals = useMemo(() => {
     let shelves = 0;
@@ -147,7 +140,7 @@ export default function InventoryScreen(): JSX.Element {
           }
           renderItem={({ item }) => (
             <Pressable
-              onPress={() => router.push(`/unit/${item.unit.id}`)}
+              onPress={() => openUnit(item.unit.id)}
               style={({ pressed }) => [
                 styles.card,
                 theme.shadow.floating,

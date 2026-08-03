@@ -655,7 +655,8 @@ async function main(): Promise<void> {
           report.locationsCreated += 1;
           nextPosInCell.set(cellId, Math.max(used, pos) + 1);
 
-          if (r.storeQty === 0 && r.warehouseQty > 0) {
+          // חנות=0 עם שיבוץ במדף — חוסר ויזואלי גם כשאין מלאי במחסן.
+          if (r.storeQty === 0) {
             await upsertShortage({
               id: deterministicUuid("shortage", loc.id),
               book_id: bookId,

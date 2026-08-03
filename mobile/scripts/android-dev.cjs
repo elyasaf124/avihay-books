@@ -26,19 +26,39 @@ function getAndroidPackage() {
   return pkg;
 }
 
+function adbArgs(...args) {
+  const serial = process.env.ANDROID_SERIAL?.trim();
+  return serial ? ["-s", serial, ...args] : args;
+}
+
 function isAppInstalled(packageName) {
-  const result = spawnSync("adb", ["shell", "pm", "path", packageName], {
+  const result = spawnSync("adb", adbArgs("shell", "pm", "path", packageName), {
     encoding: "utf8",
     shell: true,
   });
   return (result.stdout || "").trim().startsWith("package:");
 }
 
-function ensureAdbReady() {
+function listReadyDevices() {
   const result = spawnSync("adb", ["devices"], { encoding: "utf8", shell: true });
-  const ready = (result.stdout || "").split("\n").some((line) => /\tdevice\s*$/.test(line.trim()));
-  if (!ready) {
+  return (result.stdout || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => /\tdevice\s*$/.test(line))
+    .map((line) => line.split("\t")[0]);
+}
+
+function ensureAdbReady() {
+  const devices = listReadyDevices();
+  if (devices.length === 0) {
     console.error("\nNo Android device/emulator ready (`adb devices` must show `device`, not offline).\n");
+    process.exit(1);
+  }
+  if (devices.length > 1 && !process.env.ANDROID_SERIAL) {
+    console.error(
+      "\nMultiple Android devices/emulators connected — set ANDROID_SERIAL to the target device id.\n" +
+        `Ready devices: ${devices.join(", ")}\n`,
+    );
     process.exit(1);
   }
 }
@@ -79,11 +99,30 @@ function waitForMetroReady(timeoutMs = 120_000) {
   });
 }
 
+/** Compile the Android bundle before opening the dev client (avoids DevLauncher timeout on cold start). */
+function warmMetroAndroidBundle(timeoutMs = 300_000) {
+  return new Promise((resolve, reject) => {
+    const bundlePath =
+      "/node_modules/expo-router/entry.bundle?platform=android&dev=true&minify=false";
+    const req = http.get(`http://127.0.0.1:8081${bundlePath}`, (res) => {
+      res.resume();
+      if (res.statusCode === 200) resolve();
+      else reject(new Error(`Metro Android bundle warm-up failed: HTTP ${res.statusCode}`));
+    });
+    req.on("error", reject);
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      reject(new Error("Metro Android bundle warm-up timed out"));
+    });
+  });
+}
+
 function openOnAndroid(packageName) {
+  run("adb", adbArgs("shell", "am", "force-stop", packageName));
   const url =
     "exp+avihay-books://expo-development-client/?url=" +
     encodeURIComponent("http://127.0.0.1:8081");
-  run("adb", [
+  run("adb", adbArgs(
     "shell",
     "am",
     "start",
@@ -92,7 +131,7 @@ function openOnAndroid(packageName) {
     "-d",
     url,
     `${packageName}/.MainActivity`,
-  ]);
+  ));
 }
 
 function ensureAppInstalled(packageName) {
@@ -101,38 +140,62 @@ function ensureAppInstalled(packageName) {
   run("npx", ["expo", "run:android", "--no-bundler"]);
 }
 
+function probeMetroRunning() {
+  return new Promise((resolve) => {
+    const req = http.get("http://127.0.0.1:8081/status", (res) => {
+      res.resume();
+      resolve(res.statusCode === 200);
+    });
+    req.on("error", () => resolve(false));
+    req.setTimeout(2_000, () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
+}
+
+function startMetro() {
+  const metroArgs = ["expo", "start", "--dev-client", "--localhost", "--port", "8081"];
+  if (wantsFreshCache) metroArgs.push("--clear");
+  const metro = spawn("npx", metroArgs, {
+    cwd: mobileRoot,
+    shell: true,
+    stdio: "inherit",
+    env: process.env,
+  });
+  metro.on("exit", (code) => process.exit(code ?? 1));
+  return metro;
+}
+
 ensureAdbReady();
-run("adb", ["reverse", "tcp:8081", "tcp:8081"]);
+run("adb", adbArgs("reverse", "tcp:8081", "tcp:8081"));
+run("adb", adbArgs("reverse", "tcp:4000", "tcp:4000"));
 
 if (wantsNativeBuild) {
   console.log("\nBuilding/installing debug APK (no LAN Metro)…\n");
   run("npx", ["expo", "run:android", "--no-bundler"]);
 }
 
-console.log("\nStarting Metro on localhost (emulator via adb reverse)…\n");
-
-const metroArgs = ["expo", "start", "--dev-client", "--localhost"];
-if (wantsFreshCache) metroArgs.push("--clear");
-
-const metro = spawn("npx", metroArgs, {
-  cwd: mobileRoot,
-  shell: true,
-  stdio: "inherit",
-  env: process.env,
-});
-
-metro.on("exit", (code) => process.exit(code ?? 1));
-
 void (async () => {
+  let metro = null;
   try {
-    await waitForMetroReady();
+    const metroAlreadyRunning = await probeMetroRunning();
+    if (metroAlreadyRunning) {
+      console.log("\nReusing Metro on localhost:8081…\n");
+    } else {
+      console.log("\nStarting Metro on localhost (emulator via adb reverse)…\n");
+      metro = startMetro();
+      await waitForMetroReady();
+    }
+    console.log("\nWarming Metro Android bundle (first compile can take ~30s)…\n");
+    await warmMetroAndroidBundle();
     const packageName = getAndroidPackage();
     ensureAppInstalled(packageName);
     console.log("\nMetro ready — opening app on Android…\n");
     openOnAndroid(packageName);
   } catch (error) {
     console.error(String(error));
-    metro.kill();
+    metro?.kill();
     process.exit(1);
   }
 })();

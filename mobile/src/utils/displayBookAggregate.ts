@@ -22,6 +22,7 @@ export interface StacksSetItem extends DisplayLocationSpot {
 export function expandStacksFromShelves(
   shelves: StoreMapShelf[],
   cellBooks: Map<string, StoreMapBook[]>,
+  shortagedIds?: Set<string>,
 ): StacksSetItem[] {
   const items: StacksSetItem[] = [];
   for (const shelf of shelves) {
@@ -29,7 +30,11 @@ export function expandStacksFromShelves(
       const books = cellBooks.get(cell.id) ?? cell.books;
       for (const b of books) {
         const qty = Math.max(0, Math.floor(Number(b.quantity_in_cell)));
-        for (let i = 0; i < qty; i++) {
+        const isShortaged =
+          Boolean(b.is_pending_shortage) || Boolean(shortagedIds?.has(b.location_id));
+        // מיקום חסר (qty 0 + shortage) — פריט אחד מטושטש בגריד סטים.
+        const count = qty > 0 ? qty : isShortaged ? 1 : 0;
+        for (let i = 0; i < count; i++) {
           items.push({
             ...b,
             quantity_in_cell: 1,

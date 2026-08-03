@@ -1,11 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
-import type { BookLocation, BookWithLocations, Supplier } from "@avihay-books/shared";
+import type { Book, BookLocation, BookWithLocations, Supplier } from "@avihay-books/shared";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ActivityIndicator,
   Alert,
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -30,7 +31,7 @@ import {
   usePatchBookLocation,
 } from "../../src/api/inventory";
 import { api } from "../../src/api/client";
-import { useStoreMap } from "../../src/api/storeMap";
+import { useSearchBooks, useStoreMap } from "../../src/api/storeMap";
 import { useMoveBook, useSuppliersWithFallback } from "../../src/api/unit";
 import {
   SearchablePickerField,
@@ -52,6 +53,9 @@ import { theme } from "../../src/theme";
 
 /** ייחוס יציב למקרה של `data === undefined` — אסור להשתמש ב־`[]` inlined (מתחלף כל רינדר). */
 const NO_BOOKS: BookWithLocations[] = [];
+
+const GLOBAL_BOOK_DROPDOWN_CAP = 50;
+const GLOBAL_BOOK_FILTER_BLUR_MS = Platform.OS === "ios" ? 140 : 230;
 
 function interpolate(template: string, vars: Record<string, string>): string {
   return Object.entries(vars).reduce((s, [k, v]) => {
@@ -86,6 +90,11 @@ export default function AddRemoveScreen(): JSX.Element {
   const supplierPickerItems = useMemo(() => suppliersToPickerItems(suppliers), [suppliers]);
   const [supplierId, setSupplierId] = useState<string | null>(null);
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null);
+  const [globalBookSearch, setGlobalBookSearch] = useState("");
+  const [globalBookSearchFocused, setGlobalBookSearchFocused] = useState(false);
+  const [globalBookSuggestionsPinned, setGlobalBookSuggestionsPinned] = useState(false);
+  const globalBookBlurTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const skipClearOnSupplierChangeRef = useRef(false);
   const [scrollBooksListToBookId, setScrollBooksListToBookId] = useState<string | null>(null);
   const booksFlatListRef = useRef<FlatList<BookWithLocations> | null>(null);
   const [newBookOpen, setNewBookOpen] = useState(false);
@@ -105,6 +114,24 @@ export default function AddRemoveScreen(): JSX.Element {
   const moveBook = useMoveBook();
   const booksData = booksQuery.data;
   const books = booksData ?? NO_BOOKS;
+  const globalBookSearchTrimmed = globalBookSearch.trim();
+  const globalBookSearchQuery = useSearchBooks(globalBookSearchTrimmed);
+  const globalSearchBooks = globalBookSearchQuery.data ?? [];
+  const globalSearchSuggestions = useMemo(
+    () => globalSearchBooks.slice(0, GLOBAL_BOOK_DROPDOWN_CAP),
+    [globalSearchBooks],
+  );
+  const globalSearchTruncated = globalSearchSuggestions.length < globalSearchBooks.length;
+  const supplierNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of suppliers) map.set(s.id, s.name);
+    return map;
+  }, [suppliers]);
+  const hasActiveGlobalBookSearch =
+    selectedBookId !== null || globalBookSearchTrimmed.length > 0;
+  const showGlobalBookDropdown =
+    (globalBookSuggestionsPinned || globalBookSearchFocused) &&
+    globalBookSearchTrimmed.length > 0;
   const filteredBooks = useMemo(() => {
     if (!selectedBookId) return books;
     return books.filter((b) => b.id === selectedBookId);
@@ -163,10 +190,69 @@ export default function AddRemoveScreen(): JSX.Element {
     if (bookId) setScrollBooksListToBookId(bookId);
   }, []);
 
+  const clearGlobalBookBlurTimer = useCallback(() => {
+    if (globalBookBlurTimerRef.current !== null) {
+      clearTimeout(globalBookBlurTimerRef.current);
+      globalBookBlurTimerRef.current = null;
+    }
+  }, []);
+
+  const onGlobalBookSearchFocus = useCallback(() => {
+    clearGlobalBookBlurTimer();
+    setGlobalBookSearchFocused(true);
+  }, [clearGlobalBookBlurTimer]);
+
+  const onGlobalBookSearchBlur = useCallback(() => {
+    globalBookBlurTimerRef.current = setTimeout(() => {
+      setGlobalBookSearchFocused(false);
+      globalBookBlurTimerRef.current = null;
+    }, GLOBAL_BOOK_FILTER_BLUR_MS);
+  }, []);
+
+  const toggleGlobalBookSuggestions = useCallback(() => {
+    clearGlobalBookBlurTimer();
+    setGlobalBookSuggestionsPinned((p) => !p);
+  }, [clearGlobalBookBlurTimer]);
+
+  const clearGlobalBookSearch = useCallback(() => {
+    clearGlobalBookBlurTimer();
+    setGlobalBookSearch("");
+    setSelectedBookId(null);
+    setGlobalBookSearchFocused(false);
+    setGlobalBookSuggestionsPinned(false);
+    Keyboard.dismiss();
+  }, [clearGlobalBookBlurTimer]);
+
+  const onPickGlobalBook = useCallback(
+    (book: Book) => {
+      clearGlobalBookBlurTimer();
+      skipClearOnSupplierChangeRef.current = true;
+      setGlobalBookSearch(book.title);
+      setSupplierId(book.supplier_id);
+      setSelectedBookId(book.id);
+      setScrollBooksListToBookId(book.id);
+      setGlobalBookSearchFocused(false);
+      setGlobalBookSuggestionsPinned(false);
+      Keyboard.dismiss();
+    },
+    [clearGlobalBookBlurTimer],
+  );
+
+  const onSupplierChange = useCallback((id: string | null) => {
+    setSupplierId(id);
+  }, []);
+
+  useEffect(() => () => clearGlobalBookBlurTimer(), [clearGlobalBookBlurTimer]);
+
   useEffect(() => {
+    if (skipClearOnSupplierChangeRef.current) {
+      skipClearOnSupplierChangeRef.current = false;
+      return;
+    }
     setSelectedBookId(null);
     setStockBulkDraft({});
     setScrollBooksListToBookId(null);
+    setGlobalBookSearch("");
   }, [supplierId]);
 
   useEffect(() => {
@@ -545,12 +631,121 @@ export default function AddRemoveScreen(): JSX.Element {
           </Text>
         </Pressable>
       </View>
+      <View style={styles.globalBookSearchDock}>
+        <View style={styles.globalBookFilterRow}>
+          <Ionicons name="search-outline" size={20} color={theme.colors.onSurfaceVariant} />
+          <TextInput
+            style={styles.globalBookFilterInput}
+            value={globalBookSearch}
+            onChangeText={(text) => {
+              setGlobalBookSearch(text);
+              if (selectedBookId) setSelectedBookId(null);
+            }}
+            placeholder={he.addRemove.globalBookSearchPlaceholder}
+            placeholderTextColor={theme.colors.onSurfaceVariant}
+            accessibilityLabel={he.addRemove.globalBookSearchAccessibility}
+            returnKeyType="search"
+            textAlign="left"
+            autoCorrect={false}
+            onFocus={onGlobalBookSearchFocus}
+            onBlur={onGlobalBookSearchBlur}
+          />
+          {hasActiveGlobalBookSearch ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={he.addRemove.bookSearchClearA11y}
+              onPress={clearGlobalBookSearch}
+              hitSlop={10}
+              style={styles.globalBookFilterClearBtn}
+            >
+              <Ionicons name="close-circle" size={22} color={theme.colors.onSurfaceVariant} />
+            </Pressable>
+          ) : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              globalBookSuggestionsPinned
+                ? he.addRemove.bookDropdownHide
+                : he.addRemove.bookDropdownShow
+            }
+            onPress={toggleGlobalBookSuggestions}
+            hitSlop={10}
+            style={styles.globalBookFilterChevronBtn}
+          >
+            <Ionicons
+              name={globalBookSuggestionsPinned ? "chevron-up-outline" : "chevron-down-outline"}
+              size={22}
+              color={theme.colors.primary}
+            />
+          </Pressable>
+        </View>
+
+        {showGlobalBookDropdown ? (
+          <View style={styles.globalBookDropdownOuter}>
+            {globalBookSearchQuery.isFetching && globalSearchBooks.length === 0 ? (
+              <View style={styles.globalBookDropdownLoading}>
+                <ActivityIndicator size="small" color={theme.colors.primary} />
+                <Text style={styles.globalBookDropdownLoadingText}>
+                  {he.addRemove.globalBookSearchLoading}
+                </Text>
+              </View>
+            ) : globalBookSearchQuery.isError ? (
+              <Text style={styles.globalBookDropdownEmptyText}>
+                {he.addRemove.globalBookSearchOffline}
+              </Text>
+            ) : globalSearchSuggestions.length === 0 ? (
+              <Text style={styles.globalBookDropdownEmptyText}>
+                {he.addRemove.bookDropdownNoMatches}
+              </Text>
+            ) : (
+              <>
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  nestedScrollEnabled
+                  showsVerticalScrollIndicator
+                  style={styles.globalBookDropdownScroll}
+                >
+                  {globalSearchSuggestions.map((book) => (
+                    <Pressable
+                      key={book.id}
+                      onPressIn={() => clearGlobalBookBlurTimer()}
+                      onPress={() => onPickGlobalBook(book)}
+                      style={({ pressed }) => [
+                        styles.globalBookDropdownRow,
+                        book.id === selectedBookId && styles.globalBookDropdownRowSelected,
+                        pressed && styles.globalBookDropdownRowPressed,
+                      ]}
+                    >
+                      <Text style={styles.globalBookDropdownTitle} numberOfLines={2}>
+                        {book.title}
+                      </Text>
+                      <Text style={styles.globalBookDropdownMeta} numberOfLines={1}>
+                        {book.author || he.orders.authorNotSpecified}
+                        {" · "}
+                        {supplierNameById.get(book.supplier_id) ?? he.addRemove.chooseSupplier}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+                {globalSearchTruncated ? (
+                  <Text style={styles.globalBookDropdownTruncated}>
+                    {interpolate(he.addRemove.bookDropdownTruncated, {
+                      shown: String(globalSearchSuggestions.length),
+                      total: String(globalSearchBooks.length),
+                    })}
+                  </Text>
+                ) : null}
+              </>
+            )}
+          </View>
+        ) : null}
+      </View>
       <View style={styles.supplierFieldShell}>
         <SearchablePickerField
           compact
           items={supplierPickerItems}
           valueId={supplierId}
-          onChange={setSupplierId}
+          onChange={onSupplierChange}
           emptySelectionLabel={he.addRemove.chooseSupplier}
           searchPlaceholder={he.picker.searchInList}
           emptyListMessage={he.picker.noMatches}
@@ -762,32 +957,39 @@ export default function AddRemoveScreen(): JSX.Element {
                             <Text style={styles.mapActionBtnText}>{he.addRemove.addToMap}</Text>
                           </Pressable>
                         ) : null}
-                        {book.stock_quantity > 0 && book.locations.length > 0 ? (
-                          <Pressable
-                            accessibilityRole="button"
-                            style={[
-                              styles.mapActionBtn,
-                              (busyBookId !== null ||
-                                moveBook.isPending ||
-                                createBookLocation.isPending ||
-                                patchLoc.isPending ||
-                                placementStoreMap == null) && styles.mapActionBtnDisabled,
-                            ]}
-                            disabled={
-                              busyBookId !== null ||
+                        <Pressable
+                          accessibilityRole="button"
+                          style={[
+                            styles.mapActionBtn,
+                            (busyBookId !== null ||
                               moveBook.isPending ||
                               createBookLocation.isPending ||
                               patchLoc.isPending ||
-                              placementStoreMap == null
-                            }
-                            onPress={() => {
+                              placementStoreMap == null) && styles.mapActionBtnDisabled,
+                          ]}
+                          disabled={
+                            busyBookId !== null ||
+                            moveBook.isPending ||
+                            createBookLocation.isPending ||
+                            patchLoc.isPending ||
+                            placementStoreMap == null
+                          }
+                          onPress={() => {
+                            if (book.locations.length > 0) {
                               openInventoryMoveSession(book, locId);
-                            }}
-                          >
-                            <Ionicons name="shuffle-outline" size={18} color={theme.colors.primary} />
-                            <Text style={styles.mapActionBtnText}>{he.addRemove.changeMapLocation}</Text>
-                          </Pressable>
-                        ) : null}
+                              return;
+                            }
+                            // אין מיקומים במפה — אותו זרימת «הוסף למפה» לפי עותקים לא ממוקמים
+                            if (book.stock_quantity > 0 && unplacedQuantity(book) > 0) {
+                              setInventoryMapError(null);
+                              setExistingPerCopyModalError(null);
+                              setExistingPerCopyBook(book);
+                            }
+                          }}
+                        >
+                          <Ionicons name="shuffle-outline" size={18} color={theme.colors.primary} />
+                          <Text style={styles.mapActionBtnText}>{he.addRemove.changeMapLocation}</Text>
+                        </Pressable>
                       </View>
 
                       <View style={styles.stockRow}>
@@ -1482,6 +1684,93 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.sm,
   },
   supplierFieldShell: { width: "100%" },
+  globalBookSearchDock: {
+    width: "100%",
+    zIndex: 3,
+  },
+  globalBookFilterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+    borderRadius: theme.radius.md,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    backgroundColor: theme.colors.surfaceContainerLow,
+  },
+  globalBookFilterInput: {
+    flex: 1,
+    ...theme.typography.bodyMd,
+    color: theme.colors.onSurface,
+    paddingVertical: 0,
+    minHeight: 24,
+    textAlign: "left",
+  },
+  globalBookFilterClearBtn: {
+    paddingHorizontal: theme.spacing.xs,
+    justifyContent: "center",
+  },
+  globalBookFilterChevronBtn: {
+    paddingHorizontal: theme.spacing.xs,
+    justifyContent: "center",
+  },
+  globalBookDropdownOuter: {
+    marginTop: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surface,
+    overflow: "hidden",
+  },
+  globalBookDropdownScroll: { maxHeight: 196 },
+  globalBookDropdownLoading: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.md,
+  },
+  globalBookDropdownLoadingText: {
+    ...theme.typography.bodyMd,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: "left",
+  },
+  globalBookDropdownEmptyText: {
+    ...theme.typography.bodyMd,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: "center",
+    paddingVertical: theme.spacing.md,
+    paddingHorizontal: theme.spacing.md,
+  },
+  globalBookDropdownRow: {
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.outlineVariant,
+  },
+  globalBookDropdownRowSelected: { backgroundColor: theme.colors.secondaryContainer },
+  globalBookDropdownRowPressed: { backgroundColor: theme.colors.surfaceContainerHighest },
+  globalBookDropdownTitle: {
+    ...theme.typography.labelMd,
+    color: theme.colors.onSurface,
+    textAlign: "left",
+  },
+  globalBookDropdownMeta: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: "left",
+    marginTop: 2,
+  },
+  globalBookDropdownTruncated: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: "center",
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colors.outlineVariant,
+  },
   topBarActions: {
     flexDirection: "row",
     alignItems: "stretch",
