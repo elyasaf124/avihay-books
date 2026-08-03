@@ -1,4 +1,5 @@
 import type { StoreMapBook, StoreMapShelf } from "@avihay-books/shared";
+import { sortByHebrewKeys } from "./hebrewSort";
 
 /** מיקום בתצוגה — כולל `cell_id` / `cell_name` ל־`PATCH` ולתצוגה (לא חלק מ־`StoreMapBook`). */
 export interface DisplayLocationSpot extends StoreMapBook {
@@ -46,11 +47,9 @@ export function expandStacksFromShelves(
       }
     }
   }
-  return items.sort((a, b) =>
-    a.title.localeCompare(b.title, "he") ||
-    a.cell_name.localeCompare(b.cell_name, "he") ||
-    a.location_id.localeCompare(b.location_id) ||
-    a.copy_index - b.copy_index,
+  /** `location_id` הוא `uuid` ו־`copy_index` מספר — שוברי שוויון זולים ללא `collator`. */
+  return sortByHebrewKeys(items, (item) => [item.title, item.cell_name], (a, b) =>
+    a.location_id < b.location_id ? -1 : a.location_id > b.location_id ? 1 : a.copy_index - b.copy_index,
   );
 }
 
@@ -80,7 +79,5 @@ export function aggregateDisplayBooksFromShelves(
       }
     }
   }
-  return Array.from(byBook.values()).sort((a, b) =>
-    a.representative.title.localeCompare(b.representative.title, "he"),
-  );
+  return sortByHebrewKeys(Array.from(byBook.values()), (agg) => [agg.representative.title]);
 }

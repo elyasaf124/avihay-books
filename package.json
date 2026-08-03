@@ -14,6 +14,7 @@
     "db:seed": "npm --workspace backend run db:seed",
     "db:reset": "npm --workspace backend run db:reset",
     "db:import-excel": "tsx scripts/importExcel.ts",
+    "perf:probe": "tsx scripts/perfProbe.ts",
     "backend:dev": "npm --workspace backend run dev",
     "backend:build": "npm --workspace backend run build",
     "mobile:dev": "npm --workspace mobile run start",

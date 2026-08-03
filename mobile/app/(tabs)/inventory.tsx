@@ -20,6 +20,7 @@ import {
   useStoreMapSummary,
 } from "../../src/api/storeMap";
 import { mockStoreMapSummary } from "../../src/mocks/homeDashboard";
+import { markUnitOpen, startUnitOpenTiming } from "../../src/utils/unitOpenTiming";
 
 /** מסך מלאי: רשימת כל ארונות החנות עם סיכום מדפים/תאים/כותרים והקשר ל־`unit/[unitId]`. */
 
@@ -47,12 +48,17 @@ export default function InventoryScreen(): JSX.Element {
   const query = useStoreMapSummary();
 
   const openUnit = (unitId: string) => {
+    startUnitOpenTiming(unitId, "inventory");
+    const cached = queryClient.getQueryData(storeMapUnitKey(unitId));
+    markUnitOpen("tap", { cacheHit: cached != null });
     void queryClient.prefetchQuery({
       queryKey: storeMapUnitKey(unitId),
       queryFn: () => fetchStoreMapUnit(unitId),
       staleTime: 30_000,
     });
+    markUnitOpen("prefetch_scheduled");
     router.push(`/unit/${unitId}`);
+    markUnitOpen("nav_push");
   };
 
   const isOffline = query.isError;
