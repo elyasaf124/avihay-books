@@ -14,6 +14,8 @@ import { api } from "./client";
 import type { UnitFilterState } from "../components/unit/UnitFilterBar";
 import { normalizeUnitFilterState } from "../components/unit/UnitFilterBar";
 import { isUnitFilterActive } from "../utils/unitFilters";
+import { markUnitOpenFor } from "../utils/unitOpenTiming";
+import { compareHebrew } from "../utils/hebrewSort";
 
 /** מפתח מלא + prefix ל-invalidation של כל וריאנטי store-map. */
 export const STORE_MAP_KEY = ["store-map"] as const;
@@ -78,7 +80,7 @@ export function storeMapToSummary(map: StoreMap): StoreMapSummary {
   }
   return {
     units: map.units.map(summarizeUnitFromMap).sort((a, b) => a.display_order - b.display_order),
-    topics: [...topics].sort((a, b) => a.localeCompare(b, "he")),
+    topics: [...topics].sort(compareHebrew),
   };
 }
 
@@ -87,17 +89,81 @@ async function fetchFullStoreMap(): Promise<StoreMap> {
   return data;
 }
 
+/** גודל המידע שהתקבל בפועל + הפירוק שהשרת דיווח ב־`Server-Timing`. */
+function responseSizeDetail(data: unknown, headers: unknown): Record<string, string | number> {
+  const detail: Record<string, string | number> = {};
+  try {
+    detail.decodedKb = Math.round(JSON.stringify(data).length / 1024);
+  } catch {
+    detail.decodedKb = -1;
+  }
+  const bag = headers as { [k: string]: unknown } | undefined;
+  const serverTiming = bag?.["server-timing"] ?? bag?.["Server-Timing"];
+  if (typeof serverTiming === "string") detail.serverTiming = serverTiming;
+  const encoding = bag?.["content-encoding"];
+  if (typeof encoding === "string") detail.encoding = encoding;
+  return detail;
+}
+
+/** מונה עותקים לרינדור — זהה לחישוב ב־`CellCard`, כדי לדעת כמה שדרות ייווצרו. */
+function countSpinesInShelves(shelves: StoreMapShelf[] | undefined): number {
+  let total = 0;
+  for (const shelf of shelves ?? []) {
+    for (const cell of shelf.cells) {
+      for (const b of cell.books) {
+        const qty = Math.max(0, Math.floor(Number(b.quantity_in_cell)));
+        total += qty > 0 ? qty : b.is_pending_shortage ? 1 : 0;
+      }
+    }
+  }
+  return total;
+}
+
+export function countUnitSpines(unit: StoreMapUnit | null | undefined): number {
+  if (!unit) return 0;
+  return unit.has_sides
+    ? unit.sides.reduce((sum, side) => sum + countSpinesInShelves(side.shelves), 0)
+    : countSpinesInShelves(unit.shelves);
+}
+
 /** שליפת יחידה בודדת — גם ל־`useStoreMapUnit` וגם ל־prefetch בלחיצה על ארון. */
 export async function fetchStoreMapUnit(unitId: string): Promise<StoreMapUnit> {
+  markUnitOpenFor(unitId, "fetch_start");
+  const t0 = typeof performance !== "undefined" ? performance.now() : Date.now();
   try {
-    const { data } = await api.get<StoreMapUnit>(`/store-map/units/${unitId}`);
+    const response = await api.get<StoreMapUnit>(`/store-map/units/${unitId}`);
+    const data = response.data;
+    const ms = (typeof performance !== "undefined" ? performance.now() : Date.now()) - t0;
+    markUnitOpenFor(unitId, "fetch_end", {
+      path: "unit",
+      ms: Math.round(ms),
+      shelves: data.shelves?.length ?? 0,
+      sides: data.sides?.length ?? 0,
+      spines: countUnitSpines(data),
+      ...responseSizeDetail(data, response.headers),
+    });
     return data;
   } catch (err) {
-    if (!isNotFoundError(err)) throw err;
+    if (!isNotFoundError(err)) {
+      markUnitOpenFor(unitId, "fetch_error", { kind: "unit" });
+      throw err;
+    }
     /** שרת ישן / יחידה חסרה ב-endpoint — מחפשים במפה המלאה. */
+    markUnitOpenFor(unitId, "fetch_fallback_full_map");
     const map = await fetchFullStoreMap();
     const unit = map.units.find((u) => u.id === unitId);
-    if (!unit) throw err;
+    if (!unit) {
+      markUnitOpenFor(unitId, "fetch_error", { kind: "not_found" });
+      throw err;
+    }
+    const ms = (typeof performance !== "undefined" ? performance.now() : Date.now()) - t0;
+    markUnitOpenFor(unitId, "fetch_end", {
+      path: "full_map_fallback",
+      ms: Math.round(ms),
+      shelves: unit.shelves?.length ?? 0,
+      sides: unit.sides?.length ?? 0,
+      spines: countUnitSpines(unit),
+    });
     return unit;
   }
 }

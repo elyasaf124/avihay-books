@@ -69,8 +69,18 @@ export function useAddShortage() {
       }
       void client.invalidateQueries({ queryKey: ["shortage"] });
       void client.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
-      void client.refetchQueries({ queryKey: NOTIFICATIONS_LIST_KEY });
-      void client.refetchQueries({ queryKey: NOTIFICATIONS_UNREAD_KEY });
+      /**
+       * `refetchQueries` כפה שתי בקשות נוספות בכל לחיצה על ספר, גם כשמסך
+       * ההתראות לא מוצג. סימון stale בלבד — הן יתרעננו כשהמסך שלהן ייפתח.
+       */
+      void client.invalidateQueries({
+        queryKey: NOTIFICATIONS_LIST_KEY,
+        refetchType: "none",
+      });
+      void client.invalidateQueries({
+        queryKey: NOTIFICATIONS_UNREAD_KEY,
+        refetchType: "none",
+      });
     },
   });
 }

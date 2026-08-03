@@ -1,14 +1,25 @@
 import "./config/loadEnv.js";
 import express from "express";
+import compression from "compression";
 import cors from "cors";
 import helmet from "helmet";
 import { apiRouter } from "./routes/index.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
+import { logDatabaseTarget, requestTiming } from "./middleware/requestTiming.js";
 import { logger } from "./utils/logger.js";
 import { startNotificationCrons } from "./services/notifications.js";
 import { startChatRetentionCron } from "./services/chatRetention.js";
 
 const app = express();
+
+// ראשון בשרשרת — כדי שהמדידה תכסה את כל שאר ה-middleware.
+app.use(requestTiming);
+
+/**
+ * תשובת ארון היא ~196KB של JSON בעברית (UTF-8 = 2 בייטים לתו) ויורדת ל-~20KB ב-gzip.
+ * חייב לבוא אחרי `requestTiming`, כדי שמניית ה-bytes תמדוד את התשובה הדחוסה.
+ */
+app.use(compression());
 
 /** CSP מותאם ל-Embedded Signup — FB JS SDK + inline scripts בדף onboarding בלבד. */
 const onboardHelmet = helmet({
@@ -47,6 +58,7 @@ app.use((req, res, next) => {
 app.use(
   cors({
     origin: process.env.CORS_ORIGIN === "*" ? true : (process.env.CORS_ORIGIN ?? "*").split(","),
+    exposedHeaders: ["Server-Timing"],
   }),
 );
 app.use(
@@ -71,6 +83,7 @@ app.use(errorHandler);
 const port = Number.parseInt(process.env.PORT ?? "4000", 10);
 app.listen(port, "0.0.0.0", () => {
   logger.info(`avihay-books API listening on http://localhost:${port}/api/v1`);
+  logDatabaseTarget();
   startNotificationCrons();
   startChatRetentionCron();
 });

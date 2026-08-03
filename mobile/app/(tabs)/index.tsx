@@ -29,6 +29,7 @@ import {
 } from "../../src/mocks/homeDashboard";
 import { theme } from "../../src/theme";
 import { he } from "../../src/i18n/he";
+import { markUnitOpen, startUnitOpenTiming } from "../../src/utils/unitOpenTiming";
 
 function normalize(s: string): string {
   return s.trim().toLowerCase();
@@ -51,12 +52,17 @@ export default function HomeScreen(): JSX.Element {
   const suppliers = useSuppliersWithFallback();
 
   const openUnit = (unitId: string) => {
+    startUnitOpenTiming(unitId, "home");
+    const cached = queryClient.getQueryData(storeMapUnitKey(unitId));
+    markUnitOpen("tap", { cacheHit: cached != null });
     void queryClient.prefetchQuery({
       queryKey: storeMapUnitKey(unitId),
       queryFn: () => fetchStoreMapUnit(unitId),
       staleTime: 30_000,
     });
+    markUnitOpen("prefetch_scheduled");
     router.push(`/unit/${unitId}`);
+    markUnitOpen("nav_push");
   };
 
   const summaryQuery = useStoreMapSummary();

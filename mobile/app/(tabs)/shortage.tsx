@@ -33,6 +33,7 @@ import {
 } from "../../src/components/pickers/SearchablePicker";
 import { ShortageRow } from "../../src/components/shortage/ShortageRow";
 import { MoveToOrderModal } from "../../src/components/shortage/MoveToOrderModal";
+import { sortByHebrewKeys } from "../../src/utils/hebrewSort";
 
 const BOOK_DROPDOWN_SUGGESTION_CAP = 50;
 const BOOK_FILTER_BLUR_CLOSE_MS = Platform.OS === "ios" ? 140 : 230;
@@ -54,7 +55,7 @@ function booksFromShortageItems(rows: ShortageListItem[]): ShortageBookOption[] 
       });
     }
   }
-  return [...byBookId.values()].sort((a, b) => a.title.localeCompare(b.title, "he"));
+  return sortByHebrewKeys([...byBookId.values()], (opt) => [opt.title]);
 }
 
 function interpolate(template: string, vars: Record<string, string>): string {
