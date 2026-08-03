@@ -32,6 +32,7 @@ export interface WhatsappRuntimeConfig {
   humanHoursEnd: number;
   templateLang: string;
   templateOrderReady: string;
+  adminPhone: string;
 }
 
 function parseHoursRange(raw: string | undefined): { start: number; end: number } {
@@ -62,6 +63,7 @@ export function getWhatsappConfig(): WhatsappRuntimeConfig {
     humanHoursEnd: hours.end,
     templateLang: env("WHATSAPP_TEMPLATE_LANG") ?? "he",
     templateOrderReady: env("WHATSAPP_TEMPLATE_ORDER_READY") ?? "order_ready_pickup",
+    adminPhone: env("WHATSAPP_ADMIN_PHONE") ?? "972508846929",
   };
 }
 

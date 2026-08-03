@@ -13,6 +13,7 @@
     "db:migrate": "npm --workspace backend run db:migrate",
     "db:seed": "npm --workspace backend run db:seed",
     "db:reset": "npm --workspace backend run db:reset",
+    "db:import-excel": "tsx scripts/importExcel.ts",
     "backend:dev": "npm --workspace backend run dev",
     "backend:build": "npm --workspace backend run build",
     "mobile:dev": "npm --workspace mobile run start",

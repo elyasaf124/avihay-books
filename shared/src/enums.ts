@@ -36,6 +36,7 @@ export const STORE_POSITIONS = [
   "display",
   "stacks",
   "pocket",
+  "brochure",
 ] as const;
 export type StorePosition = (typeof STORE_POSITIONS)[number];
 

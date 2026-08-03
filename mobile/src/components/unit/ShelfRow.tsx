@@ -22,27 +22,31 @@ export function ShelfRow({
   onBookLongPress,
 }: Props): JSX.Element {
   const heading = shelf.label ?? `${he.unit.shelfLabel} ${shelf.shelf_number}`;
+  /** תא 1 = שמאלי — מיון עולה + כיוון LTR כדי לא להתהפך תחת RTL גלובלי. */
+  const cellsLtr = [...shelf.cells].sort((a, b) => a.cell_number - b.cell_number);
 
   return (
     <View style={styles.wrap}>
       <Text style={styles.heading}>{heading}</Text>
-      <FlatList
-        data={shelf.cells}
-        keyExtractor={(c) => c.id}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.list}
-        ItemSeparatorComponent={() => <View style={styles.gap} />}
-        renderItem={({ item }) => (
-          <CellCard
-            cell={item}
-            books={cellBooks.get(item.id) ?? item.books}
-            shortagedIds={shortagedIds}
-            onBookPress={onBookPress}
-            onBookLongPress={onBookLongPress}
-          />
-        )}
-      />
+      <View style={styles.ltrRow}>
+        <FlatList
+          data={cellsLtr}
+          keyExtractor={(c) => c.id}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.list}
+          ItemSeparatorComponent={() => <View style={styles.gap} />}
+          renderItem={({ item }) => (
+            <CellCard
+              cell={item}
+              books={cellBooks.get(item.id) ?? item.books}
+              shortagedIds={shortagedIds}
+              onBookPress={onBookPress}
+              onBookLongPress={onBookLongPress}
+            />
+          )}
+        />
+      </View>
     </View>
   );
 }
@@ -55,6 +59,9 @@ const styles = StyleSheet.create({
     ...theme.typography.headlineSm,
     color: theme.colors.onSurface,
     textAlign: "left",
+  },
+  ltrRow: {
+    direction: "ltr",
   },
   list: {
     paddingHorizontal: theme.spacing.xs,

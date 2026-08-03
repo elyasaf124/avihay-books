@@ -227,6 +227,7 @@ export const he = {
     display: "ארון תצוגה",
     stacks: "סטים",
     pocket: "ספרי כיס",
+    brochure: "סטנד חוברות",
   },
 
   /** מחרוזות משותפות ל־`SearchablePickerField`. */

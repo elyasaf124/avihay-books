@@ -1,6 +1,9 @@
 import { upsertNotification } from "../../repos/notifications.repo.js";
 import { sendChatPush } from "../push.js";
 import type { WhatsappSession } from "@avihay-books/shared";
+import { getWhatsappConfig } from "./config.js";
+import { sendText } from "./client.js";
+import { generateFreeChatSummary } from "./summarizer.js";
 
 interface ChatPushArgs {
   title: string;
@@ -34,7 +37,7 @@ export function isActiveHumanHandover(session: WhatsappSession | null | undefine
   return new Date(session.bot_paused_until).getTime() > Date.now();
 }
 
-/** יוצר התראה במסך ההתראות + Push לטלפון (אירוע handover / הזמנה / תמיכה). */
+/** יוצר התראה במסך ההתראות + Push לטלפון + הודעת ווטסאפ למנהל עם סיכום ולינק מהיר. */
 export async function notifyWhatsappHumanHandover(args: {
   phone?: string;
   profileName?: string | null;
@@ -53,6 +56,26 @@ export async function notifyWhatsappHumanHandover(args: {
     body,
     phone: args.phone ?? "",
   });
+
+  // שליחת הודעת ווטסאפ ישירה למספר המנהל בווטסאפ (WhatsApp Admin Notification)
+  const cfg = getWhatsappConfig();
+  if (cfg.adminPhone) {
+    const rawPhone = args.phone ?? "";
+    const cleanPhone = rawPhone.replace(/\D/g, "");
+    const customerName = args.profileName ? args.profileName : (rawPhone || "לקוח");
+    const summary = rawPhone ? await generateFreeChatSummary(rawPhone) : "אין פירוט הודעות.";
+    const startMsgText = encodeURIComponent(`שלום ${customerName}, בהמשך לפנייתך...`);
+    const waLink = cleanPhone ? `https://wa.me/${cleanPhone}?text=${startMsgText}` : "";
+
+    const adminText =
+      `🚨 *בקשת מענה אנושי חדשה*\n\n` +
+      `👤 *לקוח:* ${customerName}\n` +
+      `📱 *טלפון:* +${cleanPhone}\n\n` +
+      `📝 *הודעות אחרונות מהלקוח:*\n${summary}\n\n` +
+      (waLink ? `🔗 *לחץ לפתיחת צ'אט ישיר בווטסאפ:*\n${waLink}` : "");
+
+    await sendText(cfg.adminPhone, adminText).catch(() => undefined);
+  }
 }
 
 /** Push על הודעה נכנסת בזמן מענה אנושי (לא כניסה ראשונה). */

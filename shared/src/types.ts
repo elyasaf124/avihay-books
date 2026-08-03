@@ -17,7 +17,7 @@ export interface Supplier {
   id: UUID;
   name: string;
   color_hex: string;
-  email: string;
+  email: string | null;
   last_order_date: ISOTimestamp | null;
   created_at: ISOTimestamp;
 }
@@ -25,9 +25,9 @@ export interface Supplier {
 export interface Book {
   id: UUID;
   title: string;
-  author: string;
+  author: string | null;
   supplier_id: UUID;
-  price: string;
+  price: string | null;
   stock_quantity: number;
   reorder_threshold: number;
   is_new: boolean;
@@ -159,14 +159,14 @@ export interface StoreMapBook {
   location_id: UUID;
   book_id: UUID;
   title: string;
-  author: string;
+  author: string | null;
   supplier_id: UUID;
   supplier_color: string;
   position_in_cell: number;
   quantity_in_cell: number;
   is_new: boolean;
   /** מחיר כפי שמוחזר מ־`books.price` (טקסט מ־`numeric` של PG). */
-  price: string;
+  price: string | null;
   /** נושא הספר מ־`books.topic`. */
   topic: string;
   /** ספר זה סומן כחוסר במדף — עד עדכון סטטוס החוסר ל־`completed`. */
@@ -235,14 +235,14 @@ export interface ShortageListItem {
   status: ShortageStatus;
   resolved_at: ISOTimestamp | null;
   book_title: string;
-  book_author: string;
+  book_author: string | null;
   book_stock_quantity: number;
   book_reorder_threshold: number;
-  book_price: string;
+  book_price: string | null;
   supplier_id: UUID;
   supplier_name: string;
   supplier_color: string;
-  supplier_email: string;
+  supplier_email: string | null;
 }
 
 // ---------- Composed: orders list (Phase 3) ----------
@@ -261,13 +261,13 @@ export interface OrderListItem {
   status: OrderStatus;
   created_at: ISOTimestamp;
   book_title: string;
-  book_author: string;
-  book_price: string;
+  book_author: string | null;
+  book_price: string | null;
   /** ספק הספר בקטלוג (`books.supplier_id`) — לתצוגה גם כש־`supplier_id` בהזמנה ריק. */
   catalog_supplier_id: UUID | null;
   supplier_name: string;
   supplier_color: string;
-  supplier_email: string;
+  supplier_email: string | null;
   /** שדות זרימת בוט הוואטסאפ (אופציונליים — קיימים בהזמנות `whatsapp`). */
   fulfillment_type?: FulfillmentType | null;
   delivery_method?: DeliveryMethod | null;
@@ -341,7 +341,7 @@ export interface OrdersBySupplierGroup {
   supplier_id: UUID | null;
   supplier_name: string;
   supplier_color: string;
-  supplier_email: string;
+  supplier_email: string | null;
   orders: OrderListItem[];
 }
 
