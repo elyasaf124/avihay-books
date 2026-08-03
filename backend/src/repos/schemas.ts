@@ -20,11 +20,26 @@ const dbTimestamptzOptional = z.preprocess((val) => {
   return val;
 }, z.string().datetime().optional());
 
+const nullableEmail = z.preprocess(
+  (val) => (val === "" || val === undefined ? null : val),
+  z.string().email().max(255).nullable(),
+);
+
+const nullableAuthor = z.preprocess(
+  (val) => (val === "" || val === undefined ? null : val),
+  z.string().min(1).max(255).nullable(),
+);
+
+const nullablePrice = z.preprocess((val) => {
+  if (val === "" || val === undefined || val === null) return null;
+  return val;
+}, z.coerce.number().nonnegative().nullable());
+
 export const supplierInputSchema = z.object({
   id: uuid.optional(),
   name: z.string().min(1).max(255),
   color_hex: z.string().regex(/^#[0-9a-fA-F]{6}$/),
-  email: z.string().email().max(255),
+  email: nullableEmail,
   last_order_date: z.string().datetime().nullable().optional(),
 });
 export type SupplierInput = z.infer<typeof supplierInputSchema>;
@@ -32,9 +47,9 @@ export type SupplierInput = z.infer<typeof supplierInputSchema>;
 export const bookInputSchema = z.object({
   id: uuid.optional(),
   title: z.string().min(1).max(255),
-  author: z.string().min(1).max(255),
+  author: nullableAuthor,
   supplier_id: uuid,
-  price: z.coerce.number().nonnegative(),
+  price: nullablePrice,
   stock_quantity: z.number().int().nonnegative().default(0),
   reorder_threshold: z.number().int().nonnegative().default(0),
   is_new: z.boolean().default(false),

@@ -5,7 +5,9 @@ import { StitchTabBar } from "../../src/components/StitchTabBar";
 import { StoreMapFilterProvider } from "../../src/context/StoreMapFilterContext";
 import { theme } from "../../src/theme";
 import { he } from "../../src/i18n/he";
+import { ChatHeaderButton } from "../../src/components/chat/ChatHeaderButton";
 import { useUnreadPushNotifier } from "../../src/hooks/useUnreadPushNotifier";
+import { useChatPushRegistration } from "../../src/hooks/useChatPushRegistration";
 
 const tabHeaderStyle: ViewStyle = {
   backgroundColor: theme.colors.surface,
@@ -15,6 +17,7 @@ const tabHeaderStyle: ViewStyle = {
 
 export default function TabsLayout(): JSX.Element {
   const { unreadCount } = useUnreadPushNotifier();
+  useChatPushRegistration();
   return (
     <StoreMapFilterProvider>
     <Tabs
@@ -34,6 +37,7 @@ export default function TabsLayout(): JSX.Element {
         name="index"
         options={{
           title: he.tabs.home,
+          headerRight: () => <ChatHeaderButton />,
           tabBarIcon: ({ color, focused, size }) => (
             <Ionicons name={focused ? "home" : "home-outline"} color={color} size={size} />
           ),
@@ -81,6 +85,10 @@ export default function TabsLayout(): JSX.Element {
         }}
       />
       <Tabs.Screen
+        name="chat"
+        options={{ href: null, title: he.tabs.chat, headerShown: false }}
+      />
+      <Tabs.Screen
         name="notifications"
         options={{
           title: he.tabs.notifications,
@@ -95,6 +103,7 @@ export default function TabsLayout(): JSX.Element {
         }}
       />
       <Tabs.Screen name="customer-orders-history" options={{ href: null }} />
+      <Tabs.Screen name="bot" options={{ href: null }} />
     </Tabs>
     </StoreMapFilterProvider>
   );

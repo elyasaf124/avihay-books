@@ -31,7 +31,7 @@ interface Rect2 {
 }
 
 const layout: Record<
-  "front" | "left" | "right" | "pocket" | "island" | "display" | "stacks",
+  "front" | "left" | "right" | "pocket" | "island" | "display" | "stacks" | "brochure",
   Rect2
 > = {
   front: { x: 16, y: 12, w: VB_W - 32, h: 78 },
@@ -42,8 +42,10 @@ const layout: Record<
   /** משטח תצוגה — מעל האי */
   display: { x: 104, y: 148, w: VB_W - 208, h: 26 },
   island: { x: 104, y: 178, w: VB_W - 208, h: 108 },
-  /** סטנד — מתחת לאי */
+  /** סטים — מתחת לאי */
   stacks: { x: 104, y: 290, w: VB_W - 208, h: 24 },
+  /** סטנד חוברות — מתחת לסטים */
+  brochure: { x: 104, y: 320, w: VB_W - 208, h: 24 },
 };
 
 function copyCount(u: StoreMapUnit, filters: UnitFilterState): number {
@@ -71,6 +73,7 @@ export function StoreMap({ data, onUnitPress, filters = emptyFilters }: Props): 
   const island = byPos.get("island");
   const display = byPos.get("display");
   const stacks = byPos.get("stacks");
+  const brochure = byPos.get("brochure");
 
   const islandSideRight =
     island?.sides[0]?.side_label ?? he.home.sideRight;
@@ -98,6 +101,10 @@ export function StoreMap({ data, onUnitPress, filters = emptyFilters }: Props): 
           <LinearGradient id="stacksWood" x1="0" y1="0" x2="0" y2="1">
             <Stop offset="0" stopColor={theme.colors.surfaceContainerHigh} />
             <Stop offset="1" stopColor={theme.colors.surfaceContainer} />
+          </LinearGradient>
+          <LinearGradient id="brochureWood" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor={theme.colors.tertiaryContainer} />
+            <Stop offset="1" stopColor={theme.colors.surfaceContainerHigh} />
           </LinearGradient>
         </Defs>
 
@@ -200,9 +207,24 @@ export function StoreMap({ data, onUnitPress, filters = emptyFilters }: Props): 
             strokeWidth={1.5}
           />
         )}
+
+        {brochure && (
+          <Rect
+            x={layout.brochure.x}
+            y={layout.brochure.y}
+            width={layout.brochure.w}
+            height={layout.brochure.h}
+            rx={5}
+            fill="url(#brochureWood)"
+            stroke={theme.colors.outline}
+            strokeWidth={1.5}
+          />
+        )}
       </Svg>
 
-      {(["front", "left", "right", "pocket", "display", "island", "stacks"] as const).map((pos) => {
+      {(
+        ["front", "left", "right", "pocket", "display", "island", "stacks", "brochure"] as const
+      ).map((pos) => {
         const unit = byPos.get(pos);
         if (!unit) return null;
         const r = layout[pos];

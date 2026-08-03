@@ -25,6 +25,10 @@ if not exist "android\local.properties" (
     if errorlevel 1 exit /b 1
 )
 
+echo === push (FCM) check ===
+call node scripts\check-google-services.cjs --strict
+if errorlevel 1 exit /b 1
+
 REM Kill any Metro process on port 8081
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8081 ^| findstr LISTENING') do taskkill /F /PID %%a 2>nul
 
@@ -42,6 +46,7 @@ if exist "android\app\build\outputs\apk\release\app-release.apk" (
     echo.
     echo ========================================
     echo APK ready: %MOBILE_DIR%android\app\build\outputs\apk\release\app-release.apk
+    echo Install on phone: scripts\install-release-apk.bat
     echo ========================================
 ) else (
     echo Build may have failed - check output above

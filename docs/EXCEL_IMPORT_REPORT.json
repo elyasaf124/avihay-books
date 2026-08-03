@@ -1,0 +1,44 @@
+{
+  "source": "malai.xlsx",
+  "generatedAt": "2026-08-02T22:15:58.206Z",
+  "report": {
+    "warnings": [
+      "שורה 997: מחסן=? → מטופל כ־0",
+      "שורה 627: בלי ספק → כללי",
+      "תא קיים במדף (shelf_id+cell_number=1) — משתמשים בו במקום שם «סטנד»",
+      "תא קיים במדף (shelf_id+cell_number=1) — משתמשים בו במקום שם «תצוגה חלון»"
+    ],
+    "errors": [],
+    "suppliersFromSheet": 31,
+    "suppliersAutoCreated": [
+      "אורי חמו",
+      "בני דוד",
+      "הסל",
+      "הרב אלישע",
+      "כללי"
+    ],
+    "inventoryRows": 1395,
+    "booksCreated": 1393,
+    "locationsCreated": 1395,
+    "shortagesCreated": 235,
+    "ordersCreated": 519,
+    "qqqCount": 5,
+    "walls": {
+      "קיר שמאל": 502,
+      "ארון חזית": 250,
+      "קיר ימין": 336,
+      "אי שמאל": 64,
+      "אי ימין": 91,
+      "ספרי כיס": 78,
+      "סטים": 41,
+      "סטנד חוברות": 3,
+      "ארון תצוגה": 30
+    }
+  },
+  "dbCounts": {
+    "books": 1393,
+    "locations": 1395,
+    "shortages": 235,
+    "inventoryOrders": 519
+  }
+}

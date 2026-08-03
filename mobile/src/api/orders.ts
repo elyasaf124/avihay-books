@@ -617,6 +617,22 @@ export function useCreateCustomerOrder() {
   });
 }
 
+/** שליחת עדכון יזום ללקוח בוואטסאפ (Template מאושר). דורש בוט וואטסאפ מוגדר בשרת. */
+export interface NotifyCustomerParams {
+  orderId: string;
+  template?: "order_ready";
+}
+
+export function useNotifyCustomer() {
+  return useMutation<void, Error, NotifyCustomerParams>({
+    mutationFn: async ({ orderId, template }) => {
+      await api.post(`/orders/${orderId}/notify-customer`, {
+        template: template ?? "order_ready",
+      });
+    },
+  });
+}
+
 function normalizeCustomerPhone(phone: string): string {
   return phone.replace(/\D/g, "");
 }
@@ -626,6 +642,44 @@ export function customerOrderBundleKey(
   o: Pick<OrderListItem, "customer_name" | "customer_phone">,
 ): string {
   return `${(o.customer_name ?? "").trim()}\u0000${normalizeCustomerPhone(o.customer_phone ?? "")}`;
+}
+
+/** מפתח קיבוץ להזמנות וואטסאפ — לפי `order_group_id` אם קיים, אחרת שם+טלפון. */
+export function whatsappOrderGroupKey(
+  o: Pick<OrderListItem, "customer_name" | "customer_phone" | "order_group_id">,
+): string {
+  if (o.order_group_id) return `wg:${o.order_group_id}`;
+  return `wb:${customerOrderBundleKey(o)}`;
+}
+
+/** הופך מערך הזמנות וואטסאפ לקבוצות לפי `order_group_id` (או שם+טלפון כ-fallback). */
+export function useOrdersGroupedForWhatsapp(items: OrderListItem[]): OrdersByCustomerGroup[] {
+  return useMemo(() => {
+    const map = new Map<string, OrdersByCustomerGroup>();
+    for (const item of items) {
+      const key = whatsappOrderGroupKey(item);
+      const existing = map.get(key);
+      if (existing) {
+        existing.orders.push(item);
+      } else {
+        map.set(key, {
+          customer_name: (item.customer_name ?? "").trim(),
+          customer_phone: (item.customer_phone ?? "").trim(),
+          orders: [item],
+        });
+      }
+    }
+    return Array.from(map.values())
+      .map((g) => ({
+        ...g,
+        orders: mergeOrderLinesForDisplay(g.orders, "whatsapp"),
+      }))
+      .sort((a, b) => {
+        const aLatest = Math.max(...a.orders.map((o) => new Date(o.created_at).getTime()));
+        const bLatest = Math.max(...b.orders.map((o) => new Date(o.created_at).getTime()));
+        return bLatest - aLatest;
+      });
+  }, [items]);
 }
 
 /** מפתח יציב לשורת ספר בחבילת לקוח (ספק + ספר קטלוג/ידני). */

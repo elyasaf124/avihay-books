@@ -8,6 +8,30 @@ interface PathRow {
   cell_name: string;
 }
 
+/** חוסר פעיל במדף — תואם ל־`is_pending_shortage` במפת החנות. */
+const ACTIVE_SHELF_SHORTAGE = `
+  EXISTS (
+    SELECT 1
+      FROM shortage_list sl
+     WHERE sl.location_id = bl.id
+       AND sl.status <> 'completed'
+  )
+`;
+
+function mapPathRows(bookId: string, rows: PathRow[]): BookLocationPath[] {
+  return rows.map((r) => ({
+    book_id: bookId,
+    unit_name: r.unit_name,
+    side_label: r.side_label,
+    shelf_number: r.shelf_number,
+    cell_name: r.cell_name,
+    full_path: r.side_label
+      ? `${r.unit_name} > ${r.side_label} > מדף ${r.shelf_number} > תא ${r.cell_name}`
+      : `${r.unit_name} > מדף ${r.shelf_number} > תא ${r.cell_name}`,
+    short_path: `תא ${r.cell_name}`,
+  }));
+}
+
 /**
  * Resolves the human-readable full path + short path for a book's first
  * (or all) locations. Per the brief:
@@ -31,15 +55,50 @@ export async function getBookLocationPaths(bookId: string): Promise<BookLocation
     WHERE bl.book_id = $1
     ORDER BY bl.position_in_cell`;
   const { rows } = await pool.query<PathRow>(sql, [bookId]);
-  return rows.map((r) => ({
-    book_id: bookId,
-    unit_name: r.unit_name,
-    side_label: r.side_label,
-    shelf_number: r.shelf_number,
-    cell_name: r.cell_name,
-    full_path: r.side_label
-      ? `${r.unit_name} > ${r.side_label} > מדף ${r.shelf_number} > תא ${r.cell_name}`
-      : `${r.unit_name} > מדף ${r.shelf_number} > תא ${r.cell_name}`,
-    short_path: `תא ${r.cell_name}`,
-  }));
+  return mapPathRows(bookId, rows);
+}
+
+/** מיקומים פיזיים זמינים ללקוח — ללא מדפים שסומנו כחוסר (`shortage_list`). */
+export async function getAvailableBookLocationPaths(bookId: string): Promise<BookLocationPath[]> {
+  const sql = `
+    SELECT
+      su.name                        AS unit_name,
+      us.side_label                  AS side_label,
+      sh.shelf_number                AS shelf_number,
+      c.cell_name                    AS cell_name
+    FROM book_locations bl
+    JOIN cells c           ON c.id  = bl.cell_id
+    JOIN shelves sh        ON sh.id = c.shelf_id
+    LEFT JOIN unit_sides us ON us.id = sh.side_id
+    LEFT JOIN shelving_units su
+      ON su.id = COALESCE(sh.unit_id, us.unit_id)
+    WHERE bl.book_id = $1
+      AND NOT ${ACTIVE_SHELF_SHORTAGE}
+    ORDER BY bl.position_in_cell`;
+  const { rows } = await pool.query<PathRow>(sql, [bookId]);
+  return mapPathRows(bookId, rows);
+}
+
+/**
+ * האם הספר זמין לרכישה בחנות — מבוסס מלאי עדכני + מדפים שלא בחוסר.
+ * אם אין מיקום במדף אבל יש מלאי כללי — נחשב זמין (ללא כתובת תא).
+ */
+export async function isBookAvailableForCustomer(
+  bookId: string,
+  stockQuantity: number,
+): Promise<boolean> {
+  if (Number(stockQuantity) <= 0) return false;
+
+  const { rows } = await pool.query<{ shelf_count: string; available_count: string }>(
+    `SELECT
+       COUNT(*)::text AS shelf_count,
+       COUNT(*) FILTER (WHERE NOT ${ACTIVE_SHELF_SHORTAGE})::text AS available_count
+     FROM book_locations bl
+     WHERE bl.book_id = $1`,
+    [bookId],
+  );
+  const shelfCount = Number.parseInt(rows[0]?.shelf_count ?? "0", 10);
+  const availableCount = Number.parseInt(rows[0]?.available_count ?? "0", 10);
+  if (shelfCount === 0) return true;
+  return availableCount > 0;
 }

@@ -114,7 +114,9 @@ export function BookDetailModal({
               ) : null}
               <View style={{ flex: 1 }}>
                 <Text style={styles.title}>{display.title}</Text>
-                <Text style={styles.author}>{display.author}</Text>
+                {display.author ? (
+                  <Text style={styles.author}>{display.author}</Text>
+                ) : null}
               </View>
               {display.isNew ? (
                 <View style={styles.newPill}>

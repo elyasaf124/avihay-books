@@ -1,6 +1,10 @@
 # פריסת Docker ב־https://render.com
 # חובה: plan: free — בלי זה ברירת המחדל היא starter (בתשלום) ו־Render יבקש כרטיס אשראי.
 # `APP_API_KEY` — Render יוצר אוטומטית עם `generateValue` (ראה Environment אחרי Deploy); העתק לאותו ערך ב־`EXPO_PUBLIC_API_KEY` באפליקציה.
+#
+# ⚠️ בוט וואטסאפ: ה-webhook חייב אירוח always-on. תוכנית `free` נרדמת ותחמיץ/תעכב הודעות.
+# לפני הפעלת הבוט בפרודקשן — שנה `plan: free` ל-`plan: starter` (או מארח always-on אחר)
+# והוסף ל-Environment את משתני WHATSAPP_* (ראה backend/.env.example, sync: false).
 
 services:
   - type: web
@@ -23,3 +27,18 @@ services:
         sync: false
       - key: APP_API_KEY
         generateValue: true
+      # WhatsApp bot — ערכים ידניים ב-Render Dashboard → Environment (sync: false)
+      - key: WHATSAPP_ENABLED
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_WABA_ID
+        sync: false
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_GRAPH_VERSION
+        sync: false

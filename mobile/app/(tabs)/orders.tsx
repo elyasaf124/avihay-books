@@ -13,7 +13,12 @@ import {
 import { useNavigation } from "@react-navigation/native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import type { OrderListItem, OrderType, OrdersBySupplierGroup } from "@avihay-books/shared";
+import type {
+  OrderListItem,
+  OrderType,
+  OrdersByCustomerGroup,
+  OrdersBySupplierGroup,
+} from "@avihay-books/shared";
 import { theme } from "../../src/theme";
 import { he } from "../../src/i18n/he";
 import {
@@ -27,19 +32,22 @@ import {
   summedCustomerAndWhatsappQtyByBookSupplier,
   summedInventoryBaseQtyBySupplierBook,
   useOrdersGroupedByCustomer,
+  useOrdersGroupedForWhatsapp,
   useOrdersGroupedBySupplier,
   filterActiveDemandOrders,
   isArchivedOrder,
   useArchiveOrderLine,
+  useNotifyCustomer,
   useOrdersList,
   useRemoveOrderLine,
   useToggleInventoryLineOrderedStatus,
   useToggleInventorySupplierOrderedStatus,
   useUpdateInventoryOrderQuantity,
+  whatsappOrderGroupKey,
 } from "../../src/api/orders";
 import { ConfirmDialog } from "../../src/components/ConfirmDialog";
 import { CustomerDemandOrderModal } from "../../src/components/orders/CustomerDemandOrderModal";
-import { CustomerOrderCard, customerGroupListKey } from "../../src/components/orders/CustomerOrderCard";
+import { CustomerOrderCard, customerGroupListKey, whatsappGroupListKey } from "../../src/components/orders/CustomerOrderCard";
 import { InventoryOrderCreateModal } from "../../src/components/orders/InventoryOrderCreateModal";
 import { InventoryOrderQtyModal } from "../../src/components/orders/InventoryOrderQtyModal";
 import { mockOrderList } from "../../src/mocks/shortageOrders";
@@ -262,6 +270,7 @@ export default function OrdersScreen(): JSX.Element {
   const toggleSupplierMutation = useToggleInventorySupplierOrderedStatus();
   const toggleLineMutation = useToggleInventoryLineOrderedStatus();
   const updateInventoryQtyMutation = useUpdateInventoryOrderQuantity();
+  const notifyCustomerMutation = useNotifyCustomer();
 
   const inventoryQuery = useOrdersList("inventory");
   const customerQuery = useOrdersList("customer");
@@ -305,7 +314,7 @@ export default function OrdersScreen(): JSX.Element {
 
   const inventorySupplierGroups = useOrdersGroupedBySupplier(inventoryItems, "inventory");
   const customerGroups = useOrdersGroupedByCustomer(customerItemsActive, "customer");
-  const whatsappGroups = useOrdersGroupedByCustomer(whatsappItemsActive, "whatsapp");
+  const whatsappGroups = useOrdersGroupedForWhatsapp(whatsappItemsActive);
 
   const extraCustomerWhatsappByBookSupplier = useMemo(
     () =>
@@ -445,11 +454,12 @@ export default function OrdersScreen(): JSX.Element {
       Alert.alert(he.orders.removeBlockedOffline);
       return;
     }
-    const key = customerOrderBundleKey(line);
+    const key =
+      orderType === "whatsapp" ? whatsappOrderGroupKey(line) : customerOrderBundleKey(line);
     const source = orderType === "customer" ? customerQuery.data : whatsappQuery.data;
-    const bundle = (source ?? []).filter(
-      (o) => customerOrderBundleKey(o) === key && !isArchivedOrder(o),
-    );
+    const matchKey = (o: OrderListItem) =>
+      orderType === "whatsapp" ? whatsappOrderGroupKey(o) : customerOrderBundleKey(o);
+    const bundle = (source ?? []).filter((o) => matchKey(o) === key && !isArchivedOrder(o));
     if (bundle.length === 0) return;
     setEditDemandBundle({ orderType, items: bundle });
   };
@@ -470,6 +480,36 @@ export default function OrdersScreen(): JSX.Element {
     if (activeTab === "whatsapp") {
       openEditDemandBundle(line, "whatsapp");
     }
+  };
+
+  const notifyCustomer = (group: OrdersByCustomerGroup) => {
+    if (isOffline) {
+      Alert.alert(he.orders.removeBlockedOffline);
+      return;
+    }
+    const orderId = group.orders[0]?.id;
+    if (!orderId) return;
+    if (!group.customer_phone) {
+      Alert.alert(he.orders.notifyCustomerMissingPhone);
+      return;
+    }
+    if (notifyCustomerMutation.isPending) return;
+    Alert.alert(he.orders.notifyCustomerDialogTitle, he.orders.notifyCustomerDialogMessage, [
+      {
+        text: he.orders.notifyCustomerOptionReady,
+        onPress: () => {
+          void (async () => {
+            try {
+              await notifyCustomerMutation.mutateAsync({ orderId, template: "order_ready" });
+              Alert.alert(he.orders.notifyCustomerSuccess);
+            } catch {
+              Alert.alert(he.generic.errorTitle, he.orders.notifyCustomerFailed);
+            }
+          })();
+        },
+      },
+      { text: he.generic.cancel, style: "cancel" },
+    ]);
   };
 
   const confirmUpdateInventoryQty = async (line: OrderListItem, newBaseQty: number) => {
@@ -574,7 +614,7 @@ export default function OrdersScreen(): JSX.Element {
       ) : (
         <FlatList
           data={demandGroups}
-          keyExtractor={customerGroupListKey}
+          keyExtractor={activeTab === "whatsapp" ? whatsappGroupListKey : customerGroupListKey}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
           ListHeaderComponent={
@@ -616,9 +656,11 @@ export default function OrdersScreen(): JSX.Element {
             <CustomerOrderCard
               group={item}
               showOrderedIndicator={activeTab === "customer"}
+              showWhatsappDetails={activeTab === "whatsapp"}
               onRemoveOrderLine={isOffline ? undefined : askRemoveOrderLine}
               onFinishOrderLine={isOffline ? undefined : askFinishOrderLine}
               onEditOrderLine={isOffline ? undefined : openEditOrderLine}
+              onNotifyCustomer={isOffline ? undefined : notifyCustomer}
               removingOrderLineKey={removingLineKey}
               finishingOrderLineKey={finishingLineKey}
             />

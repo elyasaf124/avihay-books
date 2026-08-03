@@ -11,12 +11,16 @@ export function passesUnitFilter(b: StoreMapBook, filters: UnitFilterState): boo
   if (f.topics.length > 0 && !f.topics.includes(bookTopic)) {
     return false;
   }
-  const price = Number(b.price);
-  if (f.priceMin !== null && !Number.isNaN(price) && price < f.priceMin) {
-    return false;
-  }
-  if (f.priceMax !== null && !Number.isNaN(price) && price > f.priceMax) {
-    return false;
+  if (b.price == null || b.price === "") {
+    if (f.priceMin !== null || f.priceMax !== null) return false;
+  } else {
+    const price = Number(b.price);
+    if (f.priceMin !== null && !Number.isNaN(price) && price < f.priceMin) {
+      return false;
+    }
+    if (f.priceMax !== null && !Number.isNaN(price) && price > f.priceMax) {
+      return false;
+    }
   }
   return true;
 }

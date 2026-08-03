@@ -92,6 +92,31 @@ export async function searchBooks(query: string, opts: { supplierId?: string } =
   return rows;
 }
 
+/**
+ * חיפוש סובלני לשגיאות כתיב (`fuzzy`) לבוט הוואטסאפ — מבוסס `pg_trgm`.
+ * משלב התאמת תת-מחרוזת (`ILIKE`) עם דמיון טריגרמות, וממיין לפי הדמיון הגבוה ביותר.
+ */
+export async function fuzzySearchBooks(query: string, limit = 8): Promise<Book[]> {
+  const q = query.trim();
+  if (q.length === 0) return [];
+  const pattern = `%${q}%`;
+  const threshold = 0.2;
+  const { rows } = await pool.query<Book>(
+    `SELECT *
+       FROM books
+      WHERE is_active = TRUE
+        AND (
+          title ILIKE $2 OR author ILIKE $2 OR topic ILIKE $2
+          OR similarity(title, $1) > $3
+          OR similarity(author, $1) > $3
+        )
+      ORDER BY GREATEST(similarity(title, $1), similarity(author, $1)) DESC, title
+      LIMIT $4`,
+    [q, pattern, threshold, limit],
+  );
+  return rows;
+}
+
 export async function softDeleteBook(id: string): Promise<void> {
   await pool.query("UPDATE books SET is_active = FALSE WHERE id = $1", [id]);
 }

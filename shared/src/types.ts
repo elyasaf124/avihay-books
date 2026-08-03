@@ -1,10 +1,13 @@
 import type {
+  DeliveryMethod,
+  FulfillmentType,
   NotificationType,
   OrderStatus,
   OrderType,
   ShortageStatus,
   SideLabel,
   StorePosition,
+  WhatsappSessionStatus,
 } from "./enums.js";
 
 export type UUID = string;
@@ -14,7 +17,7 @@ export interface Supplier {
   id: UUID;
   name: string;
   color_hex: string;
-  email: string;
+  email: string | null;
   last_order_date: ISOTimestamp | null;
   created_at: ISOTimestamp;
 }
@@ -22,9 +25,9 @@ export interface Supplier {
 export interface Book {
   id: UUID;
   title: string;
-  author: string;
+  author: string | null;
   supplier_id: UUID;
-  price: string;
+  price: string | null;
   stock_quantity: number;
   reorder_threshold: number;
   is_new: boolean;
@@ -110,6 +113,13 @@ export interface OrderRow {
   manual_book_author: string | null;
   status: OrderStatus;
   created_at: ISOTimestamp;
+  /** שדות זרימת בוט הוואטסאפ (אופציונליים — קיימים בהזמנות `whatsapp`). */
+  fulfillment_type?: FulfillmentType | null;
+  delivery_method?: DeliveryMethod | null;
+  delivery_fee?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  order_group_id?: UUID | null;
 }
 
 export interface AppNotification {
@@ -149,14 +159,14 @@ export interface StoreMapBook {
   location_id: UUID;
   book_id: UUID;
   title: string;
-  author: string;
+  author: string | null;
   supplier_id: UUID;
   supplier_color: string;
   position_in_cell: number;
   quantity_in_cell: number;
   is_new: boolean;
   /** מחיר כפי שמוחזר מ־`books.price` (טקסט מ־`numeric` של PG). */
-  price: string;
+  price: string | null;
   /** נושא הספר מ־`books.topic`. */
   topic: string;
   /** ספר זה סומן כחוסר במדף — עד עדכון סטטוס החוסר ל־`completed`. */
@@ -225,14 +235,14 @@ export interface ShortageListItem {
   status: ShortageStatus;
   resolved_at: ISOTimestamp | null;
   book_title: string;
-  book_author: string;
+  book_author: string | null;
   book_stock_quantity: number;
   book_reorder_threshold: number;
-  book_price: string;
+  book_price: string | null;
   supplier_id: UUID;
   supplier_name: string;
   supplier_color: string;
-  supplier_email: string;
+  supplier_email: string | null;
 }
 
 // ---------- Composed: orders list (Phase 3) ----------
@@ -251,13 +261,79 @@ export interface OrderListItem {
   status: OrderStatus;
   created_at: ISOTimestamp;
   book_title: string;
-  book_author: string;
-  book_price: string;
+  book_author: string | null;
+  book_price: string | null;
   /** ספק הספר בקטלוג (`books.supplier_id`) — לתצוגה גם כש־`supplier_id` בהזמנה ריק. */
   catalog_supplier_id: UUID | null;
   supplier_name: string;
   supplier_color: string;
-  supplier_email: string;
+  supplier_email: string | null;
+  /** שדות זרימת בוט הוואטסאפ (אופציונליים — קיימים בהזמנות `whatsapp`). */
+  fulfillment_type?: FulfillmentType | null;
+  delivery_method?: DeliveryMethod | null;
+  delivery_fee?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  order_group_id?: UUID | null;
+}
+
+/** רשומת שיחת בוט וואטסאפ (`whatsapp_sessions`). */
+export interface WhatsappSession {
+  id: UUID;
+  phone_number: string;
+  status: WhatsappSessionStatus;
+  current_node: string;
+  context: Record<string, unknown>;
+  profile_name: string | null;
+  book_id: UUID | null;
+  order_id: UUID | null;
+  bot_paused_until: ISOTimestamp | null;
+  last_inbound_at: ISOTimestamp | null;
+  created_at: ISOTimestamp;
+  updated_at: ISOTimestamp;
+}
+
+/** לוג הודעת וואטסאפ נכנסת/יוצאת (`whatsapp_messages`). */
+export interface WhatsappMessage {
+  id: UUID;
+  phone_number: string;
+  direction: "in" | "out";
+  wa_message_id: string | null;
+  msg_type: string;
+  body: string | null;
+  payload: Record<string, unknown>;
+  is_echo: boolean;
+  created_at: ISOTimestamp;
+}
+
+/** שיחה אחת בתיבת הצ'אט באפליקציה — שורה ברשימת השיחות (מקובצת לפי מספר טלפון). */
+export interface ChatConversation {
+  phone_number: string;
+  profile_name: string | null;
+  status: WhatsappSessionStatus | null;
+  /** האם הבוט מושהה כרגע (מענה אנושי פעיל). */
+  bot_paused: boolean;
+  last_message_body: string | null;
+  last_message_type: string;
+  last_message_direction: "in" | "out" | null;
+  last_message_at: ISOTimestamp | null;
+  unread_count: number;
+}
+
+/** הודעה בודדת לתצוגה במסך השיחה. */
+export interface ChatMessageView {
+  id: UUID;
+  direction: "in" | "out";
+  msg_type: string;
+  body: string | null;
+  is_echo: boolean;
+  created_at: ISOTimestamp;
+}
+
+/** תוצאת שליחת הודעת עובד מתוך האפליקציה. */
+export interface ChatSendResult {
+  ok: boolean;
+  message: ChatMessageView;
 }
 
 /** קבוצת הזמנות לפי ספק לצורך ייצוא PDF / שליחה במייל. */
@@ -265,7 +341,7 @@ export interface OrdersBySupplierGroup {
   supplier_id: UUID | null;
   supplier_name: string;
   supplier_color: string;
-  supplier_email: string;
+  supplier_email: string | null;
   orders: OrderListItem[];
 }
 

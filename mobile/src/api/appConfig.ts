@@ -20,6 +20,6 @@ export function useAppConfig() {
       return data;
     },
     staleTime: 60_000,
-    retry: 1,
+    retry: __DEV__ ? 0 : 1,
   });
 }

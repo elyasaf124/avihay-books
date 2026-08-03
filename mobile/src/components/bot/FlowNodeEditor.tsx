@@ -1,0 +1,610 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import { Ionicons } from "@expo/vector-icons";
+
+import {
+
+  Alert,
+
+  Modal,
+
+  Pressable,
+
+  ScrollView,
+
+  StyleSheet,
+
+  Text,
+
+  TextInput,
+
+  useWindowDimensions,
+
+  View,
+
+} from "react-native";
+
+import type {
+
+  FlowButton,
+
+  FlowButtonAction,
+
+  FlowNode,
+
+  FlowNodeType,
+
+} from "@avihay-books/shared";
+
+import { he } from "../../i18n/he";
+
+import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
+
+import { theme } from "../../theme";
+
+import { BotScrollContext, ChipSelect, genId, LabeledInput } from "./BotFormControls";
+
+
+
+const TYPE_OPTIONS: { value: FlowNodeType; label: string }[] = [
+
+  { value: "text", label: he.bot.stepTypeText },
+
+  { value: "buttons", label: he.bot.stepTypeButtons },
+
+  { value: "link", label: he.bot.stepTypeLink },
+
+  { value: "document", label: he.bot.stepTypeDocument },
+
+];
+
+
+
+const ACTION_OPTIONS: { value: FlowButtonAction; label: string }[] = [
+
+  { value: "goto", label: he.bot.actionGoto },
+
+  { value: "main_menu", label: he.bot.actionMainMenu },
+
+  { value: "end_loop", label: he.bot.actionEndLoop },
+
+  { value: "handover", label: he.bot.actionHandover },
+
+];
+
+
+
+const AFTER_OPTIONS = [
+
+  { value: "next" as const, label: he.bot.afterNext },
+
+  { value: "end_loop" as const, label: he.bot.afterEndLoop },
+
+  { value: "handover" as const, label: he.bot.afterHandover },
+
+];
+
+
+
+function nodeLabel(node: FlowNode): string {
+
+  const t = node.text.trim();
+
+  return t.length > 0 ? (t.length > 22 ? t.slice(0, 21) + "…" : t) : `(${he.bot.stepTypeText})`;
+
+}
+
+
+
+export function FlowNodeEditor({
+
+  node,
+
+  allNodes,
+
+  onSave,
+
+  onClose,
+
+}: {
+
+  node: FlowNode;
+
+  allNodes: FlowNode[];
+
+  onSave: (node: FlowNode) => void;
+
+  onClose: () => void;
+
+}): JSX.Element {
+
+  const [draft, setDraft] = useState<FlowNode>(() => ({ ...node }));
+
+  const keyboardHeight = useKeyboardHeight();
+
+  const { height: windowH } = useWindowDimensions();
+
+  const scrollRef = useRef<ScrollView>(null);
+
+  const inputRefs = useRef<Map<string, TextInput>>(new Map());
+
+  const focusedInputKeyRef = useRef<string | null>(null);
+
+  const [sheetShift, setSheetShift] = useState(0);
+
+  const registerInput = useCallback((key: string, node: TextInput | null) => {
+
+    if (node) inputRefs.current.set(key, node);
+
+    else inputRefs.current.delete(key);
+
+  }, []);
+
+
+
+  const ensureInputVisible = useCallback(
+    (key: string) => {
+      if (keyboardHeight <= 0) return;
+      const input = inputRefs.current.get(key);
+      if (!input) return;
+      input.measureInWindow((_x, y, _w, height) => {
+        const keyboardTop = windowH - keyboardHeight;
+        const margin = theme.spacing.lg;
+        const overflow = y + height - (keyboardTop - margin);
+        setSheetShift(overflow > 0 ? overflow : 0);
+      });
+    },
+    [keyboardHeight, windowH],
+  );
+
+  const onInputFocus = useCallback(
+    (key: string) => {
+      focusedInputKeyRef.current = key;
+      ensureInputVisible(key);
+    },
+    [ensureInputVisible],
+  );
+
+  useEffect(() => {
+    if (keyboardHeight <= 0) {
+      setSheetShift(0);
+      return undefined;
+    }
+    const key = focusedInputKeyRef.current;
+    if (!key) return undefined;
+    const t = setTimeout(() => ensureInputVisible(key), 60);
+    return () => clearTimeout(t);
+  }, [keyboardHeight, ensureInputVisible]);
+
+  const scrollContextValue = useMemo(
+    () => ({ registerInput, onInputFocus }),
+    [registerInput, onInputFocus],
+  );
+
+
+
+  const d = draft;
+
+  const targetOptions = allNodes
+
+    .filter((n) => n.id !== d.id)
+
+    .map((n) => ({ value: n.id, label: nodeLabel(n) }));
+
+
+
+  const changeType = (type: FlowNodeType): void => {
+
+    setDraft((prev) => {
+
+      if (!prev) return prev;
+
+      if (type === "buttons") {
+
+        const buttons =
+
+          (prev.buttons ?? []).length > 0
+
+            ? prev.buttons!
+
+            : [{ id: genId("btn"), title: "", action: "end_loop" as const }];
+
+        return { ...prev, type, buttons, after: undefined, next_node_id: undefined };
+
+      }
+
+      return { ...prev, type, buttons: undefined, after: prev.after ?? "end_loop" };
+
+    });
+
+  };
+
+
+
+  const setButtons = (buttons: FlowButton[]): void =>
+
+    setDraft((prev) => (prev ? { ...prev, buttons } : prev));
+
+
+
+  const addButton = (): void => {
+
+    const buttons = d.buttons ?? [];
+
+    if (buttons.length >= 3) return;
+
+    setButtons([...buttons, { id: genId("btn"), title: "", action: "end_loop" }]);
+
+  };
+
+
+
+  const updateButton = (index: number, patch: Partial<FlowButton>): void => {
+
+    const buttons = [...(d.buttons ?? [])];
+
+    buttons[index] = { ...buttons[index]!, ...patch };
+
+    setButtons(buttons);
+
+  };
+
+
+
+  const removeButton = (index: number): void =>
+
+    setButtons((d.buttons ?? []).filter((_, i) => i !== index));
+
+
+
+  const handleSave = (): void => {
+
+    if (d.type === "buttons") {
+
+      const validButtons = (d.buttons ?? []).filter((b) => b.title.trim().length > 0);
+
+      if (validButtons.length === 0) {
+
+        Alert.alert(he.generic.errorTitle, he.bot.buttonsNeedOne);
+
+        return;
+
+      }
+
+    }
+
+    onSave(d);
+
+    onClose();
+
+  };
+
+
+
+  return (
+
+    <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+
+      <View style={styles.modalRoot}>
+
+        <Pressable style={styles.backdrop} onPress={onClose}>
+
+          <Pressable
+            style={[styles.sheet, sheetShift > 0 && { transform: [{ translateY: -sheetShift }] }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+
+            <View style={styles.header}>
+
+              <Text style={styles.headerTitle}>{he.bot.stepEditorTitle}</Text>
+
+              <Pressable onPress={onClose} hitSlop={8}>
+
+                <Ionicons name="close" size={24} color={theme.colors.onSurface} />
+
+              </Pressable>
+
+            </View>
+
+
+
+            <BotScrollContext.Provider value={scrollContextValue}>
+
+              <ScrollView
+
+                ref={scrollRef}
+
+                style={styles.sheetScroll}
+
+                contentContainerStyle={[
+                  styles.body,
+                  { paddingBottom: keyboardHeight + theme.spacing.xl },
+                ]}
+
+                keyboardShouldPersistTaps="handled"
+
+                keyboardDismissMode="on-drag"
+
+                automaticallyAdjustKeyboardInsets={false}
+
+              >
+
+                <ChipSelect<FlowNodeType>
+
+                  label={he.bot.fieldStepType}
+
+                  value={d.type}
+
+                  options={TYPE_OPTIONS}
+
+                  onChange={changeType}
+
+                />
+
+
+
+                <LabeledInput
+
+                  label={he.bot.fieldStepText}
+
+                  value={d.text}
+
+                  onChangeText={(v) => setDraft((prev) => (prev ? { ...prev, text: v } : prev))}
+
+                  multiline
+
+                  hint={d.type === "buttons" ? he.bot.buttonsTextHint : undefined}
+
+                />
+
+
+
+                {d.type === "link" ? (
+
+                  <>
+
+                    <LabeledInput label={he.bot.fieldLinkUrl} value={d.link_url ?? ""} onChangeText={(v) => setDraft((p) => (p ? { ...p, link_url: v } : p))} keyboardType="url" />
+
+                    <LabeledInput label={he.bot.fieldLinkLabel} value={d.link_label ?? ""} onChangeText={(v) => setDraft((p) => (p ? { ...p, link_label: v } : p))} maxLength={20} />
+
+                  </>
+
+                ) : null}
+
+
+
+                {d.type === "document" ? (
+
+                  <>
+
+                    <LabeledInput label={he.bot.fieldDocUrl} value={d.document_url ?? ""} onChangeText={(v) => setDraft((p) => (p ? { ...p, document_url: v } : p))} keyboardType="url" />
+
+                    <LabeledInput label={he.bot.fieldDocFilename} value={d.document_filename ?? ""} onChangeText={(v) => setDraft((p) => (p ? { ...p, document_filename: v } : p))} />
+
+                  </>
+
+                ) : null}
+
+
+
+                {d.type === "buttons" ? (
+
+                  <View>
+
+                    <Text style={styles.sectionTitle}>{he.bot.buttonsTitle}</Text>
+
+                    {(d.buttons ?? []).map((btn, index) => (
+
+                      <View key={btn.id} style={styles.buttonCard}>
+
+                        <View style={styles.buttonCardHeader}>
+
+                          <Text style={styles.buttonCardIndex}>#{index + 1}</Text>
+
+                          <Pressable onPress={() => removeButton(index)} hitSlop={6}>
+
+                            <Ionicons name="trash-outline" size={18} color={theme.colors.error} />
+
+                          </Pressable>
+
+                        </View>
+
+                        <LabeledInput label={he.bot.fieldButtonTitle} value={btn.title} onChangeText={(v) => updateButton(index, { title: v })} maxLength={20} />
+
+                        <ChipSelect<FlowButtonAction>
+
+                          label={he.bot.fieldButtonAction}
+
+                          value={btn.action}
+
+                          options={ACTION_OPTIONS}
+
+                          onChange={(v) => updateButton(index, { action: v })}
+
+                        />
+
+                        {btn.action === "goto" ? (
+
+                          <ChipSelect
+
+                            label={he.bot.fieldButtonTarget}
+
+                            value={btn.target_node_id}
+
+                            options={targetOptions}
+
+                            onChange={(v) => updateButton(index, { target_node_id: v })}
+
+                          />
+
+                        ) : null}
+
+                      </View>
+
+                    ))}
+
+                    {(d.buttons ?? []).length < 3 ? (
+
+                      <Pressable style={styles.addInline} onPress={addButton}>
+
+                        <Ionicons name="add" size={18} color={theme.colors.primary} />
+
+                        <Text style={styles.addInlineText}>{he.bot.addButton}</Text>
+
+                      </Pressable>
+
+                    ) : null}
+
+                  </View>
+
+                ) : (
+
+                  <>
+
+                    <ChipSelect
+
+                      label={he.bot.afterTitle}
+
+                      value={d.after ?? "end_loop"}
+
+                      options={AFTER_OPTIONS}
+
+                      onChange={(v) => setDraft((p) => (p ? { ...p, after: v } : p))}
+
+                    />
+
+                    {d.after === "next" ? (
+
+                      <ChipSelect
+
+                        label={he.bot.fieldNextStep}
+
+                        value={d.next_node_id}
+
+                        options={targetOptions}
+
+                        onChange={(v) => setDraft((p) => (p ? { ...p, next_node_id: v } : p))}
+
+                      />
+
+                    ) : null}
+
+                  </>
+
+                )}
+
+              </ScrollView>
+
+            </BotScrollContext.Provider>
+
+
+
+            <Pressable style={styles.saveBtn} onPress={handleSave}>
+
+              <Text style={styles.saveBtnText}>{he.generic.save}</Text>
+
+            </Pressable>
+
+          </Pressable>
+
+        </Pressable>
+
+      </View>
+
+    </Modal>
+
+  );
+
+}
+
+
+
+const styles = StyleSheet.create({
+
+  modalRoot: { flex: 1 },
+
+  backdrop: { flex: 1, backgroundColor: "rgba(11, 28, 48, 0.45)", justifyContent: "flex-end" },
+
+  sheet: {
+
+    maxHeight: "92%",
+
+    flexShrink: 1,
+
+    backgroundColor: theme.colors.background,
+
+    borderTopLeftRadius: theme.radius.xl,
+
+    borderTopRightRadius: theme.radius.xl,
+
+    paddingBottom: theme.spacing.md,
+
+  },
+
+  sheetScroll: { flexShrink: 1 },
+
+  header: {
+
+    flexDirection: "row",
+
+    alignItems: "center",
+
+    justifyContent: "space-between",
+
+    padding: theme.spacing.md,
+
+    borderBottomWidth: StyleSheet.hairlineWidth,
+
+    borderBottomColor: theme.colors.outlineVariant,
+
+  },
+
+  headerTitle: { ...theme.typography.headlineSm, color: theme.colors.onSurface, textAlign: "left" },
+
+  body: { padding: theme.spacing.md, paddingBottom: theme.spacing.xl },
+
+  sectionTitle: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onSurfaceVariant, textAlign: "left", marginBottom: theme.spacing.xs },
+
+  buttonCard: {
+
+    backgroundColor: theme.colors.surface,
+
+    borderRadius: theme.radius.lg,
+
+    borderWidth: 1,
+
+    borderColor: theme.colors.outlineVariant,
+
+    padding: theme.spacing.sm,
+
+    marginBottom: theme.spacing.sm,
+
+  },
+
+  buttonCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: theme.spacing.xs },
+
+  buttonCardIndex: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onSurfaceVariant, textAlign: "left" },
+
+  addInline: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingVertical: theme.spacing.sm },
+
+  addInlineText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.primary, textAlign: "left" },
+
+  saveBtn: {
+
+    marginHorizontal: theme.spacing.md,
+
+    backgroundColor: theme.colors.primary,
+
+    borderRadius: theme.radius.md,
+
+    paddingVertical: theme.spacing.md,
+
+    alignItems: "center",
+
+  },
+
+  saveBtnText: { ...theme.typography.labelMd, letterSpacing: 0, color: theme.colors.onPrimary, fontSize: 15, textAlign: "left" },
+
+});
+
+

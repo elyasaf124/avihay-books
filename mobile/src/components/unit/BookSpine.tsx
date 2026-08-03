@@ -1,4 +1,6 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useRef, useState } from "react";
+import { StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView } from "react-native-gesture-handler";
 import type { StoreMapBook } from "@avihay-books/shared";
 import { theme } from "../../theme";
 
@@ -10,15 +12,35 @@ interface Props {
   onLongPress: () => void;
 }
 
+const SCROLL_OVERFLOW_THRESHOLD = 2;
+
 /**
  * "שדרת ספר" — מלבן צבעוני בצבע הספק, אנכי, עם הטיית הכותרת.
  * הצבע בא ישירות מטבלת `suppliers.color_hex` של אותו ספר.
  */
 export function BookSpine({ book, dimmed, onPress, onLongPress }: Props): JSX.Element {
   const accent = book.supplier_color;
+  const suppressNextPressRef = useRef(false);
+  const [textLineWidth, setTextLineWidth] = useState(0);
+  const [viewport, setViewport] = useState({ w: 0, h: 0 });
+
+  const scrollEnabled = textLineWidth > viewport.h + SCROLL_OVERFLOW_THRESHOLD;
+
+  const handlePress = useCallback(() => {
+    if (suppressNextPressRef.current) {
+      suppressNextPressRef.current = false;
+      return;
+    }
+    onPress();
+  }, [onPress]);
+
+  const handleScrollBeginDrag = useCallback(() => {
+    suppressNextPressRef.current = true;
+  }, []);
+
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       onLongPress={onLongPress}
       delayLongPress={350}
       style={({ pressed }) => [
@@ -30,15 +52,45 @@ export function BookSpine({ book, dimmed, onPress, onLongPress }: Props): JSX.El
       accessibilityRole="button"
       accessibilityLabel={book.title}
     >
-      <View style={styles.titleSlot}>
-        <Text
-          style={styles.title}
-          numberOfLines={3}
-          ellipsizeMode="tail"
-          allowFontScaling={false}
-        >
-          {book.title}
-        </Text>
+      <View
+        style={styles.titleSlot}
+        onLayout={(e) => {
+          const { width, height } = e.nativeEvent.layout;
+          setViewport({ w: width, h: height });
+        }}
+      >
+        {viewport.w > 0 && viewport.h > 0 ? (
+          <ScrollView
+            horizontal
+            style={[
+              styles.titleScroll,
+              { width: viewport.h, height: viewport.w },
+            ]}
+            contentContainerStyle={[
+              styles.titleScrollContent,
+              !scrollEnabled && { minWidth: viewport.h },
+            ]}
+            scrollEnabled={scrollEnabled}
+            showsHorizontalScrollIndicator={false}
+            nestedScrollEnabled
+            directionalLockEnabled
+            onScrollBeginDrag={handleScrollBeginDrag}
+          >
+            <Text
+              style={styles.title}
+              numberOfLines={1}
+              allowFontScaling={false}
+              onTextLayout={(e) => {
+                const w = e.nativeEvent.lines[0]?.width ?? 0;
+                if (w > 0) {
+                  setTextLineWidth(w);
+                }
+              }}
+            >
+              {book.title}
+            </Text>
+          </ScrollView>
+        ) : null}
       </View>
       {book.is_new ? (
         <View style={styles.newBadge}>
@@ -67,17 +119,27 @@ const styles = StyleSheet.create({
   },
   titleSlot: {
     flex: 1,
+    width: "100%",
+    overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
   },
-  /** מוטה 90° כדי לדמות שדרת ספר אנכית. */
+  /**
+   * ScrollView אופקי שמסובב -90° — כך רוחב הטקסט (שורה אחת) לא נחתך
+   * על ידי רוחב השדרה (28px), והגלילה האופקית = גלילה לאורך השדרה.
+   */
+  titleScroll: {
+    transform: [{ rotate: "-90deg" }],
+  },
+  titleScrollContent: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
   title: {
     color: "#ffffff",
     fontSize: 10,
     fontWeight: "600",
     textAlign: "center",
-    transform: [{ rotate: "-90deg" }],
-    width: 84,
     fontFamily: theme.fontFamily.semibold,
   },
   newBadge: {

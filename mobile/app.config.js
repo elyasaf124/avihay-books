@@ -1,8 +1,6 @@
 const path = require("path");
+const fs = require("fs");
 const { loadProjectEnv } = require("@expo/env");
-
-/** שינוי מזהה האפליקציה לפיתוח כדי לא לדרוס את גרסת הייצור בטלפון. שנה ל-false כדי לחזור לפרודקשן בקלות */
-const IS_DEV_PACKAGE = false;
 
 /** מצב טעינת קבצי `.env.*` — מתאים ל־`EAS` (`EAS_BUILD_PROFILE`) או ל־`NODE_ENV` מקומי */
 function getExpoEnvMode() {
@@ -27,7 +25,7 @@ function firstNonBlank(...candidates) {
 }
 
 /** קישור לפרויקט ב־EAS — נוצר ב־`expo.dev` (אי אפשר לכתוב לקובץ דינמי מ־`eas init`). */
-const EAS_LINKED_PROJECT_ID = "165eded6-07f1-48a8-a850-5378dc2a8f71";
+const EAS_LINKED_PROJECT_ID = "7bfd3dfc-eeb0-4d5b-bd7e-90913e89af22";
 function normalizeUuid(value) {
   if (typeof value !== "string") return "";
   const t = value.trim().replace(/^\uFEFF/, "").replace(/\s+$/g, "");
@@ -57,20 +55,30 @@ const hasEasProjectId = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-
   easProjectId,
 );
 
+const googleServicesFile = "./google-services.json";
+const hasGoogleServices = fs.existsSync(path.join(__dirname, googleServicesFile));
+
 module.exports = ({ config }) => {
-  const name = IS_DEV_PACKAGE ? `${config.name}-dev` : config.name;
   const android = {
     ...config.android,
-    package: IS_DEV_PACKAGE ? `${config.android?.package ?? "com.avihay.books"}.dev` : (config.android?.package ?? "com.avihay.books"),
+    package: config.android?.package ?? "com.avihay.books",
+    permissions: [
+      ...new Set([
+        ...(config.android?.permissions ?? []),
+        "android.permission.POST_NOTIFICATIONS",
+      ]),
+    ],
+    ...(hasGoogleServices ? { googleServicesFile } : {}),
   };
   const ios = {
     ...config.ios,
-    bundleIdentifier: IS_DEV_PACKAGE ? `${config.ios?.bundleIdentifier ?? "com.avihay.books"}.dev` : (config.ios?.bundleIdentifier ?? "com.avihay.books"),
+    bundleIdentifier: config.ios?.bundleIdentifier ?? "com.avihay.books",
   };
+
+  const updatesEnabled = isProductionBuild && hasEasProjectId;
 
   return {
     ...config,
-    name,
     android,
     ios,
     runtimeVersion: {
@@ -78,9 +86,10 @@ module.exports = ({ config }) => {
     },
     updates: {
       ...config.updates,
-      checkAutomatically: "ON_LOAD",
-      fallbackToCacheTimeout: 0,
-      ...(hasEasProjectId ? { url: `https://u.expo.dev/${easProjectId}` } : { enabled: false }),
+      enabled: updatesEnabled,
+      checkAutomatically: updatesEnabled ? "ON_LOAD" : "NEVER",
+      fallbackToCacheTimeout: updatesEnabled ? 0 : undefined,
+      ...(updatesEnabled ? { url: `https://u.expo.dev/${easProjectId}` } : {}),
     },
     extra: {
       ...config.extra,

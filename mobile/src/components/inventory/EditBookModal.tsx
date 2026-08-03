@@ -18,9 +18,9 @@ import { theme } from "../../theme";
 
 export interface EditBookSubmitPayload {
   title: string;
-  author: string;
+  author: string | null;
   supplier_id: string;
-  price: number;
+  price: number | null;
   reorder_threshold: number;
   topic: string;
   is_new: boolean;
@@ -94,9 +94,9 @@ export function EditBookModal({
     if (!visible || !book) return;
     setForm({
       title: book.title,
-      author: book.author,
+      author: book.author ?? "",
       supplier_id: book.supplier_id,
-      price: String(book.price),
+      price: book.price == null ? "" : String(book.price),
       reorder_threshold: String(book.reorder_threshold),
       topic: book.topic,
       is_new: book.is_new,
@@ -111,7 +111,8 @@ export function EditBookModal({
   };
 
   const handleSubmit = () => {
-    const priceNum = Number(String(form.price).replace(",", "."));
+    const priceRaw = String(form.price).trim();
+    const priceNum = priceRaw === "" ? null : Number(priceRaw.replace(",", "."));
     const reorderNum = Number.parseInt(form.reorder_threshold, 10);
     const titleClean = form.title.trim();
     const authorClean = form.author.trim();
@@ -119,11 +120,10 @@ export function EditBookModal({
 
     if (
       !titleClean ||
-      !authorClean ||
       !form.supplier_id ||
-      Number.isNaN(priceNum) ||
+      (priceNum !== null && Number.isNaN(priceNum)) ||
       Number.isNaN(reorderNum) ||
-      priceNum < 0 ||
+      (priceNum !== null && priceNum < 0) ||
       reorderNum < 0
     ) {
       return;
@@ -131,7 +131,7 @@ export function EditBookModal({
 
     onSubmit({
       title: titleClean,
-      author: authorClean,
+      author: authorClean ? authorClean : null,
       supplier_id: form.supplier_id,
       price: priceNum,
       reorder_threshold: reorderNum,

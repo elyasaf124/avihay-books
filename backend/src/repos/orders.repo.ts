@@ -1,7 +1,102 @@
 import { pool } from "../db/pool.js";
 import { orderInputSchema, type OrderInput } from "./schemas.js";
-import type { OrderListItem, OrderRow, OrderStatus, OrderType } from "@avihay-books/shared";
+import type {
+  DeliveryMethod,
+  FulfillmentType,
+  OrderListItem,
+  OrderRow,
+  OrderStatus,
+  OrderType,
+} from "@avihay-books/shared";
 import type { PoolClient } from "pg";
+
+/** קלט יצירת הזמנת וואטסאפ מקובצת (ענף 2 בבוט): פרטי לקוח/מימוש + שורות ספרים. */
+export interface WhatsappOrderGroupInput {
+  customer_name: string;
+  customer_phone: string;
+  fulfillment_type: FulfillmentType;
+  delivery_method?: DeliveryMethod | null;
+  delivery_fee?: number | null;
+  address?: string | null;
+  notes?: string | null;
+  lines: { title: string; author?: string | null; quantity: number }[];
+}
+
+/**
+ * יוצר שורת `orders` אחת לכל ספר, כולן עם אותו `order_group_id`, `order_type='whatsapp'`.
+ * הספרים נשמרים ככותרת ידנית (`manual_book_title`) — קליטה חופשית מהשיחה, ללא קטלוג.
+ */
+export async function createWhatsappOrderGroup(
+  input: WhatsappOrderGroupInput,
+): Promise<{ groupId: string; orders: OrderRow[] }> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows: idRows } = await client.query<{ id: string }>(
+      "SELECT gen_random_uuid() AS id",
+    );
+    const groupId = idRows[0]!.id;
+    const created: OrderRow[] = [];
+    for (const line of input.lines) {
+      const title = line.title.trim();
+      if (title.length === 0) continue;
+      const { rows } = await client.query<OrderRow>(
+        `INSERT INTO orders (
+           book_id, supplier_id, order_type, quantity,
+           customer_name, customer_phone, manual_book_title, manual_book_author, status,
+           fulfillment_type, delivery_method, delivery_fee, address, notes, order_group_id
+         )
+         VALUES (NULL, NULL, 'whatsapp', $1, $2, $3, $4, $5, 'pending', $6, $7, $8, $9, $10, $11)
+         RETURNING *`,
+        [
+          Math.max(1, Math.trunc(line.quantity)),
+          input.customer_name,
+          input.customer_phone,
+          title,
+          line.author?.trim() ? line.author.trim() : null,
+          input.fulfillment_type,
+          input.delivery_method ?? null,
+          input.delivery_fee ?? null,
+          input.address ?? null,
+          input.notes ?? null,
+          groupId,
+        ],
+      );
+      created.push(rows[0]!);
+    }
+    await client.query("COMMIT");
+    return { groupId, orders: created };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** הזמנה בודדת משולבת עם פרטי הספר — לשליחת עדכון ללקוח (template). */
+export async function findOrderExpandedById(id: string): Promise<OrderListItem | null> {
+  const { rows } = await pool.query<OrderListItem>(
+    `SELECT o.id, o.book_id, o.supplier_id, o.order_type, o.quantity,
+            o.customer_name, o.customer_phone, o.manual_book_title, o.manual_book_author,
+            o.status, o.created_at,
+            o.fulfillment_type, o.delivery_method, o.delivery_fee::text AS delivery_fee,
+            o.address, o.notes, o.order_group_id,
+            COALESCE(b.title, o.manual_book_title, '') AS book_title,
+            COALESCE(b.author, o.manual_book_author, '') AS book_author,
+            CASE WHEN o.book_id IS NULL THEN '—' ELSE b.price::text END AS book_price,
+            b.supplier_id AS catalog_supplier_id,
+            COALESCE(s.name, '')        AS supplier_name,
+            COALESCE(s.color_hex, '')   AS supplier_color,
+            COALESCE(s.email, '')       AS supplier_email
+       FROM orders o
+       LEFT JOIN books b ON b.id = o.book_id
+       LEFT JOIN suppliers s ON s.id = o.supplier_id
+      WHERE o.id = $1`,
+    [id],
+  );
+  return rows[0] ?? null;
+}
 
 /**
  * מזמיני מלאי (`inventory`) ללא לקוח: מאחדים לשורת `pending` קיימת (כולל ניקוי כפילויות ישנות),
@@ -228,6 +323,8 @@ export async function findAllOrdersExpanded(
     `SELECT o.id, o.book_id, o.supplier_id, o.order_type, o.quantity,
             o.customer_name, o.customer_phone, o.manual_book_title, o.manual_book_author,
             o.status, o.created_at,
+            o.fulfillment_type, o.delivery_method, o.delivery_fee::text AS delivery_fee,
+            o.address, o.notes, o.order_group_id,
             COALESCE(b.title, o.manual_book_title, '') AS book_title,
             COALESCE(b.author, o.manual_book_author, '') AS book_author,
             CASE WHEN o.book_id IS NULL THEN '—' ELSE b.price::text END AS book_price,

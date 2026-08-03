@@ -3,6 +3,7 @@ import { Platform } from "react-native";
 import Constants, { ExecutionEnvironment } from "expo-constants";
 import { useUnreadNotificationCount } from "../api/notifications";
 import { he } from "../i18n/he";
+import { ensureNotificationPermission } from "../utils/notificationPermissions";
 
 const isExpoGo = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
 
@@ -26,7 +27,7 @@ export function useUnreadPushNotifier(): { unreadCount: number } {
       if (cancelled) return;
       notificationsModRef.current = Notifications;
       configureForegroundHandler(Notifications);
-      const granted = await requestPermission(Notifications);
+      const granted = await ensureNotificationPermission(Notifications);
       permissionGrantedRef.current = granted;
     })();
 
@@ -64,27 +65,6 @@ export function useUnreadPushNotifier(): { unreadCount: number } {
   }, [query.data]);
 
   return { unreadCount: query.data ?? 0 };
-}
-
-async function requestPermission(
-  Notifications: typeof import("expo-notifications"),
-): Promise<boolean> {
-  if (Platform.OS === "web") return false;
-  try {
-    const settings = await Notifications.getPermissionsAsync();
-    if (
-      settings.granted ||
-      settings.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL
-    ) {
-      return true;
-    }
-    const ask = await Notifications.requestPermissionsAsync({
-      ios: { allowAlert: true, allowBadge: true, allowSound: false },
-    });
-    return ask.granted || ask.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
-  } catch {
-    return false;
-  }
 }
 
 let foregroundConfigured = false;

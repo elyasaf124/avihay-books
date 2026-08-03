@@ -1,18 +1,23 @@
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import type { OrderListItem, OrdersByCustomerGroup } from "@avihay-books/shared";
-import { customerOrderBundleKey, orderDisplayLineKey } from "../../api/orders";
+import { customerOrderBundleKey, orderDisplayLineKey, whatsappOrderGroupKey } from "../../api/orders";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
+import { buildWhatsappOrderMetaRows } from "../../utils/whatsappOrderDisplay";
 
 interface Props {
   group: OrdersByCustomerGroup;
   variant?: "active" | "history";
   /** בלשונית לקוחות: משאית לתצוגה בלבד כשההזמנה `sent` (מסומנת מהמלאi). */
   showOrderedIndicator?: boolean;
+  /** בלשונית וואטסאפ: הצגת כתובת, הערות, סוג הזמנה ומשלוח. */
+  showWhatsappDetails?: boolean;
   onRemoveOrderLine?: (order: OrderListItem) => void;
   onFinishOrderLine?: (order: OrderListItem) => void;
   onEditOrderLine?: (order: OrderListItem) => void;
+  /** שליחת עדכון יזום ללקוח בוואטסאפ (לשונית וואטסאפ/לקוח). */
+  onNotifyCustomer?: (group: OrdersByCustomerGroup) => void;
   removingOrderLineKey?: string | null;
   finishingOrderLineKey?: string | null;
 }
@@ -26,14 +31,20 @@ export function CustomerOrderCard({
   group,
   variant = "active",
   showOrderedIndicator = false,
+  showWhatsappDetails = false,
   onRemoveOrderLine,
   onFinishOrderLine,
   onEditOrderLine,
+  onNotifyCustomer,
   removingOrderLineKey = null,
   finishingOrderLineKey = null,
 }: Props): JSX.Element {
   const isHistory = variant === "history";
   const totalUnits = group.orders.reduce((s, o) => s + o.quantity, 0);
+  const whatsappMetaRows =
+    showWhatsappDetails && group.orders[0]
+      ? buildWhatsappOrderMetaRows(group.orders[0])
+      : [];
 
   return (
     <View style={[styles.card, theme.shadow.floating]}>
@@ -56,7 +67,32 @@ export function CustomerOrderCard({
             </Text>
           </View>
         </View>
+        {!isHistory && onNotifyCustomer && group.customer_phone ? (
+          <Pressable
+            onPress={() => onNotifyCustomer(group)}
+            style={({ pressed }) => [styles.notifyBtn, pressed && styles.lineActionPressed]}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            accessibilityRole="button"
+            accessibilityLabel={he.orders.notifyCustomerButtonA11y}
+          >
+            <Ionicons name="logo-whatsapp" size={16} color={theme.colors.onPrimaryContainer} />
+            <Text style={styles.notifyBtnText} numberOfLines={1}>
+              {he.orders.notifyCustomerButton}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
+
+      {whatsappMetaRows.length > 0 ? (
+        <View style={styles.orderMeta}>
+          {whatsappMetaRows.map((row) => (
+            <View key={row.label} style={styles.orderMetaRow}>
+              <Text style={styles.orderMetaLabel}>{row.label}</Text>
+              <Text style={styles.orderMetaValue}>{row.value}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       <View style={styles.list}>
         {group.orders.map((o) => {
@@ -192,6 +228,13 @@ export function customerGroupListKey(group: OrdersByCustomerGroup): string {
   return customerOrderBundleKey(group);
 }
 
+/** מפתח יציב ל־FlatList בלשונית וואטסאפ — לפי `order_group_id` או שם+טלפון. */
+export function whatsappGroupListKey(group: OrdersByCustomerGroup): string {
+  const first = group.orders[0];
+  if (first) return whatsappOrderGroupKey(first);
+  return customerOrderBundleKey(group);
+}
+
 const styles = StyleSheet.create({
   card: {
     backgroundColor: theme.colors.surface,
@@ -226,6 +269,26 @@ const styles = StyleSheet.create({
   subline: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
+    textAlign: "left",
+  },
+  orderMeta: {
+    backgroundColor: theme.colors.surfaceContainerLow,
+    borderRadius: theme.radius.lg,
+    paddingHorizontal: theme.spacing.md,
+    paddingVertical: theme.spacing.sm,
+    gap: theme.spacing.xs,
+  },
+  orderMetaRow: {
+    gap: 2,
+  },
+  orderMetaLabel: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: "left",
+  },
+  orderMetaValue: {
+    ...theme.typography.bodyMd,
+    color: theme.colors.onSurface,
     textAlign: "left",
   },
   list: {
@@ -301,6 +364,20 @@ const styles = StyleSheet.create({
     maxWidth: 120,
   },
   finishOrderBtnText: {
+    ...theme.typography.labelMd,
+    color: theme.colors.onPrimaryContainer,
+    fontSize: 11,
+  },
+  notifyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.xs,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 6,
+    borderRadius: theme.radius.full,
+    backgroundColor: theme.colors.primaryContainer,
+  },
+  notifyBtnText: {
     ...theme.typography.labelMd,
     color: theme.colors.onPrimaryContainer,
     fontSize: 11,
