@@ -7,10 +7,26 @@ import type {
   ShortageStatus,
 } from "@avihay-books/shared";
 import { api } from "./client";
-import { STORE_MAP_KEY } from "./storeMap";
+import { DASHBOARD_STATS_KEY } from "./dashboard";
+import {
+  patchStoreMapLocationShortage,
+  softInvalidateStoreMap,
+} from "./storeMap";
 
 const SHORTAGE_KEY = ["shortage", "list"] as const;
 const ORDERS_KEY_PREFIX = ["orders"] as const;
+
+function invalidateShortageSideEffects(
+  client: ReturnType<typeof useQueryClient>,
+  opts?: { orders?: boolean },
+): void {
+  void client.invalidateQueries({ queryKey: SHORTAGE_KEY });
+  void client.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
+  softInvalidateStoreMap(client);
+  if (opts?.orders) {
+    void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX });
+  }
+}
 
 export function useShortageList() {
   return useQuery<ShortageListItem[]>({
@@ -53,9 +69,7 @@ export function useMoveShortageToOrder() {
       client.setQueryData<ShortageListItem[]>(SHORTAGE_KEY, (old) =>
         old ? old.filter((row) => row.book_id !== data.shortage.book_id) : old,
       );
-      void client.invalidateQueries({ queryKey: SHORTAGE_KEY });
-      void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX });
-      void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
+      invalidateShortageSideEffects(client, { orders: true });
     },
   });
 }
@@ -70,8 +84,7 @@ export function useDeleteShortage() {
       client.setQueryData<ShortageListItem[]>(SHORTAGE_KEY, (old) =>
         old ? old.filter((row) => row.id !== shortageId) : old,
       );
-      void client.invalidateQueries({ queryKey: SHORTAGE_KEY });
-      void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
+      invalidateShortageSideEffects(client);
     },
   });
 }
@@ -87,8 +100,8 @@ export function useCancelShelfShortage() {
       client.setQueryData<ShortageListItem[]>(SHORTAGE_KEY, (old) =>
         old ? old.filter((row) => row.location_id !== locationId) : old,
       );
-      void client.invalidateQueries({ queryKey: SHORTAGE_KEY });
-      void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
+      patchStoreMapLocationShortage(client, locationId, false);
+      void client.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
     },
   });
 }
@@ -108,8 +121,7 @@ export function useUpdateShortageStatus() {
       return data;
     },
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: SHORTAGE_KEY });
-      void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
+      invalidateShortageSideEffects(client);
     },
   });
 }

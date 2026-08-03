@@ -210,6 +210,37 @@ export interface StoreMap {
   units: StoreMapUnit[];
 }
 
+/** סיכום יחידה למסכי בית/מלאי — בלי מערך ספרים בתאים. */
+export interface StoreMapUnitSummary {
+  id: UUID;
+  name: string;
+  store_position: StorePosition;
+  has_sides: boolean;
+  is_display_unit: boolean;
+  display_order: number;
+  shelf_count: number;
+  cell_count: number;
+  total_copies: number;
+  new_count: number;
+  unique_titles: number;
+}
+
+export interface StoreMapSummary {
+  units: StoreMapUnitSummary[];
+  topics: string[];
+}
+
+/** ספירות עותקים מסוננות לפי יחידה (פילטרי בית). */
+export interface StoreMapFilteredCopyCounts {
+  units: { id: UUID; filtered_copies: number }[];
+}
+
+/** סיכום לדשבורד הבית — מונים בלי רשימות מלאות. */
+export interface DashboardStats {
+  openOrders: { totalOpen: number; pending: number; sent: number };
+  shortageCount: number;
+}
+
 // ---------- Composed: location resolution ----------
 
 export interface BookLocationPath {

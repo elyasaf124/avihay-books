@@ -30,12 +30,16 @@ export function CellCard({
 
   const spineRows = books.flatMap((b) => {
     const qty = Math.max(0, Math.floor(Number(b.quantity_in_cell)));
-    if (qty <= 0) return [];
-    return Array.from({ length: qty }, (_, i) => (
+    const isShortaged =
+      shortagedIds.has(b.location_id) || Boolean(b.is_pending_shortage);
+    // מיקום חסר (qty 0 + shortage) — שדרה אחת מטושטשת במקום להסתיר לגמרי.
+    const spineCount = qty > 0 ? qty : isShortaged ? 1 : 0;
+    if (spineCount <= 0) return [];
+    return Array.from({ length: spineCount }, (_, i) => (
       <BookSpine
         key={`${b.location_id}-${i}`}
         book={{ ...b, quantity_in_cell: 1 }}
-        dimmed={shortagedIds.has(b.location_id) || Boolean(b.is_pending_shortage)}
+        dimmed={isShortaged}
         onPress={() => onBookPress(b)}
         onLongPress={() => onBookLongPress(b)}
       />

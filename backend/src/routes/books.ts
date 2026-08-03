@@ -7,10 +7,11 @@ import {
   softDeleteBook,
   upsertBook,
 } from "../repos/books.repo.js";
-import { findBookLocationsExpandedByBook } from "../repos/bookLocations.repo.js";
+import { findBookLocationsExpandedByBookIds } from "../repos/bookLocations.repo.js";
 import { getBookLocationPaths } from "../services/bookLocation.js";
 import { notifyLowStockAfterBookChange } from "../services/notifications.js";
 import { reconcileOrdersOnStockArrival } from "../services/orderReconciliation.js";
+import { invalidateStoreMapCache } from "../services/storeMapCache.js";
 import type { BookWithLocations } from "@avihay-books/shared";
 
 export const booksRouter = Router();
@@ -37,12 +38,11 @@ booksRouter.get(
       ...(supplierId ? { supplierId } : {}),
     });
     if (expandLocations) {
-      const withLocs: BookWithLocations[] = await Promise.all(
-        books.map(async (b) => ({
-          ...b,
-          locations: await findBookLocationsExpandedByBook(b.id),
-        })),
-      );
+      const locsByBook = await findBookLocationsExpandedByBookIds(books.map((b) => b.id));
+      const withLocs: BookWithLocations[] = books.map((b) => ({
+        ...b,
+        locations: locsByBook.get(b.id) ?? [],
+      }));
       res.json(withLocs);
       return;
     }
@@ -71,6 +71,7 @@ booksRouter.post(
   "/",
   asyncHandler(async (req, res) => {
     const row = await upsertBook(req.body);
+    invalidateStoreMapCache();
     if (Number(row.stock_quantity) <= Number(row.reorder_threshold)) {
       await notifyLowStockAfterBookChange(
         { ...row, stock_quantity: row.stock_quantity + 1 },
@@ -88,6 +89,7 @@ booksRouter.patch(
     if (!existing) throw new HttpError(404, "book_not_found");
     const merged = { ...existing, ...req.body, id: req.params.id };
     const row = await upsertBook(merged);
+    invalidateStoreMapCache();
     const oldStock = existing.stock_quantity;
     const newStock = row.stock_quantity;
     if (newStock > oldStock) {
@@ -103,6 +105,7 @@ booksRouter.delete(
   "/:id",
   asyncHandler(async (req, res) => {
     await softDeleteBook(req.params.id!);
+    invalidateStoreMapCache();
     res.status(204).end();
   }),
 );

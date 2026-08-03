@@ -13,6 +13,7 @@ import {
   createShortageAfterShelfSale,
   moveShortageToOrder,
 } from "../services/shortage.js";
+import { invalidateStoreMapCache, invalidateStoreMapCacheForLocation } from "../services/storeMapCache.js";
 import { ORDER_TYPES, SHORTAGE_STATUSES } from "@avihay-books/shared";
 
 export const shortageRouter = Router();
@@ -39,6 +40,11 @@ shortageRouter.post(
       soldQuantity: body.sold_quantity ?? 1,
       locationId: body.location_id,
     });
+    if (body.location_id) {
+      invalidateStoreMapCacheForLocation(body.location_id);
+    } else {
+      invalidateStoreMapCache();
+    }
     res.status(201).json(row);
   }),
 );
@@ -50,6 +56,7 @@ shortageRouter.delete(
     const { locationId } = locationIdParamSchema.parse(req.params);
     const ok = await deleteActiveShortageByLocationId(locationId);
     if (!ok) throw new HttpError(404, "shortage_not_found");
+    invalidateStoreMapCacheForLocation(locationId);
     res.status(204).send();
   }),
 );
@@ -59,6 +66,7 @@ shortageRouter.delete(
   asyncHandler(async (req, res) => {
     const ok = await deleteShortageById(req.params.id!);
     if (!ok) throw new HttpError(404, "shortage_not_found");
+    invalidateStoreMapCache();
     res.status(204).send();
   }),
 );
@@ -66,7 +74,9 @@ shortageRouter.delete(
 shortageRouter.patch(
   "/:id",
   asyncHandler(async (req, res) => {
-    res.json(await upsertShortage({ ...req.body, id: req.params.id }));
+    const row = await upsertShortage({ ...req.body, id: req.params.id });
+    invalidateStoreMapCache();
+    res.json(row);
   }),
 );
 
@@ -77,11 +87,14 @@ shortageRouter.patch(
   asyncHandler(async (req, res) => {
     const { status } = statusPatchSchema.parse(req.body);
     if (status === "completed") {
-      res.json(await completeShortage(req.params.id!));
+      const row = await completeShortage(req.params.id!);
+      invalidateStoreMapCache();
+      res.json(row);
       return;
     }
     const row = await updateShortageStatus(req.params.id!, status);
     if (!row) throw new HttpError(404, "shortage_not_found");
+    invalidateStoreMapCache();
     res.json(row);
   }),
 );
@@ -100,6 +113,7 @@ shortageRouter.post(
       quantity: body.quantity,
       orderType: body.order_type,
     });
+    invalidateStoreMapCache();
     res.status(201).json(result);
   }),
 );

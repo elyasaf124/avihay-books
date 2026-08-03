@@ -1,69 +1,37 @@
 import { useMemo, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useRouter } from "expo-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
-import type { Book, OrderListItem, OrderType } from "@avihay-books/shared";
-import { StoreMap } from "../../src/components/StoreMap";
+import type { Book } from "@avihay-books/shared";
+import { StoreMap, storeMapSummaryToDisplayUnits } from "../../src/components/StoreMap";
 import { SearchBar } from "../../src/components/SearchBar";
 import { BookDetailModal } from "../../src/components/BookDetailModal";
 import { UnitFilterBar } from "../../src/components/unit/UnitFilterBar";
-import { useSearchBooks, useStoreMap } from "../../src/api/storeMap";
+import {
+  fetchStoreMapUnit,
+  storeMapUnitKey,
+  useFilteredCopyCounts,
+  useSearchBooks,
+  useStoreMapSummary,
+} from "../../src/api/storeMap";
+import { useDashboardStats } from "../../src/api/dashboard";
 import { classifyStoreMapFailure } from "../../src/api/apiDiagnostics";
 import { apiPublicBaseHost } from "../../src/api/client";
-import { isOpenOrder, mergeOrderLinesForDisplay, useOrdersList } from "../../src/api/orders";
-import { useShortageList } from "../../src/api/shortage";
 import { useSuppliersWithFallback } from "../../src/api/unit";
 import { useStoreMapFilters } from "../../src/context/StoreMapFilterContext";
+import { isUnitFilterActive } from "../../src/utils/unitFilters";
 import {
-  collectTopicsFromMap,
-  isUnitFilterActive,
-  sumFilteredCopiesFromMap,
-} from "../../src/utils/unitFilters";
-import {
-  deriveHomeFloorStock,
+  deriveHomeFloorStockFromSummary,
   mockCatalogBooks,
   mockHomeStats,
-  mockStoreMap,
+  mockStoreMapSummary,
 } from "../../src/mocks/homeDashboard";
-import { mockOrderList } from "../../src/mocks/shortageOrders";
 import { theme } from "../../src/theme";
 import { he } from "../../src/i18n/he";
 
 function normalize(s: string): string {
   return s.trim().toLowerCase();
-}
-
-function ordersRowsForDashboard(
-  type: OrderType,
-  items: OrderListItem[] | undefined,
-  allApisOffline: boolean,
-): OrderListItem[] {
-  if (items && items.length > 0) return items;
-  if (allApisOffline) return mockOrderList.filter((o) => o.order_type === type);
-  return items ?? [];
-}
-
-function aggregateOpenOrdersFromMerged(
-  inv: OrderListItem[],
-  cust: OrderListItem[],
-  whats: OrderListItem[],
-): { totalOpen: number; pending: number; sent: number } {
-  const groups: readonly [OrderType, OrderListItem[]][] = [
-    ["inventory", inv],
-    ["customer", cust],
-    ["whatsapp", whats],
-  ];
-  let pending = 0;
-  let sent = 0;
-  for (const [t, rows] of groups) {
-    const merged = mergeOrderLinesForDisplay(rows, t);
-    for (const o of merged) {
-      if (!isOpenOrder(o)) continue;
-      if (o.status === "pending") pending += 1;
-      else if (o.status === "sent") sent += 1;
-    }
-  }
-  return { totalOpen: pending + sent, pending, sent };
 }
 
 function ordersDashboardSubtitle(pending: number, sent: number): string {
@@ -76,22 +44,29 @@ function ordersDashboardSubtitle(pending: number, sent: number): string {
 
 export default function HomeScreen(): JSX.Element {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [query, setQuery] = useState("");
   const [selectedBook, setSelectedBook] = useState<Book | null>(null);
   const { filters, setFilters } = useStoreMapFilters();
   const suppliers = useSuppliersWithFallback();
 
-  const storeMapQuery = useStoreMap();
-  const shortageQuery = useShortageList();
+  const openUnit = (unitId: string) => {
+    void queryClient.prefetchQuery({
+      queryKey: storeMapUnitKey(unitId),
+      queryFn: () => fetchStoreMapUnit(unitId),
+      staleTime: 30_000,
+    });
+    router.push(`/unit/${unitId}`);
+  };
+
+  const summaryQuery = useStoreMapSummary();
+  const dashboardQuery = useDashboardStats();
+  const filteredCountsQuery = useFilteredCopyCounts(filters);
   const trimmed = query.trim();
   const searchQuery = useSearchBooks(trimmed);
-  const inventoryOrdersQuery = useOrdersList("inventory");
-  const customerOrdersQuery = useOrdersList("customer");
-  const whatsappOrdersQuery = useOrdersList("whatsapp");
 
-  // Prefer real `/store-map` data; fall back to the demo map when the API is unreachable.
-  const isOffline = storeMapQuery.isError;
-  const failureKind = storeMapQuery.isError ? classifyStoreMapFailure(storeMapQuery.error) : null;
+  const isOffline = summaryQuery.isError;
+  const failureKind = summaryQuery.isError ? classifyStoreMapFailure(summaryQuery.error) : null;
   const offlineBannerText =
     failureKind === "localhost"
       ? he.home.offlineBannerLocalhost
@@ -111,75 +86,64 @@ export default function HomeScreen(): JSX.Element {
               ? he.home.offlineDetailUnknown
               : null;
   const offlineHostShown = apiPublicBaseHost();
-  const storeMapData =
-    storeMapQuery.data != null && !storeMapQuery.isError ? storeMapQuery.data : mockStoreMap;
-  const floorStock = deriveHomeFloorStock(storeMapQuery.data);
-  const mapTopics = useMemo(() => collectTopicsFromMap(storeMapData), [storeMapData]);
+  const summaryData =
+    summaryQuery.data != null && !summaryQuery.isError
+      ? summaryQuery.data
+      : mockStoreMapSummary();
+  const floorStock = deriveHomeFloorStockFromSummary(
+    summaryQuery.data != null && !summaryQuery.isError ? summaryQuery.data : undefined,
+  );
+  const mapTopics = summaryData.topics;
   const filterActive = isUnitFilterActive(filters);
+  const filteredCopiesByUnitId = useMemo(() => {
+    if (!filterActive || !filteredCountsQuery.data) return null;
+    const out: Record<string, number> = {};
+    for (const row of filteredCountsQuery.data.units) {
+      out[row.id] = row.filtered_copies;
+    }
+    return out;
+  }, [filterActive, filteredCountsQuery.data]);
   const filteredFloorCopies = useMemo(() => {
-    if (!filterActive) return null;
-    const map = storeMapQuery.data != null && !storeMapQuery.isError ? storeMapQuery.data : mockStoreMap;
-    return sumFilteredCopiesFromMap(map, filters);
-  }, [filterActive, storeMapQuery.data, storeMapQuery.isError, filters]);
-
-  const ordersApisAllOffline =
-    inventoryOrdersQuery.isError && customerOrdersQuery.isError && whatsappOrdersQuery.isError;
-
-  const inventoryOrdersRows = ordersRowsForDashboard(
-    "inventory",
-    inventoryOrdersQuery.data,
-    ordersApisAllOffline,
+    if (!filterActive || !filteredCopiesByUnitId) return null;
+    return Object.values(filteredCopiesByUnitId).reduce((s, n) => s + n, 0);
+  }, [filterActive, filteredCopiesByUnitId]);
+  const displayUnits = useMemo(
+    () => storeMapSummaryToDisplayUnits(summaryData.units),
+    [summaryData.units],
   );
-  const customerOrdersRows = ordersRowsForDashboard(
-    "customer",
-    customerOrdersQuery.data,
-    ordersApisAllOffline,
-  );
-  const whatsappOrdersRows = ordersRowsForDashboard(
-    "whatsapp",
-    whatsappOrdersQuery.data,
-    ordersApisAllOffline,
-  );
-
-  const ordersMetricsFetched =
-    inventoryOrdersQuery.isFetched &&
-    customerOrdersQuery.isFetched &&
-    whatsappOrdersQuery.isFetched;
 
   const stats = useMemo(() => {
-    const openAgg = aggregateOpenOrdersFromMerged(
-      inventoryOrdersRows,
-      customerOrdersRows,
-      whatsappOrdersRows,
-    );
-
-    const openOrdersFormatted = ordersMetricsFetched
-      ? openAgg.totalOpen.toLocaleString("he-IL")
+    const openOrdersFormatted = dashboardQuery.isFetched
+      ? (dashboardQuery.data?.openOrders.totalOpen ?? 0).toLocaleString("he-IL")
       : he.home.statsValuePlaceholder;
-    const ordersSubLabelEffective = ordersMetricsFetched
-      ? ordersDashboardSubtitle(openAgg.pending, openAgg.sent)
+    const ordersSubLabelEffective = dashboardQuery.isFetched
+      ? ordersDashboardSubtitle(
+          dashboardQuery.data?.openOrders.pending ?? 0,
+          dashboardQuery.data?.openOrders.sent ?? 0,
+        )
       : he.home.loading;
 
-    const liveShortageCount = shortageQuery.data?.length;
-
     const shortageCountFormatted =
-      typeof liveShortageCount === "number"
-        ? liveShortageCount.toLocaleString("he-IL")
+      dashboardQuery.isFetched && dashboardQuery.data
+        ? dashboardQuery.data.shortageCount.toLocaleString("he-IL")
         : mockHomeStats.shortages;
 
     const storeMapPendingFirstFetch =
-      storeMapQuery.isLoading && !storeMapQuery.isFetched && storeMapQuery.data == null;
+      summaryQuery.isLoading && !summaryQuery.isFetched && summaryQuery.data == null;
+    const filteredPending =
+      filterActive && filteredCountsQuery.isLoading && filteredCopiesByUnitId == null;
 
-    const totalStockFormatted = filterActive
-      ? storeMapPendingFirstFetch
-        ? he.home.statsValuePlaceholder
-        : (filteredFloorCopies ?? 0).toLocaleString("he-IL")
-      : storeMapPendingFirstFetch
-        ? he.home.statsValuePlaceholder
-        : floorStock.totalStockFormatted;
+    const totalStockFormatted =
+      filterActive
+        ? storeMapPendingFirstFetch || filteredPending
+          ? he.home.statsValuePlaceholder
+          : (filteredFloorCopies ?? 0).toLocaleString("he-IL")
+        : storeMapPendingFirstFetch
+          ? he.home.statsValuePlaceholder
+          : floorStock.totalStockFormatted;
 
     const stockDeltaLabel = filterActive
-      ? storeMapPendingFirstFetch
+      ? storeMapPendingFirstFetch || filteredPending
         ? he.home.loading
         : he.home.statsFilteredSubtitle
       : storeMapPendingFirstFetch
@@ -197,18 +161,17 @@ export default function HomeScreen(): JSX.Element {
       shortageSubLabel: mockHomeStats.shortageSubLabel,
     };
   }, [
-    customerOrdersRows,
+    dashboardQuery.data,
+    dashboardQuery.isFetched,
+    filteredCopiesByUnitId,
+    filteredCountsQuery.isLoading,
     filteredFloorCopies,
     floorStock.totalStockFormatted,
     floorStock.usedRealFloorTotal,
-    inventoryOrdersRows,
-    shortageQuery.data?.length,
-    ordersMetricsFetched,
     filterActive,
-    whatsappOrdersRows,
-    storeMapQuery.isFetched,
-    storeMapQuery.isLoading,
-    storeMapQuery.data,
+    summaryQuery.data,
+    summaryQuery.isFetched,
+    summaryQuery.isLoading,
   ]);
 
   const localMockHits = useMemo(() => {
@@ -217,7 +180,7 @@ export default function HomeScreen(): JSX.Element {
     return mockCatalogBooks.filter(
       (b) =>
         normalize(b.title).includes(q) ||
-        normalize(b.author).includes(q) ||
+        normalize(b.author ?? "").includes(q) ||
         normalize(b.topic).includes(q),
     );
   }, [trimmed]);
@@ -227,18 +190,14 @@ export default function HomeScreen(): JSX.Element {
   const searchLoading = trimmed.length > 0 && searchQuery.isLoading && !searchQuery.data;
 
   const refreshing =
-    (storeMapQuery.isFetching && !storeMapQuery.isLoading) ||
-    (shortageQuery.isFetching && !shortageQuery.isLoading) ||
-    (inventoryOrdersQuery.isFetching && !inventoryOrdersQuery.isLoading) ||
-    (customerOrdersQuery.isFetching && !customerOrdersQuery.isLoading) ||
-    (whatsappOrdersQuery.isFetching && !whatsappOrdersQuery.isLoading);
+    (summaryQuery.isFetching && !summaryQuery.isLoading) ||
+    (dashboardQuery.isFetching && !dashboardQuery.isLoading) ||
+    (filteredCountsQuery.isFetching && !filteredCountsQuery.isLoading);
   const onRefresh = (): void => {
-    void storeMapQuery.refetch();
-    void shortageQuery.refetch();
+    void summaryQuery.refetch();
+    void dashboardQuery.refetch();
+    if (filterActive) void filteredCountsQuery.refetch();
     if (trimmed.length > 0) void searchQuery.refetch();
-    void inventoryOrdersQuery.refetch();
-    void customerOrdersQuery.refetch();
-    void whatsappOrdersQuery.refetch();
   };
 
   return (
@@ -312,7 +271,7 @@ export default function HomeScreen(): JSX.Element {
       <Text style={styles.sectionTitle}>{he.home.mapSectionTitle}</Text>
 
       <View style={styles.mapBox}>
-        {storeMapQuery.isLoading ? (
+        {summaryQuery.isLoading ? (
           <View style={styles.mapLoading}>
             <ActivityIndicator color={theme.colors.primary} />
             <Text style={styles.mapLoadingCaption}>{he.home.loading}</Text>
@@ -320,9 +279,9 @@ export default function HomeScreen(): JSX.Element {
         ) : (
           <>
             <StoreMap
-              data={storeMapData}
-              filters={filters}
-              onUnitPress={(unit) => router.push(`/unit/${unit.id}`)}
+              units={displayUnits}
+              filteredCopiesByUnitId={filteredCopiesByUnitId}
+              onUnitPress={(unit) => openUnit(unit.id)}
             />
             <Text style={styles.hint}>{he.home.tapToOpen}</Text>
           </>

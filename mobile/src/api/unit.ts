@@ -8,7 +8,11 @@ import type {
 import { useMemo } from "react";
 import { api } from "./client";
 import { NOTIFICATIONS_LIST_KEY, NOTIFICATIONS_UNREAD_KEY } from "./notifications";
-import { STORE_MAP_KEY } from "./storeMap";
+import { DASHBOARD_STATS_KEY } from "./dashboard";
+import {
+  patchStoreMapLocationShortage,
+  softInvalidateStoreMap,
+} from "./storeMap";
 import { mockSuppliers } from "../mocks/homeDashboard";
 import { useSuppliers } from "./suppliers";
 
@@ -57,11 +61,16 @@ export function useAddShortage() {
       });
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
+      if (vars.locationId) {
+        patchStoreMapLocationShortage(client, vars.locationId, true);
+      } else {
+        softInvalidateStoreMap(client);
+      }
       void client.invalidateQueries({ queryKey: ["shortage"] });
+      void client.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
       void client.refetchQueries({ queryKey: NOTIFICATIONS_LIST_KEY });
       void client.refetchQueries({ queryKey: NOTIFICATIONS_UNREAD_KEY });
-      void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
     },
   });
 }
@@ -87,7 +96,7 @@ export function useMoveBook() {
       return data;
     },
     onSuccess: () => {
-      void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
+      softInvalidateStoreMap(client);
       void client.invalidateQueries({ queryKey: ["books", "inventory"] });
     },
   });

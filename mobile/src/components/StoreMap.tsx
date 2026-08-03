@@ -1,8 +1,6 @@
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Defs, LinearGradient, Rect, Stop, Text as SvgText } from "react-native-svg";
-import type { StoreMap as StoreMapData, StoreMapUnit } from "@avihay-books/shared";
-import { emptyFilters, type UnitFilterState } from "./unit/UnitFilterBar";
-import { sumFilteredCopiesInUnit } from "../utils/unitFilters";
+import type { StoreMapUnitSummary, StorePosition } from "@avihay-books/shared";
 import { theme } from "../theme";
 import { he } from "../i18n/he";
 
@@ -14,10 +12,19 @@ import { he } from "../i18n/he";
 const webDirLtr: Record<string, unknown> =
   Platform.OS === "web" ? { dir: "ltr" } : {};
 
+export interface StoreMapDisplayUnit {
+  id: string;
+  name: string;
+  store_position: StorePosition;
+  total_copies: number;
+  new_count: number;
+}
+
 interface Props {
-  data: StoreMapData;
-  onUnitPress: (unit: StoreMapUnit) => void;
-  filters?: UnitFilterState;
+  units: StoreMapDisplayUnit[];
+  /** כשיש פילטר פעיל — ספירות מהשרת לפי `unit.id`; אחרת משתמשים ב-`total_copies`. */
+  filteredCopiesByUnitId?: Record<string, number> | null;
+  onUnitPress: (unit: StoreMapDisplayUnit) => void;
 }
 
 const VB_W = 360;
@@ -48,24 +55,26 @@ const layout: Record<
   brochure: { x: 104, y: 320, w: VB_W - 208, h: 24 },
 };
 
-function copyCount(u: StoreMapUnit, filters: UnitFilterState): number {
-  return sumFilteredCopiesInUnit(u, filters);
+export function storeMapSummaryToDisplayUnits(
+  units: StoreMapUnitSummary[],
+): StoreMapDisplayUnit[] {
+  return units.map((u) => ({
+    id: u.id,
+    name: u.name,
+    store_position: u.store_position,
+    total_copies: u.total_copies,
+    new_count: u.new_count,
+  }));
 }
 
-function newBookCount(u: StoreMapUnit): number {
-  let n = 0;
-  for (const sh of u.shelves)
-    for (const c of sh.cells) for (const b of c.books) if (b.is_new) n += 1;
-  for (const sd of u.sides)
-    for (const sh of sd.shelves)
-      for (const c of sh.cells)
-        for (const b of c.books)
-          if (b.is_new) n += 1;
-  return n;
-}
-
-export function StoreMap({ data, onUnitPress, filters = emptyFilters }: Props): JSX.Element {
-  const byPos = new Map<string, StoreMapUnit>(data.units.map((u) => [u.store_position, u]));
+export function StoreMap({
+  units,
+  filteredCopiesByUnitId = null,
+  onUnitPress,
+}: Props): JSX.Element {
+  const byPos = new Map<string, StoreMapDisplayUnit>(
+    units.map((u) => [u.store_position, u]),
+  );
   const front = byPos.get("front");
   const left = byPos.get("left");
   const right = byPos.get("right");
@@ -75,10 +84,15 @@ export function StoreMap({ data, onUnitPress, filters = emptyFilters }: Props): 
   const stacks = byPos.get("stacks");
   const brochure = byPos.get("brochure");
 
-  const islandSideRight =
-    island?.sides[0]?.side_label ?? he.home.sideRight;
-  const islandSideLeft =
-    island?.sides[1]?.side_label ?? he.home.sideLeft;
+  const islandSideRight = he.home.sideRight;
+  const islandSideLeft = he.home.sideLeft;
+
+  function copiesFor(unit: StoreMapDisplayUnit): number {
+    if (filteredCopiesByUnitId != null && unit.id in filteredCopiesByUnitId) {
+      return filteredCopiesByUnitId[unit.id] ?? 0;
+    }
+    return unit.total_copies;
+  }
 
   return (
     <View style={styles.ltrGeo} {...webDirLtr}>
@@ -118,12 +132,14 @@ export function StoreMap({ data, onUnitPress, filters = emptyFilters }: Props): 
           stroke={theme.colors.outlineVariant}
         />
 
-        {[
-          { pos: "front" as const, unit: front, fill: "url(#wood)" },
-          { pos: "left" as const, unit: left, fill: "url(#wood)" },
-          { pos: "right" as const, unit: right, fill: "url(#wood)" },
-          { pos: "pocket" as const, unit: pocket, fill: "url(#wood)" },
-        ].map(({ pos, unit, fill }) => {
+        {(
+          [
+            { pos: "front" as const, unit: front, fill: "url(#wood)" },
+            { pos: "left" as const, unit: left, fill: "url(#wood)" },
+            { pos: "right" as const, unit: right, fill: "url(#wood)" },
+            { pos: "pocket" as const, unit: pocket, fill: "url(#wood)" },
+          ] as const
+        ).map(({ pos, unit, fill }) => {
           const r = layout[pos];
           return (
             <Rect
@@ -228,7 +244,7 @@ export function StoreMap({ data, onUnitPress, filters = emptyFilters }: Props): 
         const unit = byPos.get(pos);
         if (!unit) return null;
         const r = layout[pos];
-        const showNewHint = pos === "display" && newBookCount(unit) > 0;
+        const showNewHint = pos === "display" && unit.new_count > 0;
         return (
           <Pressable
             key={pos}
@@ -247,7 +263,7 @@ export function StoreMap({ data, onUnitPress, filters = emptyFilters }: Props): 
             <View style={styles.labelBox} pointerEvents="none">
               <Text style={styles.unitName}>{unit.name}</Text>
               <Text style={styles.unitMeta}>
-                {copyCount(unit, filters)} ספרים
+                {copiesFor(unit)} ספרים
                 {showNewHint ? ` · ${he.home.displayHint}` : ""}
               </Text>
             </View>

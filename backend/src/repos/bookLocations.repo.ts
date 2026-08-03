@@ -259,6 +259,30 @@ export async function findBookLocationsExpandedByBook(bookId: string): Promise<B
   return rows;
 }
 
+/** מיקומים מורחבים לקבוצת ספרים — שאילתה אחת במקום N+1. */
+export async function findBookLocationsExpandedByBookIds(
+  bookIds: string[],
+): Promise<Map<string, BookLocationExpanded[]>> {
+  const byBook = new Map<string, BookLocationExpanded[]>();
+  for (const id of bookIds) byBook.set(id, []);
+  if (bookIds.length === 0) return byBook;
+
+  const { rows } = await pool.query<BookLocationExpanded>(
+    `SELECT bl.id, bl.book_id, bl.cell_id, bl.position_in_cell, bl.quantity_in_cell, c.cell_name
+     FROM book_locations bl
+     JOIN cells c ON c.id = bl.cell_id
+     WHERE bl.book_id = ANY($1::uuid[])
+     ORDER BY bl.book_id, bl.position_in_cell, bl.id`,
+    [bookIds],
+  );
+  for (const row of rows) {
+    const arr = byBook.get(row.book_id) ?? [];
+    arr.push(row);
+    byBook.set(row.book_id, arr);
+  }
+  return byBook;
+}
+
 export async function deleteBookLocation(id: string): Promise<void> {
   await pool.query("DELETE FROM book_locations WHERE id = $1", [id]);
 }

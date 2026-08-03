@@ -9,6 +9,7 @@ import type {
 } from "@avihay-books/shared";
 import { useMemo } from "react";
 import { api } from "./client";
+import { DASHBOARD_STATS_KEY } from "./dashboard";
 
 const STATUS_RANK: Record<OrderStatus, number> = {
   pending: 0,
@@ -348,6 +349,11 @@ export interface RemoveDisplayOrderLineParams {
 
 const ORDERS_KEY_PREFIX_REMOVE = ["orders"] as const;
 
+function invalidateOrdersCaches(client: ReturnType<typeof useQueryClient>): void {
+  void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
+  void client.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
+}
+
 async function postRemoveOrderLine(order: OrderListItem): Promise<void> {
   await api.post("/orders/remove-line", removeOrderLineBodyFromDisplayRow(order));
 }
@@ -365,7 +371,7 @@ export function useArchiveOrderLine() {
   return useMutation<void, Error, OrderListItem>({
     mutationFn: archiveDisplayOrderLine,
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
+      invalidateOrdersCaches(client);
     },
   });
 }
@@ -431,7 +437,7 @@ export function useToggleCustomerOrderOrderedStatus() {
   return useMutation<void, Error, ToggleCustomerOrderParams>({
     mutationFn: toggleCustomerOrderOrderedStatus,
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
+      invalidateOrdersCaches(client);
     },
   });
 }
@@ -461,7 +467,7 @@ export function useToggleInventorySupplierOrderedStatus() {
   return useMutation<void, Error, OrdersBySupplierGroup>({
     mutationFn: toggleInventorySupplierOrderedStatus,
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
+      invalidateOrdersCaches(client);
     },
   });
 }
@@ -511,7 +517,7 @@ export function useToggleInventoryLineOrderedStatus() {
   return useMutation<void, Error, ToggleInventoryLineParams>({
     mutationFn: toggleInventoryLineOrderedStatus,
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
+      invalidateOrdersCaches(client);
     },
   });
 }
@@ -572,7 +578,7 @@ export function useRemoveOrderLine() {
       return { deleted: 1 };
     },
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
+      invalidateOrdersCaches(client);
     },
   });
 }
@@ -583,7 +589,7 @@ export function useRemoveHistoryOrderLine() {
   return useMutation<void, Error, OrderListItem>({
     mutationFn: postRemoveOrderLine,
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
+      invalidateOrdersCaches(client);
     },
   });
 }
@@ -612,7 +618,7 @@ export function useCreateCustomerOrder() {
       return data;
     },
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
+      invalidateOrdersCaches(client);
     },
   });
 }
@@ -830,7 +836,7 @@ export function useSyncCustomerOrderBundle() {
   >({
     mutationFn: syncCustomerOrderBundle,
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
+      invalidateOrdersCaches(client);
     },
   });
 }
@@ -845,7 +851,7 @@ export function useCreateCustomerOrderBundle() {
     mutationFn: async ({ lines, customer, orderType = "customer" }) =>
       createCustomerOrderBundle(lines, customer, orderType),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
+      invalidateOrdersCaches(client);
     },
   });
 }
@@ -943,7 +949,7 @@ export function useUpdateInventoryOrderQuantity() {
     mutationFn: ({ rawInventory, line, newBaseQty }) =>
       updateInventoryOrderBaseQuantity(rawInventory, line, newBaseQty),
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
+      invalidateOrdersCaches(client);
     },
   });
 }
@@ -970,7 +976,7 @@ export function useCreateInventoryOrder() {
   return useMutation<OrderRow, Error, CreateInventoryOrderInput>({
     mutationFn: createInventoryOrder,
     onSuccess: () => {
-      void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
+      invalidateOrdersCaches(client);
     },
   });
 }
