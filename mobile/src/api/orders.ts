@@ -10,6 +10,7 @@ import type {
 import { useMemo } from "react";
 import { api } from "./client";
 import { DASHBOARD_STATS_KEY } from "./dashboard";
+import { compareHebrew, sortByHebrewKeys } from "../utils/hebrewSort";
 
 const STATUS_RANK: Record<OrderStatus, number> = {
   pending: 0,
@@ -78,12 +79,23 @@ export function useOrdersList(type: OrderType) {
   });
 }
 
+function orderDisplayTitle(
+  o: Pick<OrderListItem, "book_title" | "manual_book_title">,
+): string {
+  return (o.manual_book_title ?? o.book_title ?? "").trim();
+}
+
+/** מיון שורות הזמנה לפי כותרת הספר (א-ב עברי). */
+export function sortOrderLinesByHebrewTitle(orders: OrderListItem[]): OrderListItem[] {
+  return sortByHebrewKeys(orders, (o) => [orderDisplayTitle(o)]);
+}
+
 /** מאחד שורות עם אותו `book_id` לשורת תצוגה אחת (כמות מצטברת). ללקוחות נשמרת הפרדה לפי פרטי לקוח. */
 export function mergeOrderLinesForDisplay(
   orders: OrderListItem[],
   orderType: OrderType,
 ): OrderListItem[] {
-  if (orders.length <= 1) return orders;
+  if (orders.length <= 1) return sortOrderLinesByHebrewTitle(orders);
   const sorted = [...orders].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
   );
@@ -104,9 +116,7 @@ export function mergeOrderLinesForDisplay(
       });
     }
   }
-  return Array.from(map.values()).sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-  );
+  return sortOrderLinesByHebrewTitle(Array.from(map.values()));
 }
 
 /** הופך מערך הזמנות לקבוצות מאוחדות לפי לקוח (שם + טלפון מנורמל). */
@@ -147,7 +157,7 @@ function normalizeOrderSearchText(text: string): string {
 }
 
 function orderBookTitleForSearch(o: Pick<OrderListItem, "book_title" | "manual_book_title">): string {
-  return (o.manual_book_title ?? o.book_title ?? "").trim();
+  return orderDisplayTitle(o);
 }
 
 /** מסנן קבוצות הזמנות לפי שם לקוח או כותרת ספר (חיפוש מקומי). */
@@ -201,7 +211,7 @@ export function useOrdersGroupedBySupplier(
       .sort((a, b) => {
         if (a.supplier_id === null && b.supplier_id !== null) return 1;
         if (a.supplier_id !== null && b.supplier_id === null) return -1;
-        return a.supplier_name.localeCompare(b.supplier_name, "he");
+        return compareHebrew(a.supplier_name, b.supplier_name);
       });
   }, [items, orderType]);
 }
@@ -299,11 +309,16 @@ export function augmentInventoryGroupsWithCustomerWhatsappTotals(
     }
   }
 
-  return Array.from(groupBySupplier.values()).sort((a, b) => {
-    if (a.supplier_id === null && b.supplier_id !== null) return 1;
-    if (a.supplier_id !== null && b.supplier_id === null) return -1;
-    return a.supplier_name.localeCompare(b.supplier_name, "he");
-  });
+  return Array.from(groupBySupplier.values())
+    .map((g) => ({
+      ...g,
+      orders: sortOrderLinesByHebrewTitle(g.orders),
+    }))
+    .sort((a, b) => {
+      if (a.supplier_id === null && b.supplier_id !== null) return 1;
+      if (a.supplier_id !== null && b.supplier_id === null) return -1;
+      return compareHebrew(a.supplier_name, b.supplier_name);
+    });
 }
 
 /** מפתח יציב לשורה כפי שמוצגת אחרי איחוד כפילויות (למחיקה מרוכזת בשרת). */
@@ -948,6 +963,50 @@ export function useUpdateInventoryOrderQuantity() {
   >({
     mutationFn: ({ rawInventory, line, newBaseQty }) =>
       updateInventoryOrderBaseQuantity(rawInventory, line, newBaseQty),
+    onSuccess: () => {
+      invalidateOrdersCaches(client);
+    },
+  });
+}
+
+/** מעדכן כמות בשורת הזמנת לקוח / וואטסאפ (מסיר ויוצר מחדש עם הכמות החדשה). */
+export async function updateDemandOrderLineQuantity(
+  line: OrderListItem,
+  newQty: number,
+): Promise<void> {
+  if (line.order_type !== "customer" && line.order_type !== "whatsapp") {
+    throw new Error("invalid_order_type");
+  }
+  if (!Number.isFinite(newQty) || newQty < 1) throw new Error("invalid_quantity");
+  if (line.quantity === newQty) return;
+
+  const customer = {
+    name: (line.customer_name ?? "").trim(),
+    phone: (line.customer_phone ?? "").trim(),
+  };
+  const bookId = line.book_id ?? null;
+  const nextLine: CustomerOrderLineInput = {
+    supplier_id: line.supplier_id,
+    book_id: bookId,
+    manual_book_title: bookId
+      ? null
+      : (line.manual_book_title ?? line.book_title ?? "").trim() || null,
+    manual_book_author: bookId
+      ? null
+      : (line.manual_book_author ?? line.book_author ?? "").trim() || null,
+    quantity: newQty,
+  };
+
+  await postRemoveOrderLine(line);
+  await postCreateCustomerOrder(
+    buildCreateCustomerOrderBody(nextLine, customer, line.order_type),
+  );
+}
+
+export function useUpdateDemandOrderQuantity() {
+  const client = useQueryClient();
+  return useMutation<void, Error, { line: OrderListItem; newQty: number }>({
+    mutationFn: ({ line, newQty }) => updateDemandOrderLineQuantity(line, newQty),
     onSuccess: () => {
       invalidateOrdersCaches(client);
     },

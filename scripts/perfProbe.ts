@@ -189,7 +189,13 @@ async function runDbProbe(): Promise<void> {
           for (const cell of shelf.cells) {
             for (const b of cell.books) {
               const qty = Math.max(0, Math.floor(Number(b.quantity_in_cell)));
-              spines += qty > 0 ? qty : b.is_pending_shortage ? 1 : 0;
+              const shortageCount = Math.max(
+                0,
+                Math.floor(
+                  Number(b.pending_shortage_count ?? (b.is_pending_shortage ? 1 : 0)),
+                ),
+              );
+              spines += qty + shortageCount;
             }
           }
         }

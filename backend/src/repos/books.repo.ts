@@ -1,8 +1,11 @@
+import type { PoolClient } from "pg";
 import { pool } from "../db/pool.js";
 import { bookInputSchema, type BookInput } from "./schemas.js";
 import type { Book } from "@avihay-books/shared";
 
-export async function upsertBook(input: BookInput): Promise<Book> {
+type Queryable = Pick<PoolClient, "query">;
+
+export async function upsertBook(input: BookInput, client: Queryable = pool): Promise<Book> {
   const v = bookInputSchema.parse(input);
   const sql = `
     INSERT INTO books (
@@ -27,7 +30,7 @@ export async function upsertBook(input: BookInput): Promise<Book> {
       copy_placement_notes = EXCLUDED.copy_placement_notes
     RETURNING *`;
   const notesJson = JSON.stringify(v.copy_placement_notes ?? []);
-  const { rows } = await pool.query<Book>(sql, [
+  const { rows } = await client.query<Book>(sql, [
     v.id ?? null,
     v.title,
     v.author,

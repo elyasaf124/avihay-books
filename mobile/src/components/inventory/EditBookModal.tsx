@@ -15,6 +15,7 @@ import {
 import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
 import { he } from "../../i18n/he";
 import { theme } from "../../theme";
+import { SearchableFreeTextField } from "../pickers/SearchableFreeTextField";
 
 export interface EditBookSubmitPayload {
   title: string;
@@ -30,6 +31,7 @@ export interface EditBookModalProps {
   visible: boolean;
   book: BookWithLocations | null;
   suppliers: Supplier[];
+  topicSuggestions: readonly string[];
   submitting: boolean;
   onClose: () => void;
   onSubmit: (patch: EditBookSubmitPayload) => void;
@@ -74,6 +76,7 @@ export function EditBookModal({
   visible,
   book,
   suppliers,
+  topicSuggestions,
   submitting,
   onClose,
   onSubmit,
@@ -201,10 +204,15 @@ export function EditBookModal({
                 setForm((s) => ({ ...s, reorder_threshold }))
               }
             />
-            <LabeledInput
-              label={he.addRemove.fieldTopic}
+            <SearchableFreeTextField
+              compact
+              fieldLabel={he.addRemove.fieldTopic}
               value={form.topic}
               onChangeText={(topic) => setForm((s) => ({ ...s, topic }))}
+              suggestions={topicSuggestions}
+              placeholder={he.addRemove.fieldTopicPlaceholder}
+              emptyListMessage={he.addRemove.fieldTopicNoMatches}
+              disabled={submitting}
             />
 
             <View style={styles.switchRow}>

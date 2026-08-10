@@ -24,7 +24,9 @@ import {
   useShortageList,
   useUpdateShortageStatus,
 } from "../../src/api/shortage";
+import { usePatchBook } from "../../src/api/inventory";
 import { useSuppliersWithFallback } from "../../src/api/unit";
+import { useQueryClient } from "@tanstack/react-query";
 import { mockShortageList } from "../../src/mocks/shortageOrders";
 import { ConfirmDialog } from "../../src/components/ConfirmDialog";
 import {
@@ -33,6 +35,7 @@ import {
 } from "../../src/components/pickers/SearchablePicker";
 import { ShortageRow } from "../../src/components/shortage/ShortageRow";
 import { MoveToOrderModal } from "../../src/components/shortage/MoveToOrderModal";
+import { ShortageQuantityModal } from "../../src/components/shortage/ShortageQuantityModal";
 import { sortByHebrewKeys } from "../../src/utils/hebrewSort";
 
 const BOOK_DROPDOWN_SUGGESTION_CAP = 50;
@@ -51,7 +54,7 @@ function booksFromShortageItems(rows: ShortageListItem[]): ShortageBookOption[] 
       byBookId.set(row.book_id, {
         id: row.book_id,
         title: row.book_title,
-        author: row.book_author,
+        author: row.book_author ?? "",
       });
     }
   }
@@ -85,10 +88,12 @@ function isNoStockError(err: unknown): boolean {
 }
 
 export default function ShortageScreen(): JSX.Element {
+  const queryClient = useQueryClient();
   const shortageQuery = useShortageList();
   const moveMutation = useMoveShortageToOrder();
   const resolveMutation = useUpdateShortageStatus();
   const deleteShortageMutation = useDeleteShortage();
+  const patchBook = usePatchBook();
   const suppliers = useSuppliersWithFallback();
 
   const isOffline = shortageQuery.isError;
@@ -112,10 +117,22 @@ export default function ShortageScreen(): JSX.Element {
 
   const [moveTarget, setMoveTarget] = useState<ShortageListItem | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
-  const [resolveTarget, setResolveTarget] = useState<ShortageListItem | null>(null);
-  const [removeShortageTarget, setRemoveShortageTarget] = useState<ShortageListItem | null>(
+  /** השלמה עם בחירת כמות — רק כש־`missing_count > 1`. */
+  const [resolveQtyTarget, setResolveQtyTarget] = useState<ShortageListItem | null>(null);
+  const [resolveError, setResolveError] = useState<string | null>(null);
+  /** השלמה לעותק בודד — דיאלוג אישור כמו קודם. */
+  const [resolveConfirmTarget, setResolveConfirmTarget] = useState<ShortageListItem | null>(
     null,
   );
+  const [removeQtyTarget, setRemoveQtyTarget] = useState<ShortageListItem | null>(null);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [removeConfirmTarget, setRemoveConfirmTarget] = useState<ShortageListItem | null>(
+    null,
+  );
+  /** טיוטת מחיר לפי `book_id` — כמה שורות חוסר יכולות לשתף אותו ספר. */
+  const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
+  const [busyPriceBookId, setBusyPriceBookId] = useState<string | null>(null);
+  const [busyStockBookId, setBusyStockBookId] = useState<string | null>(null);
 
   const bookTitleFilterTrimmed = bookTitleFilter.trim();
 
@@ -155,7 +172,8 @@ export default function ShortageScreen(): JSX.Element {
     let rows = items;
     if (supplierId) rows = rows.filter((i) => i.supplier_id === supplierId);
     if (selectedBookId) rows = rows.filter((i) => i.book_id === selectedBookId);
-    return rows;
+    /** קיבוץ לפי ספק (א-ב) ובתוך כל ספק מיון כותרות א-ב. */
+    return sortByHebrewKeys(rows, (row) => [row.supplier_name, row.book_title]);
   }, [items, supplierId, selectedBookId]);
 
   const hasActiveBookFilter = selectedBookId !== null || bookTitleFilterTrimmed.length > 0;
@@ -242,62 +260,160 @@ export default function ShortageScreen(): JSX.Element {
     [moveTarget, moveMutation, isOffline, closeMove],
   );
 
-  const confirmResolveShortage = useCallback(async () => {
-    if (!resolveTarget || resolveMutation.isPending) return;
-    if (resolveTarget.book_stock_quantity <= 0) {
-      Alert.alert(he.shortage.confirmResolveTitle, he.shortage.resolveNoStock);
-      setResolveTarget(null);
-      return;
-    }
-    try {
-      await resolveMutation.mutateAsync({
-        shortageId: resolveTarget.id,
-        status: "completed",
-      });
-      setResolveTarget(null);
-    } catch (err) {
-      Alert.alert(
-        he.shortage.confirmResolveTitle,
-        isNoStockError(err)
+  const runResolveShortage = useCallback(
+    async (item: ShortageListItem, quantity: number, mode: "qty" | "confirm") => {
+      if (resolveMutation.isPending) return;
+      if (item.book_stock_quantity <= 0) {
+        if (mode === "qty") setResolveError(he.shortage.resolveNoStock);
+        else {
+          Alert.alert(he.shortage.confirmResolveTitle, he.shortage.resolveNoStock);
+          setResolveConfirmTarget(null);
+        }
+        return;
+      }
+      setResolveError(null);
+      try {
+        await resolveMutation.mutateAsync({
+          shortageId: item.id,
+          status: "completed",
+          quantity,
+        });
+        setResolveQtyTarget(null);
+        setResolveConfirmTarget(null);
+      } catch (err) {
+        const msg = isNoStockError(err)
           ? he.shortage.resolveNoStock
           : isOffline
             ? he.shortage.resolveOffline
-            : he.shortage.resolveFailed,
-      );
-    }
-  }, [resolveTarget, resolveMutation, isOffline]);
+            : he.shortage.resolveFailed;
+        if (mode === "qty") setResolveError(msg);
+        else {
+          Alert.alert(he.shortage.confirmResolveTitle, msg);
+        }
+      }
+    },
+    [resolveMutation, isOffline],
+  );
 
   const requestResolveShortage = useCallback((picked: ShortageListItem) => {
     if (picked.book_stock_quantity <= 0) {
       Alert.alert(he.shortage.confirmResolveTitle, he.shortage.resolveNoStock);
       return;
     }
-    setResolveTarget(picked);
+    if ((picked.missing_count ?? 1) > 1) {
+      setResolveError(null);
+      setResolveQtyTarget(picked);
+      return;
+    }
+    setResolveConfirmTarget(picked);
   }, []);
 
   const requestRemoveShortage = useCallback(
-    (_picked: ShortageListItem) => {
+    (picked: ShortageListItem) => {
       if (isOffline) {
         Alert.alert(he.shortage.removeShortageOffline);
         return;
       }
-      setRemoveShortageTarget(_picked);
+      if ((picked.missing_count ?? 1) > 1) {
+        setRemoveError(null);
+        setRemoveQtyTarget(picked);
+        return;
+      }
+      setRemoveConfirmTarget(picked);
     },
     [isOffline],
   );
 
-  const confirmRemoveShortage = useCallback(async () => {
-    if (!removeShortageTarget || deleteShortageMutation.isPending) return;
-    try {
-      await deleteShortageMutation.mutateAsync(removeShortageTarget.id);
-      setRemoveShortageTarget(null);
-    } catch {
-      Alert.alert(he.shortage.confirmRemoveShortageTitle, he.shortage.removeShortageFailed);
-    }
-  }, [removeShortageTarget, deleteShortageMutation]);
+  const runRemoveShortage = useCallback(
+    async (item: ShortageListItem, quantity: number, mode: "qty" | "confirm") => {
+      if (deleteShortageMutation.isPending) return;
+      setRemoveError(null);
+      try {
+        await deleteShortageMutation.mutateAsync({
+          shortageId: item.id,
+          quantity,
+        });
+        setRemoveQtyTarget(null);
+        setRemoveConfirmTarget(null);
+      } catch {
+        if (mode === "qty") setRemoveError(he.shortage.removeShortageFailed);
+        else {
+          Alert.alert(he.shortage.confirmRemoveShortageTitle, he.shortage.removeShortageFailed);
+        }
+      }
+    },
+    [deleteShortageMutation],
+  );
+
+  const onPriceDraftChange = useCallback((bookId: string, value: string) => {
+    setPriceDraft((prev) => ({ ...prev, [bookId]: value }));
+  }, []);
+
+  const applyPrice = useCallback(
+    async (item: ShortageListItem) => {
+      if (busyPriceBookId) return;
+      const raw =
+        priceDraft[item.book_id] !== undefined
+          ? priceDraft[item.book_id].trim()
+          : (item.book_price ?? "").trim();
+      const priceNum = raw === "" ? null : Number(raw.replace(",", "."));
+      if (priceNum !== null && (Number.isNaN(priceNum) || priceNum < 0)) return;
+      try {
+        setBusyPriceBookId(item.book_id);
+        const updated = await patchBook.mutateAsync({
+          id: item.book_id,
+          patch: { price: priceNum },
+        });
+        setPriceDraft((prev) => ({
+          ...prev,
+          [item.book_id]: updated.price == null ? "" : String(updated.price),
+        }));
+        void queryClient.invalidateQueries({ queryKey: ["shortage"] });
+      } catch {
+        Alert.alert(he.generic.errorTitle, he.shortage.priceAdjustFailed);
+      } finally {
+        setBusyPriceBookId(null);
+      }
+    },
+    [busyPriceBookId, priceDraft, patchBook, queryClient],
+  );
+
+  const applyStock = useCallback(
+    async (item: ShortageListItem, nextQty: number) => {
+      if (busyStockBookId) return;
+      if (!Number.isInteger(nextQty) || nextQty < 0 || nextQty > 999) return;
+      if (nextQty === item.book_stock_quantity) return;
+      if (isOffline) {
+        Alert.alert(he.generic.errorTitle, he.shortage.stockAdjustOffline);
+        return;
+      }
+      try {
+        setBusyStockBookId(item.book_id);
+        await patchBook.mutateAsync({
+          id: item.book_id,
+          patch: { stock_quantity: nextQty },
+        });
+        void queryClient.invalidateQueries({ queryKey: ["shortage"] });
+      } catch {
+        Alert.alert(he.generic.errorTitle, he.shortage.stockAdjustFailed);
+      } finally {
+        setBusyStockBookId(null);
+      }
+    },
+    [busyStockBookId, isOffline, patchBook, queryClient],
+  );
 
   const refreshing = shortageQuery.isFetching && !shortageQuery.isLoading;
   const isInitialLoading = shortageQuery.isLoading;
+
+  const totalMissingCopies = useMemo(
+    () => items.reduce((sum, row) => sum + Math.max(row.missing_count, 1), 0),
+    [items],
+  );
+  const filteredMissingCopies = useMemo(
+    () => filtered.reduce((sum, row) => sum + Math.max(row.missing_count, 1), 0),
+    [filtered],
+  );
 
   const emptyMessage = useMemo(() => {
     if (selectedBookId) return he.shortage.emptyBookFiltered;
@@ -322,12 +438,12 @@ export default function ShortageScreen(): JSX.Element {
         <View style={styles.summary}>
           <View>
             <Text style={styles.summaryLabel}>{he.shortage.counts.total}</Text>
-            <Text style={styles.summaryValue}>{items.length}</Text>
+            <Text style={styles.summaryValue}>{totalMissingCopies}</Text>
           </View>
           {supplierId || selectedBookId ? (
             <View style={styles.summarySide}>
               <Text style={styles.summaryLabel}>{he.shortage.counts.filtered}</Text>
-              <Text style={styles.summaryValue}>{filtered.length}</Text>
+              <Text style={styles.summaryValue}>{filteredMissingCopies}</Text>
             </View>
           ) : null}
         </View>
@@ -478,11 +594,23 @@ export default function ShortageScreen(): JSX.Element {
                 item={item}
                 busyMoving={moveMutation.isPending && moveTarget?.id === item.id}
                 busyCompleting={
-                  resolveMutation.isPending && resolveTarget?.id === item.id
+                  resolveMutation.isPending &&
+                  (resolveQtyTarget?.id === item.id || resolveConfirmTarget?.id === item.id)
                 }
                 busyRemoving={
-                  deleteShortageMutation.isPending && removeShortageTarget?.id === item.id
+                  deleteShortageMutation.isPending &&
+                  (removeQtyTarget?.id === item.id || removeConfirmTarget?.id === item.id)
                 }
+                busyPrice={busyPriceBookId === item.book_id}
+                busyStock={busyStockBookId === item.book_id}
+                priceDraft={
+                  priceDraft[item.book_id] !== undefined
+                    ? priceDraft[item.book_id]
+                    : (item.book_price ?? "")
+                }
+                onPriceDraftChange={onPriceDraftChange}
+                onApplyPrice={(picked) => void applyPrice(picked)}
+                onStockChange={(picked, nextQty) => void applyStock(picked, nextQty)}
                 onMoveToOrder={(picked) => setMoveTarget(picked)}
                 onComplete={requestResolveShortage}
                 onRemove={requestRemoveShortage}
@@ -502,35 +630,79 @@ export default function ShortageScreen(): JSX.Element {
         onSubmit={(q) => void submitMove(q)}
       />
 
+      <ShortageQuantityModal
+        key={
+          resolveQtyTarget
+            ? `resolve-${resolveQtyTarget.id}-${resolveQtyTarget.missing_count}`
+            : "resolve-none"
+        }
+        visible={resolveQtyTarget !== null}
+        mode="complete"
+        item={resolveQtyTarget}
+        submitting={resolveMutation.isPending}
+        errorMessage={resolveError}
+        onCancel={() => {
+          setResolveQtyTarget(null);
+          setResolveError(null);
+        }}
+        onSubmit={(q) => {
+          if (resolveQtyTarget) void runResolveShortage(resolveQtyTarget, q, "qty");
+        }}
+      />
+
       <ConfirmDialog
-        visible={resolveTarget !== null}
+        visible={resolveConfirmTarget !== null}
         title={he.shortage.confirmResolveTitle}
         message={
-          resolveTarget
-            ? `${shortageItemLabel(resolveTarget)}\n\n${he.shortage.confirmResolveMessage}`
+          resolveConfirmTarget
+            ? `${shortageItemLabel(resolveConfirmTarget)}\n\n${he.shortage.confirmResolveMessage}`
             : undefined
         }
         confirmLabel={he.shortage.confirmResolveOk}
         destructive={false}
-        onCancel={() => setResolveTarget(null)}
-        onConfirm={() => void confirmResolveShortage()}
+        onCancel={() => setResolveConfirmTarget(null)}
+        onConfirm={() => {
+          if (resolveConfirmTarget) void runResolveShortage(resolveConfirmTarget, 1, "confirm");
+        }}
+      />
+
+      <ShortageQuantityModal
+        key={
+          removeQtyTarget
+            ? `remove-${removeQtyTarget.id}-${removeQtyTarget.missing_count}`
+            : "remove-none"
+        }
+        visible={removeQtyTarget !== null}
+        mode="remove"
+        item={removeQtyTarget}
+        submitting={deleteShortageMutation.isPending}
+        errorMessage={removeError}
+        onCancel={() => {
+          setRemoveQtyTarget(null);
+          setRemoveError(null);
+        }}
+        onSubmit={(q) => {
+          if (removeQtyTarget) void runRemoveShortage(removeQtyTarget, q, "qty");
+        }}
       />
 
       <ConfirmDialog
-        visible={removeShortageTarget !== null}
+        visible={removeConfirmTarget !== null}
         title={he.shortage.confirmRemoveShortageTitle}
         message={
-          removeShortageTarget
+          removeConfirmTarget
             ? he.shortage.confirmRemoveShortageMessage.replace(
                 "{{item}}",
-                shortageItemLabel(removeShortageTarget),
+                shortageItemLabel(removeConfirmTarget),
               )
             : undefined
         }
         confirmLabel={he.shortage.confirmRemoveShortageOk}
         destructive
-        onCancel={() => setRemoveShortageTarget(null)}
-        onConfirm={() => void confirmRemoveShortage()}
+        onCancel={() => setRemoveConfirmTarget(null)}
+        onConfirm={() => {
+          if (removeConfirmTarget) void runRemoveShortage(removeConfirmTarget, 1, "confirm");
+        }}
       />
     </>
   );

@@ -26,18 +26,20 @@ import {
   useAdjustInventoryStock,
   useCreateBook,
   useCreateBookLocation,
+  useDeleteBookLocation,
   useInventoryBooksBySupplier,
   usePatchBook,
   usePatchBookLocation,
 } from "../../src/api/inventory";
 import { api } from "../../src/api/client";
-import { useSearchBooks, useStoreMap } from "../../src/api/storeMap";
+import { useSearchBooks, useStoreMap, useStoreMapSummary } from "../../src/api/storeMap";
 import { useMoveBook, useSuppliersWithFallback } from "../../src/api/unit";
 import {
   SearchablePickerField,
   suppliersToPickerItems,
 } from "../../src/components/pickers/SearchablePicker";
 import { SearchableBookPickerField } from "../../src/components/pickers/SearchableBookPickerField";
+import { SearchableFreeTextField } from "../../src/components/pickers/SearchableFreeTextField";
 import { ConfirmDialog } from "../../src/components/ConfirmDialog";
 import { EditBookModal } from "../../src/components/inventory/EditBookModal";
 import type { MapPlacementSubmitTarget } from "../../src/components/unit/MoveBookModal";
@@ -53,6 +55,7 @@ import { theme } from "../../src/theme";
 
 /** ייחוס יציב למקרה של `data === undefined` — אסור להשתמש ב־`[]` inlined (מתחלף כל רינדר). */
 const NO_BOOKS: BookWithLocations[] = [];
+const NO_TOPICS: string[] = [];
 
 const GLOBAL_BOOK_DROPDOWN_CAP = 50;
 const GLOBAL_BOOK_FILTER_BLUR_MS = Platform.OS === "ios" ? 140 : 230;
@@ -68,7 +71,15 @@ function unplacedQuantity(book: BookWithLocations): number {
   return Math.max(0, book.stock_quantity - onShelf);
 }
 
-/** פירוק למשבצות שורות להעברה — תא אחד או כל המלאי */
+/** שמות תאים ייחודיים לתצוגה ברשימת חיפוש. */
+function formatBookCellNames(locations: readonly { cell_name: string }[]): string {
+  const names = [...new Set(locations.map((l) => l.cell_name).filter(Boolean))];
+  return names.length > 0 ? names.join(" · ") : "—";
+}
+
+/** פירוק למשבצות שורות להעברה — תא אחד או כל המלאי.
+ * גם מיקום עם `quantity_in_cell === 0` (חוסר על המדף) מקבל משבצת אחת,
+ * כדי לאפשר «שנה מיקום» בלי מלאי פיזי — החוסר נשאר על אותו `location_id`. */
 function expandInventoryMoveSlots(
   book: BookWithLocations,
   locId: string | null,
@@ -76,7 +87,8 @@ function expandInventoryMoveSlots(
   const locs = locId === null ? book.locations : book.locations.filter((l) => l.id === locId);
   const out: { loc: BookWithLocations["locations"][number]; copyIndex: number }[] = [];
   for (const loc of locs) {
-    for (let i = 0; i < loc.quantity_in_cell; i++) {
+    const copies = Math.max(loc.quantity_in_cell, 1);
+    for (let i = 0; i < copies; i++) {
       out.push({ loc, copyIndex: i });
     }
   }
@@ -98,7 +110,7 @@ export default function AddRemoveScreen(): JSX.Element {
   const [scrollBooksListToBookId, setScrollBooksListToBookId] = useState<string | null>(null);
   const booksFlatListRef = useRef<FlatList<BookWithLocations> | null>(null);
   const [newBookOpen, setNewBookOpen] = useState(false);
-  /** מזהה מיקום לעדכון משולב, או `null` לעדכון מלאי כולל בלבד. */
+  /** מזהה מיקום לעדכון משולב, או `null` לעדכון מלאי מחסן בלבד. */
   const [locationByBook, setLocationByBook] = useState<Record<string, string | null>>({});
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
   /** טקסט בשדה «כמה להוסיף למלאי» לפי `book.id`. */
@@ -106,11 +118,14 @@ export default function AddRemoveScreen(): JSX.Element {
 
   const booksQuery = useInventoryBooksBySupplier(supplierId);
   const storeMapQuery = useStoreMap();
+  const storeMapSummaryQuery = useStoreMapSummary();
+  const topicSuggestions = storeMapSummaryQuery.data?.topics ?? NO_TOPICS;
   const patchBook = usePatchBook();
   const patchLoc = usePatchBookLocation();
   const adjustInventoryStock = useAdjustInventoryStock();
   const createBook = useCreateBook();
   const createBookLocation = useCreateBookLocation();
+  const deleteBookLocation = useDeleteBookLocation();
   const moveBook = useMoveBook();
   const booksData = booksQuery.data;
   const books = booksData ?? NO_BOOKS;
@@ -360,6 +375,10 @@ export default function AddRemoveScreen(): JSX.Element {
 
   const [busyBookId, setBusyBookId] = useState<string | null>(null);
   const [deactivateBook, setDeactivateBook] = useState<BookWithLocations | null>(null);
+  const [removeLocationTarget, setRemoveLocationTarget] = useState<{
+    bookId: string;
+    loc: BookWithLocations["locations"][number];
+  } | null>(null);
   const [editBook, setEditBook] = useState<BookWithLocations | null>(null);
 
   /** הקשר למודאל פר־עותק בספר חדש (נסגר לאחר שמירת הבחירה) */
@@ -455,6 +474,7 @@ export default function AddRemoveScreen(): JSX.Element {
 
       if (delta < 0 && cachedBook.stock_quantity <= 0) return;
       if (delta < 0 && selectedLoc && selectedLoc.quantity_in_cell <= 0) return;
+      if (delta < 0 && selId === null && unplacedQuantity(cachedBook) <= 0) return;
 
       adjustInventoryStock.mutate(
         {
@@ -527,6 +547,24 @@ export default function AddRemoveScreen(): JSX.Element {
     setInventoryMoveSlots([]);
     setInventoryMapError(null);
   }, []);
+
+  const confirmRemoveLocation = useCallback(async () => {
+    if (!removeLocationTarget) return;
+    const { bookId, loc } = removeLocationTarget;
+    try {
+      setBusyBookId(bookId);
+      await deleteBookLocation.mutateAsync({ id: loc.id });
+      setLocationByBook((prev) => {
+        if (prev[bookId] !== loc.id) return prev;
+        return { ...prev, [bookId]: null };
+      });
+      setRemoveLocationTarget(null);
+    } catch {
+      Alert.alert(he.generic.errorTitle, he.addRemove.removeLocationFailed);
+    } finally {
+      setBusyBookId(null);
+    }
+  }, [deleteBookLocation, removeLocationTarget]);
 
   const onSubmitInventoryMoveAll = useCallback(
     async (moves: InventoryMoveItem[]) => {
@@ -716,14 +754,31 @@ export default function AddRemoveScreen(): JSX.Element {
                         pressed && styles.globalBookDropdownRowPressed,
                       ]}
                     >
-                      <Text style={styles.globalBookDropdownTitle} numberOfLines={2}>
-                        {book.title}
-                      </Text>
-                      <Text style={styles.globalBookDropdownMeta} numberOfLines={1}>
-                        {book.author || he.orders.authorNotSpecified}
-                        {" · "}
-                        {supplierNameById.get(book.supplier_id) ?? he.addRemove.chooseSupplier}
-                      </Text>
+                      <View style={styles.globalBookDropdownRowInner}>
+                        <View style={styles.globalBookDropdownTextCol}>
+                          <Text style={styles.globalBookDropdownTitle} numberOfLines={2}>
+                            {book.title}
+                          </Text>
+                          <Text style={styles.globalBookDropdownMeta} numberOfLines={1}>
+                            {book.author || he.orders.authorNotSpecified}
+                            {" · "}
+                            {supplierNameById.get(book.supplier_id) ?? he.addRemove.chooseSupplier}
+                          </Text>
+                        </View>
+                        <View style={styles.globalBookDropdownStats}>
+                          <Text style={styles.globalBookDropdownStock}>
+                            {book.price != null && book.price !== ""
+                              ? `${he.unit.pricePrefix}${book.price}`
+                              : "—"}
+                          </Text>
+                          <Text style={styles.globalBookDropdownStock}>
+                            {`${he.shortage.stockShort} ${book.stock_quantity}`}
+                          </Text>
+                          <Text style={styles.globalBookDropdownCell} numberOfLines={1}>
+                            {`${he.unit.cellLabel} ${formatBookCellNames(book.locations)}`}
+                          </Text>
+                        </View>
+                      </View>
                     </Pressable>
                   ))}
                 </ScrollView>
@@ -851,9 +906,12 @@ export default function AddRemoveScreen(): JSX.Element {
                   const locId = locationByBook[book.id] ?? null;
                   const selectedLoc =
                     locId === null ? null : book.locations.find((loc) => loc.id === locId) ?? null;
+                  const warehouseQty = unplacedQuantity(book);
+                  const scopedQty = locId === null ? warehouseQty : selectedLoc?.quantity_in_cell ?? 0;
                   const minusDisabled =
-                    book.stock_quantity <= 0 ||
-                    (selectedLoc !== null && selectedLoc.quantity_in_cell <= 0);
+                    locId === null
+                      ? warehouseQty <= 0
+                      : selectedLoc === null || selectedLoc.quantity_in_cell <= 0;
 
                   const stockBulkDraftRaw = stockBulkDraft[book.id]?.trim() ?? "";
                   const stockBulkParsed = Number.parseInt(stockBulkDraftRaw, 10);
@@ -898,6 +956,11 @@ export default function AddRemoveScreen(): JSX.Element {
                         />
                       </View>
 
+                      <View style={styles.totalStockRow}>
+                        <Text style={styles.dimLabel}>{he.addRemove.totalStockLabel}</Text>
+                        <Text style={styles.totalStockQty}>{book.stock_quantity}</Text>
+                      </View>
+
                       <Text style={styles.sectionLabel}>{he.addRemove.locationLabel}</Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsRow}>
                         <Pressable
@@ -908,33 +971,69 @@ export default function AddRemoveScreen(): JSX.Element {
                           ]}
                         >
                           <Text style={[styles.chipText, locId === null && styles.chipTextActive]}>
-                            {he.addRemove.locationChipNone}
+                            {interpolate(he.addRemove.locationChipWarehouse, {
+                              qty: String(warehouseQty),
+                            })}
                           </Text>
                         </Pressable>
                         {book.locations.map((loc) => (
-                          <Pressable
+                          <View
                             key={loc.id}
-                            onPress={() =>
-                              setLocationByBook((prev) => ({
-                                ...prev,
-                                [book.id]: loc.id,
-                              }))
-                            }
-                            style={[styles.chip, loc.id === locId && styles.chipActive]}
+                            style={[styles.locationChip, loc.id === locId && styles.chipActive]}
                           >
-                            <Text style={[styles.chipText, loc.id === locId && styles.chipTextActive]}>
-                              {interpolate(he.addRemove.locationChipCell, {
+                            <Pressable
+                              onPress={() =>
+                                setLocationByBook((prev) => ({
+                                  ...prev,
+                                  [book.id]: loc.id,
+                                }))
+                              }
+                              style={styles.chipSelectHit}
+                            >
+                              <Text
+                                style={[styles.chipText, loc.id === locId && styles.chipTextActive]}
+                              >
+                                {loc.quantity_in_cell <= 0
+                                  ? interpolate(he.addRemove.locationChipCellShortage, {
+                                      name: loc.cell_name,
+                                    })
+                                  : interpolate(he.addRemove.locationChipCell, {
+                                      name: loc.cell_name,
+                                      qty: String(loc.quantity_in_cell),
+                                    })}
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityLabel={interpolate(he.addRemove.removeLocationChipA11y, {
                                 name: loc.cell_name,
-                                qty: String(loc.quantity_in_cell),
                               })}
-                            </Text>
-                          </Pressable>
+                              hitSlop={8}
+                              disabled={
+                                busyBookId !== null ||
+                                deleteBookLocation.isPending ||
+                                placementStoreMap == null
+                              }
+                              onPress={() => setRemoveLocationTarget({ bookId: book.id, loc })}
+                              style={styles.chipRemoveHit}
+                            >
+                              <Ionicons
+                                name="close-circle"
+                                size={18}
+                                color={
+                                  loc.id === locId
+                                    ? theme.colors.onPrimaryContainer
+                                    : theme.colors.onSurfaceVariant
+                                }
+                              />
+                            </Pressable>
+                          </View>
                         ))}
                       </ScrollView>
 
                       <Text style={[styles.dimLabel, styles.mapHintBelowChips]}>{he.addRemove.mapPlacementHint}</Text>
                       <View style={styles.mapActionRow}>
-                        {book.stock_quantity > 0 && unplacedQuantity(book) > 0 ? (
+                        {book.stock_quantity > 0 && warehouseQty > 0 ? (
                           <Pressable
                             accessibilityRole="button"
                             style={[
@@ -980,7 +1079,7 @@ export default function AddRemoveScreen(): JSX.Element {
                               return;
                             }
                             // אין מיקומים במפה — אותו זרימת «הוסף למפה» לפי עותקים לא ממוקמים
-                            if (book.stock_quantity > 0 && unplacedQuantity(book) > 0) {
+                            if (book.stock_quantity > 0 && warehouseQty > 0) {
                               setInventoryMapError(null);
                               setExistingPerCopyModalError(null);
                               setExistingPerCopyBook(book);
@@ -1003,7 +1102,7 @@ export default function AddRemoveScreen(): JSX.Element {
                           >
                             <Ionicons name="remove" size={22} color={theme.colors.onSurface} />
                           </Pressable>
-                          <Text style={styles.qty}>{book.stock_quantity}</Text>
+                          <Text style={styles.qty}>{scopedQty}</Text>
                           <Pressable
                             accessibilityRole="button"
                             onPress={() => void applyStockDelta(book, 1)}
@@ -1096,6 +1195,7 @@ export default function AddRemoveScreen(): JSX.Element {
       <NewBookModal
         visible={newBookOpen}
         suppliers={suppliers}
+        topicSuggestions={topicSuggestions}
         defaultSupplierId={supplierId}
         mapPlacementBlockedMessage={mapPlacementGuardMessage}
         perCopySummaries={
@@ -1290,10 +1390,35 @@ export default function AddRemoveScreen(): JSX.Element {
         }}
       />
 
+      <ConfirmDialog
+        visible={removeLocationTarget !== null}
+        title={he.addRemove.confirmRemoveLocationTitle}
+        destructive
+        message={
+          removeLocationTarget
+            ? removeLocationTarget.loc.quantity_in_cell > 0
+              ? interpolate(he.addRemove.confirmRemoveLocationToWarehouse, {
+                  cell: removeLocationTarget.loc.cell_name,
+                  qty: String(removeLocationTarget.loc.quantity_in_cell),
+                })
+              : interpolate(he.addRemove.confirmRemoveLocationClear, {
+                  cell: removeLocationTarget.loc.cell_name,
+                })
+            : undefined
+        }
+        cancelLabel={he.generic.cancel}
+        confirmLabel={he.addRemove.removeLocationConfirm}
+        onCancel={() => setRemoveLocationTarget(null)}
+        onConfirm={() => {
+          void confirmRemoveLocation();
+        }}
+      />
+
       <EditBookModal
         visible={editBook !== null}
         book={editBook}
         suppliers={suppliers}
+        topicSuggestions={topicSuggestions}
         submitting={patchBook.isPending && editBook !== null && busyBookId === editBook.id}
         onClose={() => setEditBook(null)}
         onSubmit={async (patch) => {
@@ -1332,6 +1457,7 @@ interface NewBookFormState {
 function NewBookModal({
   visible,
   suppliers,
+  topicSuggestions,
   defaultSupplierId,
   mapPlacementBlockedMessage,
   perCopySummaries,
@@ -1344,6 +1470,7 @@ function NewBookModal({
 }: {
   visible: boolean;
   suppliers: Supplier[];
+  topicSuggestions: readonly string[];
   defaultSupplierId: string | null;
   mapPlacementBlockedMessage: string | null;
   perCopySummaries: string[] | null;
@@ -1543,10 +1670,15 @@ function NewBookModal({
                 <Text style={styles.mapChooseBtnWideText}>{he.addRemove.openPerCopyPlacement}</Text>
               </Pressable>
 
-              <LabeledInput
-                label={he.addRemove.fieldTopic}
+              <SearchableFreeTextField
+                compact
+                fieldLabel={he.addRemove.fieldTopic}
                 value={form.topic}
                 onChangeText={(topic) => setForm((s) => ({ ...s, topic }))}
+                suggestions={topicSuggestions}
+                placeholder={he.addRemove.fieldTopicPlaceholder}
+                emptyListMessage={he.addRemove.fieldTopicNoMatches}
+                disabled={submitting}
               />
 
               <View style={styles.switchRow}>
@@ -1751,6 +1883,21 @@ const styles = StyleSheet.create({
   },
   globalBookDropdownRowSelected: { backgroundColor: theme.colors.secondaryContainer },
   globalBookDropdownRowPressed: { backgroundColor: theme.colors.surfaceContainerHighest },
+  globalBookDropdownRowInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.sm,
+  },
+  globalBookDropdownTextCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  globalBookDropdownStats: {
+    alignItems: "flex-end",
+    flexShrink: 0,
+    gap: 2,
+  },
   globalBookDropdownTitle: {
     ...theme.typography.labelMd,
     color: theme.colors.onSurface,
@@ -1761,6 +1908,18 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     textAlign: "left",
     marginTop: 2,
+  },
+  globalBookDropdownStock: {
+    ...theme.typography.labelMd,
+    color: theme.colors.onSurfaceVariant,
+    fontVariant: ["tabular-nums"],
+    flexShrink: 0,
+  },
+  globalBookDropdownCell: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    maxWidth: 120,
+    textAlign: "right",
   },
   globalBookDropdownTruncated: {
     ...theme.typography.caption,
@@ -1867,6 +2026,21 @@ const styles = StyleSheet.create({
     marginEnd: theme.spacing.sm,
     alignSelf: "flex-start",
   },
+  locationChip: {
+    borderRadius: theme.radius.full,
+    borderWidth: 1,
+    borderColor: theme.colors.outline,
+    paddingVertical: theme.spacing.xs,
+    paddingStart: theme.spacing.md,
+    paddingEnd: theme.spacing.xs,
+    marginEnd: theme.spacing.sm,
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  chipSelectHit: { flexShrink: 1 },
+  chipRemoveHit: { padding: 2 },
   chipActive: { borderColor: theme.colors.primary, backgroundColor: theme.colors.primaryContainer },
   chipText: { ...theme.typography.labelMd, color: theme.colors.onSurface },
   chipTextActive: { color: theme.colors.onPrimaryContainer },
@@ -1972,6 +2146,19 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginTop: theme.spacing.xs,
+  },
+  totalStockRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
+  },
+  totalStockQty: {
+    ...theme.typography.headlineSm,
+    color: theme.colors.onSurface,
+    textAlign: "center",
+    minWidth: 36,
   },
   stepper: {
     flexDirection: "row",

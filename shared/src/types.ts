@@ -171,6 +171,11 @@ export interface StoreMapBook {
   topic: string;
   /** ספר זה סומן כחוסר במדף — עד עדכון סטטוס החוסר ל־`completed`. */
   is_pending_shortage: boolean;
+  /**
+   * כמה רשומות חוסר פתוחות למיקום זה (`shortage` / `order_pending`).
+   * קובע כמה שדרות־רפאים להציג בארון; `is_pending_shortage` = count > 0.
+   */
+  pending_shortage_count: number;
 }
 
 export interface StoreMapCell {
@@ -257,11 +262,16 @@ export interface BookLocationPath {
 
 /** רשומת חוסר משולבת עם פרטי הספק והספר, להצגה ב־`shortage` screen. */
 export interface ShortageListItem {
+  /** רשומה מייצגת בקבוצה (האחרונה לפי `added_at`) — לשימוש ב־API. */
   id: UUID;
   book_id: UUID;
   location_id: UUID | null;
+  /** תא בשטח; null כשאין `location_id` (קבוצה נפרדת). */
+  cell_id: UUID | null;
   /** שם התא בשטח (למשל «5») — לא הנתיב המלא; null אם אין `location_id`. */
   cell_name: string | null;
+  /** מספר רשומות חוסר פתוחות באותו ספר+תא. */
+  missing_count: number;
   added_at: ISOTimestamp;
   status: ShortageStatus;
   resolved_at: ISOTimestamp | null;

@@ -4,6 +4,7 @@ import type { StoreMapBook, StoreMapCell } from "@avihay-books/shared";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
 import { BookSpine } from "./BookSpine";
+import { resolveGhostSpineSlots } from "../../utils/spineShortageSlots";
 
 function interpolate(template: string, vars: Record<string, string>): string {
   return Object.entries(vars).reduce((s, [k, v]) => {
@@ -11,12 +12,16 @@ function interpolate(template: string, vars: Record<string, string>): string {
   }, template);
 }
 
+export type BookSpinePressHandler = (book: StoreMapBook, spineSlot: number) => void;
+
 interface Props {
   cell: StoreMapCell;
   books: StoreMapBook[];
   /** מזהי `location_id` (לא `book_id`) — עותקים שונים של אותו ספר נבדלים. */
   shortagedIds: Set<string>;
-  onBookPress: (book: StoreMapBook) => void;
+  /** אינדקסי שדרה שנלחצו לחוסר — כדי לטשטש את העותק שנבחר ולא תמיד את האחרון. */
+  ghostSlotsByLocation: ReadonlyMap<string, readonly number[]>;
+  onBookPress: BookSpinePressHandler;
   onBookLongPress: (book: StoreMapBook) => void;
 }
 
@@ -24,6 +29,7 @@ function CellCardImpl({
   cell,
   books,
   shortagedIds,
+  ghostSlotsByLocation,
   onBookPress,
   onBookLongPress,
 }: Props): JSX.Element {
@@ -31,20 +37,37 @@ function CellCardImpl({
 
   const spineRows = books.flatMap((b) => {
     const qty = Math.max(0, Math.floor(Number(b.quantity_in_cell)));
-    const isShortaged =
-      shortagedIds.has(b.location_id) || Boolean(b.is_pending_shortage);
-    // מיקום חסר (qty 0 + shortage) — שדרה אחת מטושטשת במקום להסתיר לגמרי.
-    const spineCount = qty > 0 ? qty : isShortaged ? 1 : 0;
-    if (spineCount <= 0) return [];
-    return Array.from({ length: spineCount }, (_, i) => (
-      <BookSpine
-        key={`${b.location_id}-${i}`}
-        book={b}
-        dimmed={isShortaged}
-        onPress={onBookPress}
-        onLongPress={onBookLongPress}
-      />
-    ));
+    const shortageCount = Math.max(
+      0,
+      Math.floor(
+        Number(b.pending_shortage_count ?? (b.is_pending_shortage ? 1 : 0)),
+      ),
+    );
+    const totalSlots = qty + shortageCount;
+    const ghostSlots = resolveGhostSpineSlots(
+      totalSlots,
+      shortageCount,
+      ghostSlotsByLocation.get(b.location_id),
+    );
+    const spines: JSX.Element[] = [];
+    for (let slot = 0; slot < totalSlots; slot += 1) {
+      const dimmed = ghostSlots.has(slot);
+      spines.push(
+        <BookSpine
+          key={`${b.location_id}-slot-${slot}`}
+          book={{
+            ...b,
+            quantity_in_cell: dimmed ? 0 : 1,
+            is_pending_shortage: dimmed,
+            pending_shortage_count: dimmed ? shortageCount : 0,
+          }}
+          dimmed={dimmed}
+          onPress={(book) => onBookPress(book, slot)}
+          onLongPress={onBookLongPress}
+        />,
+      );
+    }
+    return spines;
   });
 
   return (
@@ -80,6 +103,7 @@ function CellCardImpl({
 function areCellPropsEqual(prev: Props, next: Props): boolean {
   if (prev.onBookPress !== next.onBookPress) return false;
   if (prev.onBookLongPress !== next.onBookLongPress) return false;
+  if (prev.ghostSlotsByLocation !== next.ghostSlotsByLocation) return false;
   if (
     prev.cell.id !== next.cell.id ||
     prev.cell.cell_name !== next.cell.cell_name ||
@@ -100,7 +124,8 @@ function areCellPropsEqual(prev: Props, next: Props): boolean {
       x.supplier_color !== y.supplier_color ||
       x.quantity_in_cell !== y.quantity_in_cell ||
       x.is_new !== y.is_new ||
-      x.is_pending_shortage !== y.is_pending_shortage
+      x.is_pending_shortage !== y.is_pending_shortage ||
+      (x.pending_shortage_count ?? 0) !== (y.pending_shortage_count ?? 0)
     ) {
       return false;
     }
@@ -122,7 +147,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
     paddingTop: theme.spacing.sm,
     paddingBottom: theme.spacing.md,
-    minWidth: 180,
+    minWidth: 160,
     gap: theme.spacing.sm,
   },
   header: {

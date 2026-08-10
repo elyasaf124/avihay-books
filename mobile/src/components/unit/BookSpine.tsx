@@ -21,7 +21,7 @@ interface Props {
 const SCROLL_OVERFLOW_THRESHOLD = 2;
 /** מידות פנימיות של השדרה לפי הסגנון — קבועות, ולכן אין צורך למדוד ב־`onLayout`. */
 const SPINE_INNER_W = 24; // width 28 − paddingHorizontal*2
-const SPINE_INNER_H = 78; // height 90 − paddingVertical*2
+const SPINE_INNER_H = 128; // height 140 − paddingVertical*2
 
 /**
  * כיוון הקריאה לפי התו החזק הראשון.
@@ -194,7 +194,7 @@ export const BookSpine = memo(BookSpineImpl);
 const styles = StyleSheet.create({
   spine: {
     width: 28,
-    height: 90,
+    height: 140,
     borderRadius: 4,
     paddingVertical: 6,
     paddingHorizontal: 2,
@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   /**
-   * שתי הגרסאות חולקות אותה גאומטריה: תיבה של 78×24 שמסובבת -90°,
+   * שתי הגרסאות חולקות אותה גאומטריה: תיבה של 128×24 שמסובבת -90°,
    * כך שרוחב הטקסט (שורה אחת) לא נחתך על ידי רוחב השדרה (28px).
    */
   titleTrackStatic: {

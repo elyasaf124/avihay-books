@@ -20,14 +20,24 @@ import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
 import {
+  autoPickCellIdOnShelf,
   cellIdsEqual,
   cellRefToSummary,
-  filterCellRefsForPlacement,
+  findCellNameByLocationId,
   findCellsMatchingName,
   findStoreMapCellById,
   resolvePositionForPlacement,
+  shouldAutoPickCellOnShelf,
+  unitCollapsesCellChoice,
   type CellRef,
 } from "../../utils/storeMapCells";
+import { useEnsureCell } from "../../api/storeMap";
+
+function interpolate(template: string, vars: Record<string, string>): string {
+  return Object.entries(vars).reduce((s, [k, v]) => {
+    return s.replace(new RegExp(`\\{\\{${k}\\}\\}`, "g"), v);
+  }, template);
+}
 
 export type MapPlacementSubmitTarget = {
   cellId: string;
@@ -70,8 +80,10 @@ interface Props {
     /** לכל תא שיש בו יותר מעותק אחד — תמיד גלוי גם כשעוברים לעותק מתא אחר */
     bulkMoves?: { id: string; label: string; onPress: () => void }[];
   };
-  /** כשאין `book`: האם הספר מסומן `is_new` (מגביל לארון התצוגה בלבד). */
+  /** כשאין `book`: האם הספר מסומן `is_new` (לתצוגה בלבד; לא מגביל יעדים). */
   placePreviewIsNew?: boolean;
+  /** פתיחה ממסך ארון — מתחילים עם הארון (והמדף הראשון) מסומנים. */
+  preferredUnitId?: string | null;
   onClose: () => void;
   onSubmit: (target: MapPlacementSubmitTarget) => void | Promise<void>;
 }
@@ -104,24 +116,29 @@ export function MoveBookModal({
   modalTitle,
   lockQuantityForMove = false,
   moveContextBanner,
-  placePreviewIsNew = false,
+  placePreviewIsNew: _placePreviewIsNew = false,
+  preferredUnitId = null,
   onClose,
   onSubmit,
 }: Props): JSX.Element {
   const keyboardHeight = useKeyboardHeight();
-  const treatAsNewBook = book != null ? book.is_new : Boolean(placePreviewIsNew);
+  const ensureCell = useEnsureCell();
+  /** העברת ספר קיים — ממשק מצומצם: מיקום נוכחי + שם תא יעד. */
+  const isSimpleMove = book != null;
+  const currentCellName = useMemo(
+    () =>
+      book != null ? findCellNameByLocationId(storeMap, book.location_id) : null,
+    [book, storeMap],
+  );
 
-  const filteredStoreUnits = useMemo(() => {
-    const all = storeMap?.units ?? [];
-    if (treatAsNewBook) {
-      return all.filter((u) => u.store_position === "display");
-    }
-    return all.filter((u) => u.store_position !== "display");
-  }, [storeMap, treatAsNewBook]);
+  const filteredStoreUnits = useMemo(() => storeMap?.units ?? [], [storeMap]);
   const [unitId, setUnitId] = useState<string | null>(null);
   const [sideId, setSideId] = useState<string | null>(null);
   const [shelfId, setShelfId] = useState<string | null>(null);
   const [cellId, setCellId] = useState<string | null>(null);
+  /** שם תא ליצירה כשחסר במפה (לא נוצר בייבוא כי היה ריק). */
+  const [newCellName, setNewCellName] = useState("");
+  const [createCellError, setCreateCellError] = useState<string | null>(null);
   const initialPosition =
     book != null ? String(book.position_in_cell) : String(placePreview?.defaultPosition ?? 1);
   const initialQuantity =
@@ -149,7 +166,45 @@ export function MoveBookModal({
     setQuickQuery("");
     setQuickCandidates([]);
     setQuickError(null);
-  }, [visible, book?.location_id]);
+    setNewCellName("");
+    setCreateCellError(null);
+    setCellId(null);
+
+    const preferred =
+      preferredUnitId && filteredStoreUnits.some((u) => u.id === preferredUnitId)
+        ? preferredUnitId
+        : filteredStoreUnits.length === 1
+          ? filteredStoreUnits[0]!.id
+          : null;
+    setUnitId(preferred);
+    setSideId(null);
+    setShelfId(null);
+  }, [visible, book?.location_id, preferredUnitId, filteredStoreUnits]);
+
+  /** כשארון נבחר — מדף ראשון אוטומטית (במיוחד ארון תצוגה עם מדף יחיד). */
+  useEffect(() => {
+    if (!visible || !unitId || !storeMap) return;
+    const unit = storeMap.units.find((u) => u.id === unitId);
+    if (!unit) return;
+    if (unit.has_sides) {
+      if (!sideId && unit.sides.length === 1) {
+        setSideId(unit.sides[0]!.id);
+      }
+      return;
+    }
+    if (!shelfId && unit.shelves.length > 0) {
+      setShelfId(unit.shelves[0]!.id);
+    }
+  }, [visible, unitId, sideId, shelfId, storeMap]);
+
+  useEffect(() => {
+    if (!visible || !sideId || !storeMap || !unitId) return;
+    const unit = storeMap.units.find((u) => u.id === unitId);
+    const side = unit?.sides.find((s) => s.id === sideId);
+    if (!shelfId && side && side.shelves.length > 0) {
+      setShelfId(side.shelves[0]!.id);
+    }
+  }, [visible, unitId, sideId, shelfId, storeMap]);
 
   useEffect(() => {
     if (!visible) return;
@@ -180,6 +235,8 @@ export function MoveBookModal({
     setSideId(cr.sideId);
     setShelfId(cr.shelfId);
     setCellId(cr.cellId);
+    setNewCellName("");
+    setCreateCellError(null);
   }, []);
 
   const applyQuickQuery = useCallback(
@@ -190,25 +247,85 @@ export function MoveBookModal({
         setQuickError(null);
         return;
       }
-      let hits = findCellsMatchingName(storeMap, query, shelfWordLabel);
-      hits = filterCellRefsForPlacement(hits, storeMap, treatAsNewBook);
+      const hits = findCellsMatchingName(storeMap, query, shelfWordLabel);
+
+      /** בארון פתוח — מעדיפים תאים באותו ארון; אחרת יוצרים במדף הנוכחי במקום לקפוץ לארון אחר. */
+      const scopeUnitId = preferredUnitId ?? unitId;
+      const scoped = scopeUnitId ? hits.filter((h) => h.unitId === scopeUnitId) : hits;
+
+      if (scoped.length === 1) {
+        applyCellRef(scoped[0]!);
+        setQuickCandidates([]);
+        setQuickError(null);
+        setNewCellName("");
+        return;
+      }
+      if (scoped.length > 1) {
+        setQuickCandidates(scoped);
+        setQuickError(he.addRemove.cellNameAmbiguous);
+        setCellId(null);
+        return;
+      }
+
+      /** העברה פשוטה — רק תאים קיימים; בלי יצירת תא חדש. */
+      if (isSimpleMove) {
+        if (hits.length === 0) {
+          setQuickCandidates([]);
+          setQuickError(he.addRemove.cellNameNotFound);
+          setCellId(null);
+          setNewCellName("");
+          return;
+        }
+        if (hits.length === 1) {
+          applyCellRef(hits[0]!);
+          setQuickCandidates([]);
+          setQuickError(null);
+          setNewCellName("");
+          return;
+        }
+        setQuickCandidates(hits);
+        setQuickError(he.addRemove.cellNameAmbiguous);
+        setCellId(null);
+        return;
+      }
+
+      /** אין תא בשם הזה בארון הנוכחי — ניצור במדף שנבחר (גם אם השם קיים בארון אחר). */
+      if (shelfId) {
+        setQuickCandidates([]);
+        setQuickError(null);
+        setCellId(null);
+        setNewCellName(query);
+        setCreateCellError(null);
+        return;
+      }
+
       if (hits.length === 0) {
         setQuickCandidates([]);
         setQuickError(he.addRemove.cellNameNotFound);
         setCellId(null);
+        setNewCellName(query);
         return;
       }
       if (hits.length === 1) {
         applyCellRef(hits[0]!);
         setQuickCandidates([]);
         setQuickError(null);
+        setNewCellName("");
         return;
       }
       setQuickCandidates(hits);
       setQuickError(he.addRemove.cellNameAmbiguous);
       setCellId(null);
     },
-    [applyCellRef, storeMap, shelfWordLabel, treatAsNewBook],
+    [
+      applyCellRef,
+      storeMap,
+      shelfWordLabel,
+      preferredUnitId,
+      unitId,
+      shelfId,
+      isSimpleMove,
+    ],
   );
 
   useEffect(() => {
@@ -220,17 +337,6 @@ export function MoveBookModal({
       setCellId(null);
     }
   }, [visible, filteredStoreUnits, unitId]);
-
-  useEffect(() => {
-    if (!visible || !treatAsNewBook || filteredStoreUnits.length !== 1) return;
-    const onlyId = filteredStoreUnits[0]!.id;
-    if (unitId !== onlyId) {
-      setUnitId(onlyId);
-      setSideId(null);
-      setShelfId(null);
-      setCellId(null);
-    }
-  }, [visible, treatAsNewBook, filteredStoreUnits, unitId]);
 
   /** עיכוב קצר כדי שהקלדת «49» לא תריץ חיפוש על «4». */
   useEffect(() => {
@@ -299,8 +405,25 @@ export function MoveBookModal({
     [cells],
   );
 
+  /** תא יחיד / ארון תצוגה — בוחרים אוטומטית, בלי שלב תא. */
+  useEffect(() => {
+    if (!visible || !shelfId || !selectedUnit) return;
+    const activeShelf = shelves.find((sh) => sh.id === shelfId);
+    if (!shouldAutoPickCellOnShelf(selectedUnit, activeShelf)) return;
+    const onlyId = autoPickCellIdOnShelf(selectedUnit, activeShelf);
+    if (!onlyId || cellId === onlyId) return;
+    setCellId(onlyId);
+    setNewCellName("");
+    setCreateCellError(null);
+    setQuickCandidates([]);
+    setQuickError(null);
+  }, [visible, shelfId, shelves, selectedUnit, cellId]);
+
   const selectedCell =
     cellId == null ? undefined : cellOptions.find((c) => cellIdsEqual(c.id, cellId));
+
+  const trimmedNewCellName = newCellName.trim();
+  const creatingNewCell = trimmedNewCellName.length > 0 && cellId == null;
 
   const placementResolution = useMemo(() => {
     const prefPos = Math.max(1, Math.floor(Number(position) || 1));
@@ -313,17 +436,25 @@ export function MoveBookModal({
     };
   }, [book, cellId, storeMap, position]);
 
-  const canSubmit =
-    !!cellId &&
-    !!Number(position) &&
-    (lockQuantity || !!Number(quantity)) &&
-    !submitting &&
-    !!selectedUnit;
+  const canSubmit = isSimpleMove
+    ? !!cellId &&
+      !!shelfId &&
+      !submitting &&
+      !!selectedUnit &&
+      (pickTab === "tree" || quickCandidates.length === 0)
+    : (!!cellId || (creatingNewCell && !!shelfId)) &&
+      !!Number(position) &&
+      (lockQuantity || !!Number(quantity)) &&
+      !submitting &&
+      !ensureCell.isPending &&
+      !!selectedUnit;
 
   const quickResolvedSummary = useMemo(() => {
-    if (pickTab !== "quick" || !cellId || !selectedUnit || !selectedCell || !shelfId) return null;
+    if (pickTab !== "quick" || !cellId || !selectedCell) return null;
     if (quickCandidates.length > 0) return null;
     if (quickError) return null;
+    if (isSimpleMove) return selectedCell.name;
+    if (!selectedUnit || !shelfId) return null;
     const shelfLbl = shelfOptions.find((s) => s.id === shelfId)?.label ?? "";
     const sideLbl = selectedUnit.has_sides
       ? sides.find((s) => s.id === sideId)?.label
@@ -347,6 +478,7 @@ export function MoveBookModal({
     quickCandidates.length,
     quickError,
     cellWordLabel,
+    isSimpleMove,
   ]);
 
   const headerTitle =
@@ -354,33 +486,87 @@ export function MoveBookModal({
     (book ? he.unit.move.title : placePreview ? he.addRemove.placeBookOnMapTitle : he.unit.move.title);
 
   const submit = () => {
-    if (!cellId || !selectedUnit) return;
-    const shelfLbl = shelfOptions.find((s) => s.id === shelfId)?.label ?? "";
-    const cellLbl = selectedCell?.name ?? "";
-    const sideLbl = selectedUnit.has_sides
-      ? sides.find((s) => s.id === sideId)?.label
-      : undefined;
-    const summaryParts = [
-      selectedUnit.name,
-      sideLbl,
-      shelfLbl,
-      cellLbl ? `${cellWordLabel} ${cellLbl}` : "",
-    ].filter((p): p is string => Boolean(p?.trim()));
-    const summaryLabel = summaryParts.join(" · ");
+    if (!selectedUnit || !shelfId) return;
 
-    const qtyNum = lockQuantity
-      ? 1
-      : Math.max(1, Math.floor(Number(quantity) || 1));
+    const finish = (resolvedCellId: string, cellLbl: string) => {
+      const summaryLabel = isSimpleMove
+        ? cellLbl
+        : (() => {
+            const shelfLbl = shelfOptions.find((s) => s.id === shelfId)?.label ?? "";
+            const sideLbl = selectedUnit.has_sides
+              ? sides.find((s) => s.id === sideId)?.label
+              : undefined;
+            const summaryParts = [
+              selectedUnit.name,
+              sideLbl,
+              shelfLbl,
+              cellLbl ? `${cellWordLabel} ${cellLbl}` : "",
+            ].filter((p): p is string => Boolean(p?.trim()));
+            return summaryParts.join(" · ");
+          })();
 
-    const { prefPos, resolvedPlace } = placementResolution;
-    let posInCell = book == null && cellId && storeMap ? resolvedPlace : prefPos;
+      const qtyNum =
+        isSimpleMove || lockQuantity
+          ? 1
+          : Math.max(1, Math.floor(Number(quantity) || 1));
 
-    void onSubmit({
-      cellId,
-      positionInCell: posInCell,
-      quantityInCell: qtyNum,
-      summaryLabel,
-    });
+      const { prefPos, resolvedPlace } = placementResolution;
+      const mapCell = findStoreMapCellById(storeMap, resolvedCellId);
+      const posInCell = isSimpleMove
+        ? resolvePositionForPlacement(mapCell, 1)
+        : book == null && resolvedCellId && storeMap && cellId
+          ? resolvedPlace
+          : prefPos;
+
+      void onSubmit({
+        cellId: resolvedCellId,
+        positionInCell: posInCell,
+        quantityInCell: qtyNum,
+        summaryLabel,
+      });
+    };
+
+    if (cellId) {
+      finish(cellId, selectedCell?.name ?? "");
+      return;
+    }
+
+    if (!creatingNewCell) return;
+
+    const existingOnShelf = cellOptions.find(
+      (c) => c.name.trim().toLowerCase() === trimmedNewCellName.toLowerCase(),
+    );
+    if (existingOnShelf) {
+      setCellId(existingOnShelf.id);
+      setNewCellName("");
+      finish(existingOnShelf.id, existingOnShelf.name);
+      return;
+    }
+
+    setCreateCellError(null);
+    void ensureCell
+      .mutateAsync({ shelfId, cellName: trimmedNewCellName })
+      .then((cell) => {
+        setCellId(cell.id);
+        setNewCellName("");
+        setQuickError(null);
+        finish(cell.id, cell.cell_name);
+      })
+      .catch((err: unknown) => {
+        const apiErr =
+          typeof err === "object" &&
+          err &&
+          "response" in err &&
+          typeof (err as { response?: { data?: { error?: string } } }).response?.data?.error ===
+            "string"
+            ? (err as { response: { data: { error: string } } }).response.data.error
+            : null;
+        if (apiErr === "cell_name_exists_on_other_shelf") {
+          setCreateCellError(he.addRemove.createNewCellNameTaken);
+        } else {
+          setCreateCellError(he.addRemove.createNewCellFailed);
+        }
+      });
   };
 
   return (
@@ -429,7 +615,17 @@ export function MoveBookModal({
               </View>
             ) : null}
 
-            {moveContextBanner ? (
+            {isSimpleMove && currentCellName ? (
+              <View style={styles.moveContextBanner}>
+                <Text style={styles.moveContextCurrent} numberOfLines={1}>
+                  {interpolate(he.addRemove.inventoryMoveRowCurrent, {
+                    cell: currentCellName,
+                  })}
+                </Text>
+              </View>
+            ) : null}
+
+            {moveContextBanner && !isSimpleMove ? (
               <View style={styles.moveContextBanner}>
                 {moveContextBanner.bulkMoves && moveContextBanner.bulkMoves.length > 0 ? (
                   <View style={styles.bulkMovesBlock}>
@@ -478,182 +674,280 @@ export function MoveBookModal({
             ) : null}
 
             <ScrollView style={styles.sheetScroll} contentContainerStyle={{ gap: theme.spacing.md }}>
-              <View style={styles.tabRow}>
-                <Pressable
-                  onPress={() => setPickTab("quick")}
-                  style={[styles.tabChip, pickTab === "quick" && styles.tabChipActive]}
-                >
-                  <Text style={[styles.tabChipText, pickTab === "quick" && styles.tabChipTextActive]}>
-                    {he.addRemove.placementTabByName}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => setPickTab("tree")}
-                  style={[styles.tabChip, pickTab === "tree" && styles.tabChipActive]}
-                >
-                  <Text style={[styles.tabChipText, pickTab === "tree" && styles.tabChipTextActive]}>
-                    {he.addRemove.placementTabTree}
-                  </Text>
-                </Pressable>
-              </View>
+              <>
+                  <View style={styles.tabRow}>
+                    <Pressable
+                      onPress={() => setPickTab("quick")}
+                      style={[styles.tabChip, pickTab === "quick" && styles.tabChipActive]}
+                    >
+                      <Text style={[styles.tabChipText, pickTab === "quick" && styles.tabChipTextActive]}>
+                        {he.addRemove.placementTabByName}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setPickTab("tree")}
+                      style={[styles.tabChip, pickTab === "tree" && styles.tabChipActive]}
+                    >
+                      <Text style={[styles.tabChipText, pickTab === "tree" && styles.tabChipTextActive]}>
+                        {he.addRemove.placementTabTree}
+                      </Text>
+                    </Pressable>
+                  </View>
 
-              {treatAsNewBook ? (
-                <Text style={styles.placementPolicyHint}>{he.addRemove.placementNewBooksOnlyHint}</Text>
-              ) : book != null && !book.is_new ? (
-                <Text style={styles.placementPolicyHint}>{he.addRemove.placementRegularBooksHint}</Text>
-              ) : null}
-
-              {pickTab === "quick" ? (
-                <View style={{ gap: theme.spacing.sm }}>
-                  <Text style={styles.numericLabel}>{he.addRemove.cellNameSearchLabel}</Text>
-                  <TextInput
-                    style={styles.quickLookupInputFull}
-                    value={quickQuery}
-                    onChangeText={(t) => {
-                      setQuickQuery(t);
-                      setQuickError(null);
-                    }}
-                    placeholder={he.addRemove.cellNameSearchPlaceholder}
-                    placeholderTextColor={theme.colors.onSurfaceVariant}
-                  />
-                  <Text style={styles.quickDebouncedHint}>{he.addRemove.cellNameSearchDebouncedHint}</Text>
-                  {quickError ? (
-                    quickCandidates.length === 0 ? (
-                      <Text style={styles.error}>{quickError}</Text>
-                    ) : (
-                      <Text style={styles.warn}>{quickError}</Text>
-                    )
+                  {isSimpleMove ? (
+                    <Text style={styles.numericLabel}>{he.addRemove.inventoryMoveRowTarget}</Text>
                   ) : null}
 
-                  {quickCandidates.length > 1 ? (
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      contentContainerStyle={pickerStyles.row}
-                    >
-                      {quickCandidates.map((c) => (
-                        <Pressable
-                          key={c.cellId}
-                          onPress={() => {
-                            applyCellRef(c);
+                  {pickTab === "quick" ? (
+                    <View style={{ gap: theme.spacing.sm }}>
+                      {!isSimpleMove ? (
+                        <Text style={styles.numericLabel}>{he.addRemove.cellNameSearchLabel}</Text>
+                      ) : null}
+                      <TextInput
+                        style={styles.quickLookupInputFull}
+                        value={quickQuery}
+                        onChangeText={(t) => {
+                          setQuickQuery(t);
+                          setQuickError(null);
+                        }}
+                        placeholder={he.addRemove.cellNameSearchPlaceholder}
+                        placeholderTextColor={theme.colors.onSurfaceVariant}
+                      />
+                      {!isSimpleMove ? (
+                        <Text style={styles.quickDebouncedHint}>
+                          {he.addRemove.cellNameSearchDebouncedHint}
+                        </Text>
+                      ) : null}
+                      {quickError ? (
+                        quickCandidates.length === 0 ? (
+                          <View style={{ gap: theme.spacing.xs }}>
+                            <Text style={styles.error}>{quickError}</Text>
+                            {!isSimpleMove && trimmedNewCellName.length > 0 && shelfId ? (
+                              <Text style={styles.quickDebouncedHint}>
+                                {he.addRemove.createNewCellReadyHint}
+                              </Text>
+                            ) : !isSimpleMove && trimmedNewCellName.length > 0 ? (
+                              <Pressable
+                                onPress={() => {
+                                  setPickTab("tree");
+                                  setQuickError(null);
+                                }}
+                              >
+                                <Text style={styles.createCellLink}>
+                                  {he.addRemove.cellNameNotFoundCreateHint}
+                                </Text>
+                              </Pressable>
+                            ) : null}
+                          </View>
+                        ) : (
+                          <Text style={styles.warn}>{quickError}</Text>
+                        )
+                      ) : null}
+
+                      {quickCandidates.length > 1 ? (
+                        <ScrollView
+                          horizontal
+                          showsHorizontalScrollIndicator={false}
+                          contentContainerStyle={pickerStyles.row}
+                        >
+                          {quickCandidates.map((c) => (
+                            <Pressable
+                              key={c.cellId}
+                              onPress={() => {
+                                applyCellRef(c);
+                                setQuickCandidates([]);
+                                setQuickError(null);
+                                if (isSimpleMove) setQuickQuery(c.cell_name);
+                              }}
+                              style={pickerStyles.chip}
+                            >
+                              <Text style={pickerStyles.label} numberOfLines={4}>
+                                {isSimpleMove
+                                  ? `${c.unitName} · ${c.cell_name}`
+                                  : cellRefToSummary(c, cellWordLabel)}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </ScrollView>
+                      ) : null}
+
+                      {quickResolvedSummary ? (
+                        <Text style={styles.resolvedPath} numberOfLines={4}>
+                          {quickResolvedSummary}
+                        </Text>
+                      ) : null}
+
+                      {!isSimpleMove && creatingNewCell && shelfId && !quickError ? (
+                        <Text style={styles.warn}>
+                          {interpolate(he.addRemove.createNewCellWillCreate, {
+                            cell: trimmedNewCellName,
+                          })}
+                        </Text>
+                      ) : null}
+                    </View>
+                  ) : null}
+
+                  {pickTab === "tree" ? (
+                    <>
+                      <SectionPicker
+                        label={he.unit.move.targetUnit}
+                        value={unitId}
+                        options={units.map((u) => ({ id: u.id, label: u.name }))}
+                        onChange={(id) => {
+                          setUnitId(id);
+                          setSideId(null);
+                          setShelfId(null);
+                          setCellId(null);
+                          setNewCellName("");
+                          setCreateCellError(null);
+                          setQuickCandidates([]);
+                          setQuickError(null);
+                        }}
+                      />
+
+                      {selectedUnit?.has_sides ? (
+                        <SectionPicker
+                          label={he.unit.move.targetSide}
+                          value={sideId}
+                          options={sides}
+                          onChange={(id) => {
+                            setSideId(id);
+                            setShelfId(null);
+                            setCellId(null);
+                            setNewCellName("");
+                            setCreateCellError(null);
                             setQuickCandidates([]);
                             setQuickError(null);
                           }}
-                          style={pickerStyles.chip}
-                        >
-                          <Text style={pickerStyles.label} numberOfLines={4}>
-                            {cellRefToSummary(c, cellWordLabel)}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
+                        />
+                      ) : null}
+
+                      {selectedUnit &&
+                      !(
+                        shelfOptions.length <= 1 &&
+                        (unitCollapsesCellChoice(selectedUnit) ||
+                          shouldAutoPickCellOnShelf(
+                            selectedUnit,
+                            shelves.find((sh) => sh.id === shelfId) ?? shelves[0],
+                          ))
+                      ) ? (
+                        <SectionPicker
+                          label={he.unit.move.targetShelf}
+                          value={shelfId}
+                          options={shelfOptions}
+                          onChange={(id) => {
+                            setShelfId(id);
+                            setCellId(null);
+                            setCreateCellError(null);
+                            setQuickCandidates([]);
+                            setQuickError(null);
+                          }}
+                          disabled={selectedUnit.has_sides && !sideId}
+                        />
+                      ) : null}
+
+                      {shelfId &&
+                      !shouldAutoPickCellOnShelf(
+                        selectedUnit,
+                        shelves.find((sh) => sh.id === shelfId),
+                      ) &&
+                      cellOptions.length > 1 ? (
+                        <SectionPicker
+                          label={he.unit.move.targetCell}
+                          value={cellId}
+                          options={cellOptions.map((c) => ({
+                            id: c.id,
+                            label: `${cellWordLabel} ${c.name}`,
+                          }))}
+                          onChange={(id) => {
+                            setCellId(id);
+                            setNewCellName("");
+                            setCreateCellError(null);
+                            setQuickCandidates([]);
+                            setQuickError(null);
+                          }}
+                        />
+                      ) : null}
+
+                      {shelfId &&
+                      !isSimpleMove &&
+                      !shouldAutoPickCellOnShelf(
+                        selectedUnit,
+                        shelves.find((sh) => sh.id === shelfId),
+                      ) ? (
+                        <View style={{ gap: theme.spacing.xs }}>
+                          <Text style={styles.numericLabel}>{he.addRemove.cellNameSearchLabel}</Text>
+                          <TextInput
+                            style={styles.quickLookupInputFull}
+                            value={cellId ? (selectedCell?.name ?? "") : newCellName}
+                            onChangeText={(t) => {
+                              const match = cellOptions.find(
+                                (c) => c.name.trim().toLowerCase() === t.trim().toLowerCase(),
+                              );
+                              if (match) {
+                                setCellId(match.id);
+                                setNewCellName("");
+                              } else {
+                                setCellId(null);
+                                setNewCellName(t);
+                              }
+                              setCreateCellError(null);
+                            }}
+                            placeholder={he.addRemove.cellNameSearchPlaceholder}
+                            placeholderTextColor={theme.colors.onSurfaceVariant}
+                          />
+                          {creatingNewCell ? (
+                            <Text style={styles.quickDebouncedHint}>
+                              {interpolate(he.addRemove.createNewCellWillCreate, {
+                                cell: trimmedNewCellName,
+                              })}
+                            </Text>
+                          ) : null}
+                          {createCellError ? <Text style={styles.error}>{createCellError}</Text> : null}
+                        </View>
+                      ) : null}
+                    </>
                   ) : null}
 
-                  {quickResolvedSummary ? (
-                    <Text style={styles.resolvedPath} numberOfLines={4}>
-                      {quickResolvedSummary}
-                    </Text>
+                  {!isSimpleMove ? (
+                    <View style={styles.numericRow}>
+                      <View style={styles.numericBlock}>
+                        <Text style={styles.numericLabel}>{he.unit.move.positionInCell}</Text>
+                        <TextInput
+                          style={styles.numericInput}
+                          value={position}
+                          onChangeText={(t) => setPosition(t.replace(/[^0-9]/g, ""))}
+                          keyboardType="numeric"
+                          placeholder="1"
+                          placeholderTextColor={theme.colors.onSurfaceVariant}
+                        />
+                      </View>
+                      {!lockQuantity ? (
+                        <View style={styles.numericBlock}>
+                          <Text style={styles.numericLabel}>{he.unit.move.quantityInCell}</Text>
+                          <TextInput
+                            style={styles.numericInput}
+                            value={quantity}
+                            onChangeText={(t) => setQuantity(t.replace(/[^0-9]/g, ""))}
+                            keyboardType="numeric"
+                            placeholder="1"
+                            placeholderTextColor={theme.colors.onSurfaceVariant}
+                          />
+                        </View>
+                      ) : (
+                        <View style={styles.numericBlock}>
+                          <Text style={styles.numericLabel}>{he.unit.move.quantityInCell}</Text>
+                          <Text style={[styles.numericInput, styles.numericDisabled]}>{quantity}</Text>
+                        </View>
+                      )}
+                    </View>
                   ) : null}
-                </View>
-              ) : null}
-
-              {pickTab === "tree" ? (
-                <>
-                  <SectionPicker
-                    label={he.unit.move.targetUnit}
-                    value={unitId}
-                    options={units.map((u) => ({ id: u.id, label: u.name }))}
-                    onChange={(id) => {
-                      setUnitId(id);
-                      setSideId(null);
-                      setShelfId(null);
-                      setCellId(null);
-                      setQuickCandidates([]);
-                      setQuickError(null);
-                    }}
-                  />
-
-                  {selectedUnit?.has_sides ? (
-                    <SectionPicker
-                      label={he.unit.move.targetSide}
-                      value={sideId}
-                      options={sides}
-                      onChange={(id) => {
-                        setSideId(id);
-                        setShelfId(null);
-                        setCellId(null);
-                        setQuickCandidates([]);
-                        setQuickError(null);
-                      }}
-                    />
-                  ) : null}
-
-                  {selectedUnit ? (
-                    <SectionPicker
-                      label={he.unit.move.targetShelf}
-                      value={shelfId}
-                      options={shelfOptions}
-                      onChange={(id) => {
-                        setShelfId(id);
-                        setCellId(null);
-                        setQuickCandidates([]);
-                        setQuickError(null);
-                      }}
-                      disabled={selectedUnit.has_sides && !sideId}
-                    />
-                  ) : null}
-
-                  {shelfId ? (
-                    <SectionPicker
-                      label={he.unit.move.targetCell}
-                      value={cellId}
-                      options={cellOptions.map((c) => ({
-                        id: c.id,
-                        label: `${cellWordLabel} ${c.name}`,
-                      }))}
-                      onChange={(id) => {
-                        setCellId(id);
-                        setQuickCandidates([]);
-                        setQuickError(null);
-                      }}
-                    />
-                  ) : null}
-                </>
-              ) : null}
-
-              <View style={styles.numericRow}>
-                <View style={styles.numericBlock}>
-                  <Text style={styles.numericLabel}>{he.unit.move.positionInCell}</Text>
-                  <TextInput
-                    style={styles.numericInput}
-                    value={position}
-                    onChangeText={(t) => setPosition(t.replace(/[^0-9]/g, ""))}
-                    keyboardType="numeric"
-                    placeholder="1"
-                    placeholderTextColor={theme.colors.onSurfaceVariant}
-                  />
-                </View>
-                {!lockQuantity ? (
-                  <View style={styles.numericBlock}>
-                    <Text style={styles.numericLabel}>{he.unit.move.quantityInCell}</Text>
-                    <TextInput
-                      style={styles.numericInput}
-                      value={quantity}
-                      onChangeText={(t) => setQuantity(t.replace(/[^0-9]/g, ""))}
-                      keyboardType="numeric"
-                      placeholder="1"
-                      placeholderTextColor={theme.colors.onSurfaceVariant}
-                    />
-                  </View>
-                ) : (
-                  <View style={styles.numericBlock}>
-                    <Text style={styles.numericLabel}>{he.unit.move.quantityInCell}</Text>
-                    <Text style={[styles.numericInput, styles.numericDisabled]}>{quantity}</Text>
-                  </View>
-                )}
-              </View>
+              </>
 
               {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
+              {createCellError && pickTab === "quick" && !isSimpleMove ? (
+                <Text style={styles.error}>{createCellError}</Text>
+              ) : null}
             </ScrollView>
 
             <Pressable
@@ -872,14 +1166,6 @@ const styles = StyleSheet.create({
     gap: theme.spacing.sm,
     flexWrap: "wrap",
   },
-  placementPolicyHint: {
-    ...theme.typography.caption,
-    color: theme.colors.onTertiaryContainer,
-    textAlign: "left",
-    backgroundColor: theme.colors.tertiaryContainer,
-    padding: theme.spacing.sm,
-    borderRadius: theme.radius.md,
-  },
   tabChip: {
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
@@ -945,6 +1231,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: theme.radius.md,
     textAlign: "left",
+  },
+  createCellLink: {
+    ...theme.typography.caption,
+    color: theme.colors.primary,
+    textAlign: "left",
+    textDecorationLine: "underline",
   },
   submitBtn: {
     backgroundColor: theme.colors.primary,

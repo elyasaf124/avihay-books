@@ -98,6 +98,11 @@ export interface BotStoreInfo {
   delivery_point_fee: number;
   human_hours_start: number;
   human_hours_end: number;
+  /**
+   * מספר לקבלת התראות וואטסאפ על מענה אנושי (ספרות בלבד, רצוי 972…).
+   * מחרוזת ריקה = לא לשלוח הודעת וואטסאפ לאדמין.
+   */
+  admin_phone: string;
 }
 
 /**

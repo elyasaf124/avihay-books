@@ -16,13 +16,15 @@ import { he } from "../../i18n/he";
 import { theme } from "../../theme";
 import {
   cellRefToSummary,
-  filterCellRefsForPlacement,
   findCellsMatchingName,
+  findFirstDisplayCellId,
   findStoreMapCellById,
+  listAllCells,
   resolvePositionForPlacement,
   type CellRef,
 } from "../../utils/storeMapCells";
 import { MoveBookModal, type MapPlacementSubmitTarget } from "./MoveBookModal";
+import { useEnsureCell } from "../../api/storeMap";
 
 function interpolate(template: string, vars: Record<string, string>): string {
   return Object.entries(vars).reduce((s, [k, v]) => {
@@ -36,7 +38,7 @@ interface Props {
   /** כמה רשומות למקם (`quantity_in_cell: 1` לכל סלוט) */
   slotCount: number;
   preview: { title: string; author: string; supplier_color?: string };
-  /** התאמה למדיניות `is_new` — חדשים רק בארון התצוגה; ישנים — בכל מקום חוץ מתצוגה (כולל סטנד) */
+  /** האם הספר מסומן `is_new` — משפיע על ברירת מחדל ליצירת תא חסר (ארון תצוגה), לא על הגבלת יעדים */
   previewIsNew?: boolean;
   submitting: boolean;
   errorMessage?: string | null;
@@ -57,6 +59,7 @@ export function PerCopyPlacementModal({
 }: Props): JSX.Element {
   const shelfWord = he.unit.shelfLabel;
   const cellWord = he.unit.cellLabel;
+  const ensureCell = useEnsureCell();
 
   type RowState = {
     nameDraft: string;
@@ -147,19 +150,63 @@ export function PerCopyPlacementModal({
         });
         return;
       }
-      const rawHits = findCellsMatchingName(storeMap, raw, shelfWord);
-      const hits = filterCellRefsForPlacement(rawHits, storeMap, previewIsNew);
+      const hits = findCellsMatchingName(storeMap, raw, shelfWord);
       if (hits.length === 0) {
         setAmbiguousChoices(null);
-        setRows((prev) => {
-          const next = [...prev];
-          next[rowIdx] = {
-            ...next[rowIdx]!,
-            placement: null,
-            lookupError: he.addRemove.cellNameNotFound,
-          };
-          return next;
-        });
+        /** תא חסר — יוצרים בארון התצוגה (ספר חדש) או מבקשים בחירה היררכית. */
+        const tryCreate = async () => {
+          let shelfId: string | null = null;
+          if (previewIsNew) {
+            const displayCellId = findFirstDisplayCellId(storeMap);
+            const all = listAllCells(storeMap, shelfWord);
+            shelfId = all.find((c) => c.cellId === displayCellId)?.shelfId ?? null;
+            if (!shelfId) {
+              const displayUnit = storeMap?.units.find((u) => u.store_position === "display");
+              shelfId = displayUnit?.shelves[0]?.id ?? null;
+            }
+          }
+          if (!shelfId) {
+            setRows((prev) => {
+              const next = [...prev];
+              next[rowIdx] = {
+                ...next[rowIdx]!,
+                placement: null,
+                lookupError: he.addRemove.cellNameNotFoundCreateHint,
+              };
+              return next;
+            });
+            return;
+          }
+          try {
+            const cell = await ensureCell.mutateAsync({ shelfId, cellName: raw });
+            const all = listAllCells(storeMap, shelfWord);
+            const existingRef = all.find((c) => c.cellId === cell.id);
+            const cr: CellRef = existingRef ?? {
+              cellId: cell.id,
+              cell_name: cell.cell_name,
+              cell_number: cell.cell_number,
+              unitId: "",
+              unitName: "",
+              sideId: null,
+              sideLabel: null,
+              shelfId: cell.shelf_id,
+              shelfLabel: "",
+              shelf_number: 0,
+            };
+            applyCellToRow(rowIdx, cr);
+          } catch {
+            setRows((prev) => {
+              const next = [...prev];
+              next[rowIdx] = {
+                ...next[rowIdx]!,
+                placement: null,
+                lookupError: he.addRemove.createNewCellFailed,
+              };
+              return next;
+            });
+          }
+        };
+        void tryCreate();
         return;
       }
       if (hits.length === 1) {
@@ -178,7 +225,7 @@ export function PerCopyPlacementModal({
         return next;
       });
     },
-    [rows, storeMap, shelfWord, applyCellToRow, previewIsNew],
+    [rows, storeMap, shelfWord, applyCellToRow, previewIsNew, ensureCell],
   );
 
   const canSubmitInner = !submitting && slotCount > 0;

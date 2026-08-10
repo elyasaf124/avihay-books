@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import {
   findAllShelvingUnits,
@@ -6,9 +7,16 @@ import {
 } from "../repos/shelvingUnits.repo.js";
 import { findShelvesBySide, findShelvesByUnit } from "../repos/shelves.repo.js";
 import { findUnitSidesByUnit } from "../repos/unitSides.repo.js";
-import { findCellsByShelf } from "../repos/cells.repo.js";
+import { ensureCellOnShelf, findCellsByShelf } from "../repos/cells.repo.js";
+import { invalidateStoreMapCache } from "../services/storeMapCache.js";
 
 export const shelvingUnitsRouter = Router();
+
+const ensureCellBodySchema = z.object({
+  cell_name: z.string().min(1).max(20),
+  cell_number: z.number().int().min(1).optional(),
+  capacity: z.number().int().min(1).optional(),
+});
 
 shelvingUnitsRouter.get(
   "/",
@@ -51,5 +59,21 @@ shelvingUnitsRouter.get(
   "/shelves/:shelfId/cells",
   asyncHandler(async (req, res) => {
     res.json(await findCellsByShelf(req.params.shelfId!));
+  }),
+);
+
+/** יצירת / הבטחת תא במדף — לתאים שלא נוצרו בייבוא כי היו ריקים. */
+shelvingUnitsRouter.post(
+  "/shelves/:shelfId/cells",
+  asyncHandler(async (req, res) => {
+    const body = ensureCellBodySchema.parse(req.body);
+    const cell = await ensureCellOnShelf({
+      shelf_id: req.params.shelfId!,
+      cell_name: body.cell_name,
+      cell_number: body.cell_number,
+      capacity: body.capacity,
+    });
+    invalidateStoreMapCache();
+    res.status(201).json(cell);
   }),
 );

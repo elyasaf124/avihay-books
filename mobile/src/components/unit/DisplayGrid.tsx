@@ -41,12 +41,14 @@ function cellSummaryForAggregate(agg: DisplayBookAggregate): string {
   return interpolate(he.unit.displayGridManyCells, { n: String(names.length) });
 }
 
-function aggregateHasShortage(agg: DisplayBookAggregate, shortagedIds: Set<string>): boolean {
-  return agg.spots.some((s) => shortagedIds.has(s.location_id) || s.is_pending_shortage);
+function aggregateHasShortage(agg: DisplayBookAggregate, _shortagedIds: Set<string>): boolean {
+  return agg.spots.some((s) => s.is_pending_shortage);
 }
 
-function setHasShortage(item: StacksSetItem, shortagedIds: Set<string>): boolean {
-  return shortagedIds.has(item.location_id) || Boolean(item.is_pending_shortage);
+function setHasShortage(item: StacksSetItem, _shortagedIds: Set<string>): boolean {
+  const qty = Math.max(0, Math.floor(Number(item.quantity_in_cell)));
+  if (qty > 0) return false;
+  return Boolean(item.is_pending_shortage);
 }
 
 export function DisplayGrid({

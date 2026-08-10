@@ -5,6 +5,7 @@ const sup = (i: number) => mockSuppliers[i]!;
 
 const uid = (n: number) => `90000000-0000-4000-a000-${String(n).padStart(12, "0")}`;
 const bookUid = (n: number) => `90000000-0000-4000-b000-${String(n).padStart(12, "0")}`;
+const cellUid = (n: number) => `90000000-0000-4000-c000-${String(n).padStart(12, "0")}`;
 
 /** רשימת חוסרים לדוגמה — נכנסת כאשר ה־API לא זמין. */
 export const mockShortageList: ShortageListItem[] = [
@@ -12,7 +13,9 @@ export const mockShortageList: ShortageListItem[] = [
     id: uid(1),
     book_id: bookUid(1),
     location_id: null,
+    cell_id: cellUid(12),
     cell_name: "12",
+    missing_count: 2,
     added_at: "2026-05-09T08:11:00.000Z",
     status: "shortage",
     resolved_at: null,
@@ -30,7 +33,9 @@ export const mockShortageList: ShortageListItem[] = [
     id: uid(2),
     book_id: bookUid(2),
     location_id: null,
+    cell_id: cellUid(5),
     cell_name: "5",
+    missing_count: 1,
     added_at: "2026-05-08T15:42:00.000Z",
     status: "shortage",
     resolved_at: null,
@@ -48,7 +53,9 @@ export const mockShortageList: ShortageListItem[] = [
     id: uid(3),
     book_id: bookUid(3),
     location_id: null,
+    cell_id: null,
     cell_name: null,
+    missing_count: 1,
     added_at: "2026-05-07T11:05:00.000Z",
     status: "order_pending",
     resolved_at: null,
@@ -66,7 +73,9 @@ export const mockShortageList: ShortageListItem[] = [
     id: uid(4),
     book_id: bookUid(1),
     location_id: null,
+    cell_id: cellUid(4),
     cell_name: "4",
+    missing_count: 1,
     added_at: "2026-05-06T09:30:00.000Z",
     status: "shortage",
     resolved_at: null,
@@ -84,7 +93,9 @@ export const mockShortageList: ShortageListItem[] = [
     id: uid(5),
     book_id: bookUid(5),
     location_id: null,
+    cell_id: cellUid(7),
     cell_name: "7",
+    missing_count: 1,
     added_at: "2026-05-05T14:00:00.000Z",
     status: "shortage",
     resolved_at: null,

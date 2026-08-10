@@ -1,4 +1,12 @@
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import type { ShortageListItem, ShortageStatus } from "@avihay-books/shared";
 import { theme } from "../../theme";
@@ -9,6 +17,12 @@ interface Props {
   busyMoving?: boolean;
   busyCompleting?: boolean;
   busyRemoving?: boolean;
+  busyPrice?: boolean;
+  busyStock?: boolean;
+  priceDraft: string;
+  onPriceDraftChange: (bookId: string, value: string) => void;
+  onApplyPrice: (item: ShortageListItem) => void;
+  onStockChange: (item: ShortageListItem, nextQty: number) => void;
   onMoveToOrder: (item: ShortageListItem) => void;
   onComplete: (item: ShortageListItem) => void;
   onRemove: (item: ShortageListItem) => void;
@@ -16,20 +30,30 @@ interface Props {
 
 /**
  * שורה בודדת ב־`shortage list`: כותר + מחבר, מלאי נוכחי, כמות חידוש מומלצת,
- * כפתור «העבר להזמנה» ו«השלמת חוסר». הסטטוס משפיע על המראה (`order_pending` מקבל באדג׳ ירוק).
+ * מחיר לעריכה, כפתור «העבר להזמנה» ו«השלמת חוסר».
+ * הסטטוס משפיע על המראה (`order_pending` מקבל באדג׳ ירוק).
  */
 export function ShortageRow({
   item,
   busyMoving,
   busyCompleting,
   busyRemoving,
+  busyPrice,
+  busyStock,
+  priceDraft,
+  onPriceDraftChange,
+  onApplyPrice,
+  onStockChange,
   onMoveToOrder,
   onComplete,
   onRemove,
 }: Props): JSX.Element {
   const pendingOrder = item.status === "order_pending";
-  const blocked = !!(busyMoving || busyCompleting || busyRemoving);
-  const noStock = item.book_stock_quantity <= 0;
+  const blocked = !!(busyMoving || busyCompleting || busyRemoving || busyPrice || busyStock);
+  const stockQty = item.book_stock_quantity;
+  const noStock = stockQty <= 0;
+  const canDecStock = !blocked && stockQty > 0;
+  const canIncStock = !blocked && stockQty < 999;
 
   return (
     <View style={[styles.row, theme.shadow.inset]}>
@@ -78,15 +102,111 @@ export function ShortageRow({
             {he.unit.cellLabel} {item.cell_name}
           </Text>
         ) : null}
+        {item.missing_count > 1 ? (
+          <Text style={styles.missingCount} numberOfLines={1}>
+            {he.shortage.missingCopies.replace("{{count}}", String(item.missing_count))}
+          </Text>
+        ) : null}
 
         <View style={styles.statsRow}>
-          <Stat label={he.shortage.stockShort} value={String(item.book_stock_quantity)} />
+          <View style={styles.stat}>
+            <Text style={styles.statLabel}>{he.shortage.stockShort}</Text>
+            <View
+              style={[styles.stockStepper, blocked && styles.stockStepperDisabled]}
+              accessibilityRole="adjustable"
+            >
+              <Pressable
+                onPress={() => onStockChange(item, stockQty - 1)}
+                disabled={!canDecStock}
+                style={({ pressed }) => [
+                  styles.stockBtn,
+                  !canDecStock && styles.stockBtnDisabled,
+                  pressed && canDecStock && styles.stockBtnPressed,
+                ]}
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                accessibilityRole="button"
+                accessibilityLabel={he.shortage.stockDecreaseA11y}
+              >
+                <Ionicons
+                  name="remove"
+                  size={16}
+                  color={canDecStock ? theme.colors.primary : theme.colors.outline}
+                />
+              </Pressable>
+              {busyStock ? (
+                <ActivityIndicator
+                  color={theme.colors.primary}
+                  size="small"
+                  style={styles.stockValueBusy}
+                />
+              ) : (
+                <Text
+                  style={styles.stockValue}
+                  accessibilityLabel={`${he.shortage.stockShort}: ${stockQty}`}
+                >
+                  {stockQty}
+                </Text>
+              )}
+              <Pressable
+                onPress={() => onStockChange(item, stockQty + 1)}
+                disabled={!canIncStock}
+                style={({ pressed }) => [
+                  styles.stockBtn,
+                  !canIncStock && styles.stockBtnDisabled,
+                  pressed && canIncStock && styles.stockBtnPressed,
+                ]}
+                hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+                accessibilityRole="button"
+                accessibilityLabel={he.shortage.stockIncreaseA11y}
+              >
+                <Ionicons
+                  name="add"
+                  size={16}
+                  color={canIncStock ? theme.colors.primary : theme.colors.outline}
+                />
+              </Pressable>
+            </View>
+          </View>
           <View style={styles.statsDivider} />
           <Stat
             label={he.shortage.restock}
             value={String(Math.max(item.book_reorder_threshold, 1))}
             accent
           />
+        </View>
+
+        <View style={styles.priceBlock}>
+          <Text style={styles.priceLabel}>{he.shortage.priceLabel}</Text>
+          <View style={styles.priceRow}>
+            <Text style={styles.pricePrefix}>{he.unit.pricePrefix}</Text>
+            <TextInput
+              value={priceDraft}
+              onChangeText={(t) => onPriceDraftChange(item.book_id, t)}
+              keyboardType="decimal-pad"
+              editable={!blocked}
+              style={[styles.priceInput, blocked && styles.priceInputMuted]}
+              placeholder="—"
+              placeholderTextColor={theme.colors.onSurfaceVariant}
+              textAlign="left"
+            />
+            <Pressable
+              disabled={blocked}
+              onPress={() => onApplyPrice(item)}
+              style={({ pressed }) => [
+                styles.applyPriceBtn,
+                blocked && styles.applyPriceBtnMuted,
+                pressed && !blocked && styles.applyPriceBtnPressed,
+              ]}
+            >
+              {busyPrice ? (
+                <ActivityIndicator color={theme.colors.primary} size="small" />
+              ) : (
+                <Text style={[styles.applyPriceText, blocked && styles.applyPriceTextMuted]}>
+                  {he.shortage.applyPrice}
+                </Text>
+              )}
+            </Pressable>
+          </View>
         </View>
 
         <View style={styles.actionsRow}>
@@ -221,6 +341,11 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     textAlign: "left",
   },
+  missingCount: {
+    ...theme.typography.labelMd,
+    color: theme.colors.error,
+    textAlign: "left",
+  },
   statsRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -231,11 +356,88 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
   },
   stat: { gap: 2 },
+  stockStepper: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: theme.colors.surfaceContainerLowest,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+    borderRadius: theme.radius.full,
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+    gap: 2,
+  },
+  stockStepperDisabled: { opacity: 0.55 },
+  stockBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: theme.radius.full,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stockBtnDisabled: { opacity: 0.45 },
+  stockBtnPressed: { backgroundColor: theme.colors.surfaceContainerHigh },
+  stockValue: {
+    ...theme.typography.headlineSm,
+    color: theme.colors.primary,
+    minWidth: 28,
+    textAlign: "center",
+    paddingHorizontal: theme.spacing.xs,
+  },
+  stockValueBusy: {
+    minWidth: 28,
+    marginHorizontal: theme.spacing.xs,
+  },
   statsDivider: {
     width: 1,
     height: 24,
     backgroundColor: theme.colors.outlineVariant,
   },
+  priceBlock: { gap: theme.spacing.xs },
+  priceLabel: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: "left",
+  },
+  priceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+  },
+  pricePrefix: {
+    ...theme.typography.labelMd,
+    color: theme.colors.onSurface,
+  },
+  priceInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: theme.colors.outlineVariant,
+    borderRadius: theme.radius.md,
+    paddingVertical: Platform.OS === "ios" ? theme.spacing.sm : theme.spacing.xs,
+    paddingHorizontal: theme.spacing.md,
+    backgroundColor: theme.colors.surfaceContainerLow,
+    ...theme.typography.bodyMd,
+    color: theme.colors.onSurface,
+    textAlign: "left",
+  },
+  priceInputMuted: { opacity: 0.55 },
+  applyPriceBtn: {
+    minWidth: 96,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    backgroundColor: theme.colors.secondaryContainer,
+    borderRadius: theme.radius.md,
+  },
+  applyPriceBtnPressed: { opacity: 0.88 },
+  applyPriceBtnMuted: { opacity: 0.45 },
+  applyPriceText: {
+    ...theme.typography.labelMd,
+    color: theme.colors.primary,
+  },
+  applyPriceTextMuted: { color: theme.colors.onSurfaceVariant },
   actionsRow: {
     flexDirection: "row",
     gap: theme.spacing.sm,

@@ -5,7 +5,6 @@ import {
   existsOpenNotification,
   notificationRetentionInterval,
   upsertNotification,
-  upsertOpenLowStockNotification,
 } from "../repos/notifications.repo.js";
 import { logger } from "../utils/logger.js";
 import type { AppNotification, Book } from "@avihay-books/shared";
@@ -13,25 +12,17 @@ import type { AppNotification, Book } from "@avihay-books/shared";
 /**
  * שירות התראות (`Phase 5`):
  *
- *   `low_stock` — נוצר **מיידית** כשמלאי יורד לסף (`maybeNotifyLowStockForBook`), וגם ב-cron כגיבוי.
+ *   `low_stock` — מבוטל; לא נוצר יותר (לא באירוע מלאי ולא ב-cron).
  *   שאר ההתראות — בדיקות תקופתיות שיוצרות רשומות חדשות ב־`notifications`:
  *
- *   1. `low_stock`              — `stock_quantity <= reorder_threshold` (cron כגיבוי).
- *   2. `remove_from_display`    — ספר חדש (`is_new = TRUE`) שעבר את חלון הזמן מאז `added_at`
+ *   1. `remove_from_display`    — ספר חדש (`is_new = TRUE`) שעבר את חלון הזמן מאז `added_at`
  *      (ברירת מחדל חודש; ניתן לעקוף עם `REMOVE_FROM_DISPLAY_AFTER`, למשל `1 minute` לבדיקות).
- *   3. `supplier_reorder_reminder` — לא הוזמן מספק זה כבר שבועיים (`last_order_date < now() - 14d`).
- *   4. `orders_without_supplier` — הזמנות `pending` ללא `supplier_id` (יומי ב־08:00).
+ *   2. `supplier_reorder_reminder` — לא הוזמן מספק זה כבר שבועיים (`last_order_date < now() - 14d`).
+ *   3. `orders_without_supplier` — הזמנות `pending` ללא `supplier_id` (יומי ב־08:00).
  *
  * כל בדיקה לפני יצירת התראה בודקת שאין כבר התראה «פתוחה» מאותו טיפוס וקישור,
  * כדי לא להציף את המסך באותה הודעה כל מחזור (`existsOpenNotification`).
  */
-
-interface LowStockRow {
-  book_id: string;
-  title: string;
-  stock_quantity: number;
-  reorder_threshold: number;
-}
 
 interface RemoveFromDisplayRow {
   book_id: string;
@@ -45,6 +36,7 @@ interface SupplierReorderRow {
 }
 
 export interface NotificationCheckSummary {
+  /** תמיד 0 — יצירת `low_stock` מבוטלת (נשאר לתאימות API). */
   low_stock_created: number;
   remove_from_display_created: number;
   /** כמה ספרים עמדו בתנאי הגיל (`is_new`, `added_at`, מחוץ לדה־דופ לרישומים חדשים) */
@@ -63,76 +55,17 @@ function removeFromDisplayAfterInterval(): string {
   return raw && raw.length > 0 ? raw : DEFAULT_REMOVE_FROM_DISPLAY_AFTER;
 }
 
-async function findLowStockCandidates(): Promise<LowStockRow[]> {
-  const { rows } = await pool.query<LowStockRow>(
-    `SELECT id AS book_id, title, stock_quantity, reorder_threshold
-       FROM books
-      WHERE is_active = TRUE
-        AND stock_quantity <= reorder_threshold`,
-  );
-  return rows;
-}
-
-function lowStockMessage(row: LowStockRow): string {
-  return (
-    `מלאי נמוך: "${row.title}" — נשארו ${row.stock_quantity} עותקים ` +
-    `(סף הזמנה: ${row.reorder_threshold})`
-  );
-}
-
-async function createLowStockNotificationIfNeeded(row: LowStockRow): Promise<AppNotification | null> {
-  const already = await existsOpenNotification({ type: "low_stock", book_id: row.book_id });
-  if (already) return null;
-  return upsertOpenLowStockNotification({
-    book_id: row.book_id,
-    message: lowStockMessage(row),
-  });
-}
-
-/**
- * התראת מלאi נמוך מיידית — אחרי ירידת מלאi, חציית סף, או הורדת סף הזמנה.
- * לא מופעל בהעלאת מלאi (גם אם עדיין מתחת לסף).
- */
+/** מבוטל — לא יוצרים יותר התראות מלאי נמוך. */
 export async function notifyLowStockAfterBookChange(
-  before: Book,
-  after: Book,
+  _before: Book,
+  _after: Book,
 ): Promise<AppNotification | null> {
-  if (!after.is_active) return null;
-
-  const stock = Number(after.stock_quantity);
-  const threshold = Number(after.reorder_threshold);
-  if (!Number.isFinite(stock) || !Number.isFinite(threshold)) return null;
-  if (stock > threshold) return null;
-
-  const beforeStock = Number(before.stock_quantity);
-  const beforeThreshold = Number(before.reorder_threshold);
-  const stockDecreased = stock < beforeStock;
-  const stockIncreased = stock > beforeStock;
-  const thresholdChanged = threshold !== beforeThreshold;
-  const crossedIntoLow = beforeStock > beforeThreshold && stock <= threshold;
-
-  if (stockIncreased) return null;
-  if (!stockDecreased && !crossedIntoLow && !(thresholdChanged && stock <= threshold)) {
-    return null;
-  }
-
-  return upsertOpenLowStockNotification({
-    book_id: after.id,
-    message: lowStockMessage({
-      book_id: after.id,
-      title: after.title,
-      stock_quantity: stock,
-      reorder_threshold: threshold,
-    }),
-  });
+  return null;
 }
 
 /** @deprecated Use notifyLowStockAfterBookChange — נשמר לתאימות. */
-export async function maybeNotifyLowStockForBook(book: Book): Promise<AppNotification | null> {
-  return notifyLowStockAfterBookChange(
-    { ...book, stock_quantity: book.stock_quantity + 1 },
-    book,
-  );
+export async function maybeNotifyLowStockForBook(_book: Book): Promise<AppNotification | null> {
+  return null;
 }
 
 async function findRemoveFromDisplayCandidates(): Promise<RemoveFromDisplayRow[]> {
@@ -158,13 +91,9 @@ async function findSupplierReorderCandidates(): Promise<SupplierReorderRow[]> {
   return rows;
 }
 
+/** מבוטל — לא יוצרים יותר התראות מלאי נמוך. */
 export async function runLowStockJob(): Promise<AppNotification[]> {
-  const created: AppNotification[] = [];
-  for (const row of await findLowStockCandidates()) {
-    const notification = await createLowStockNotificationIfNeeded(row);
-    if (notification) created.push(notification);
-  }
-  return created;
+  return [];
 }
 
 export async function runRemoveFromDisplayJob(): Promise<{

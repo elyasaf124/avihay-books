@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { theme } from "../theme";
 import { he } from "../i18n/he";
@@ -19,6 +20,10 @@ export interface ConfirmDialogProps {
 /**
  * דיאלוג אישור משותף לכל פעולה הרסנית או דורשת אישור.
  * דרישת רוחב (cross-cutting) של תוכנית העבודה.
+ *
+ * חשוב: כשפותחים מ־`Pressable` של `react-native-gesture-handler` (למשל שדרת ספר),
+ * אותו מגע יכול «ליפול» ל־backdrop ולסגור מיד את המודאל — לכן מתעלמים מלחיצות
+ * backdrop לזמן קצר אחרי הפתיחה.
  */
 export function ConfirmDialog({
   visible,
@@ -30,9 +35,28 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
 }: ConfirmDialogProps): JSX.Element {
+  const allowBackdropCloseRef = useRef(false);
+
+  useEffect(() => {
+    if (!visible) {
+      allowBackdropCloseRef.current = false;
+      return;
+    }
+    allowBackdropCloseRef.current = false;
+    const timer = setTimeout(() => {
+      allowBackdropCloseRef.current = true;
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [visible]);
+
+  const onBackdropPress = () => {
+    if (!allowBackdropCloseRef.current) return;
+    onCancel();
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
-      <Pressable style={styles.backdrop} onPress={onCancel}>
+      <Pressable style={styles.backdrop} onPress={onBackdropPress}>
         <Pressable style={styles.card} onPress={(e) => e.stopPropagation()}>
           <Text style={styles.title}>{title}</Text>
           {message ? <Text style={styles.message}>{message}</Text> : null}

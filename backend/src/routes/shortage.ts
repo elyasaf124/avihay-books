@@ -3,7 +3,7 @@ import { z } from "zod";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import {
   deleteActiveShortageByLocationId,
-  deleteShortageById,
+  deleteShortagesInGroupById,
   findAllShortagesExpanded,
   updateShortageStatus,
   upsertShortage,
@@ -54,18 +54,27 @@ shortageRouter.delete(
   "/by-location/:locationId",
   asyncHandler(async (req, res) => {
     const { locationId } = locationIdParamSchema.parse(req.params);
-    const ok = await deleteActiveShortageByLocationId(locationId);
-    if (!ok) throw new HttpError(404, "shortage_not_found");
+    const result = await deleteActiveShortageByLocationId(locationId);
+    if (!result) throw new HttpError(404, "shortage_not_found");
     invalidateStoreMapCacheForLocation(locationId);
-    res.status(204).send();
+    res.json({
+      still_pending: result.stillPending,
+      quantity_in_cell: result.quantityInCell,
+    });
   }),
 );
+
+const deleteShortageBodySchema = z.object({
+  quantity: z.number().int().positive().max(9999).optional(),
+});
 
 shortageRouter.delete(
   "/:id",
   asyncHandler(async (req, res) => {
-    const ok = await deleteShortageById(req.params.id!);
-    if (!ok) throw new HttpError(404, "shortage_not_found");
+    const body = deleteShortageBodySchema.parse(req.body ?? {});
+    const quantity = body.quantity ?? 1;
+    const { deletedCount } = await deleteShortagesInGroupById(req.params.id!, quantity);
+    if (deletedCount === 0) throw new HttpError(404, "shortage_not_found");
     invalidateStoreMapCache();
     res.status(204).send();
   }),
@@ -80,14 +89,18 @@ shortageRouter.patch(
   }),
 );
 
-const statusPatchSchema = z.object({ status: z.enum(SHORTAGE_STATUSES) });
+const statusPatchSchema = z.object({
+  status: z.enum(SHORTAGE_STATUSES),
+  quantity: z.number().int().positive().max(9999).optional(),
+});
 
 shortageRouter.patch(
   "/:id/status",
   asyncHandler(async (req, res) => {
-    const { status } = statusPatchSchema.parse(req.body);
+    const { status, quantity } = statusPatchSchema.parse(req.body);
     if (status === "completed") {
-      const row = await completeShortage(req.params.id!);
+      const row = await completeShortage(req.params.id!, quantity ?? 1);
+      /** קבוצה יכולה לכלול כמה `location_id` באותו תא — מרעננים את כל המפה. */
       invalidateStoreMapCache();
       res.json(row);
       return;

@@ -10,7 +10,7 @@ import { api } from "./client";
 import { NOTIFICATIONS_LIST_KEY, NOTIFICATIONS_UNREAD_KEY } from "./notifications";
 import { DASHBOARD_STATS_KEY } from "./dashboard";
 import {
-  patchStoreMapLocationShortage,
+  adjustStoreMapLocationShortage,
   softInvalidateStoreMap,
 } from "./storeMap";
 import { mockSuppliers } from "../mocks/homeDashboard";
@@ -61,18 +61,38 @@ export function useAddShortage() {
       });
       return data;
     },
+    onMutate: (vars) => {
+      if (vars.locationId) {
+        adjustStoreMapLocationShortage(
+          client,
+          vars.locationId,
+          -(vars.soldQuantity ?? 1),
+          true,
+        );
+      }
+    },
+    onError: (_err, vars) => {
+      if (vars.locationId) {
+        adjustStoreMapLocationShortage(
+          client,
+          vars.locationId,
+          vars.soldQuantity ?? 1,
+          false,
+        );
+      }
+    },
     onSuccess: (_data, vars) => {
       if (vars.locationId) {
-        patchStoreMapLocationShortage(client, vars.locationId, true);
+        /** סנכרון מול השרת — מונע drift בין qty ל־ghost אחרי לחיצות מהירות. */
+        void client.invalidateQueries({
+          queryKey: ["store-map", "unit"],
+          refetchType: "active",
+        });
       } else {
         softInvalidateStoreMap(client);
       }
       void client.invalidateQueries({ queryKey: ["shortage"] });
       void client.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
-      /**
-       * `refetchQueries` כפה שתי בקשות נוספות בכל לחיצה על ספר, גם כשמסך
-       * ההתראות לא מוצג. סימון stale בלבד — הן יתרעננו כשהמסך שלהן ייפתח.
-       */
       void client.invalidateQueries({
         queryKey: NOTIFICATIONS_LIST_KEY,
         refetchType: "none",
@@ -108,6 +128,8 @@ export function useMoveBook() {
     onSuccess: () => {
       softInvalidateStoreMap(client);
       void client.invalidateQueries({ queryKey: ["books", "inventory"] });
+      // `shortage_list.location_id` נשאר אותו מזהה — אחרי העברת התא שם התא ברשימת החוסרים משתנה
+      void client.invalidateQueries({ queryKey: ["shortage"] });
     },
   });
 }

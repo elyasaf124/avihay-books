@@ -416,6 +416,9 @@ async function main(): Promise<void> {
   const shelfIds = new Map<string, string>();
   const cellIds = new Map<string, string>();
   const nextPosInCell = new Map<string, number>();
+  /** משטחים שטוחים (תצוגה/סטים): שם תא → cell_number ייחודי במדף */
+  const flatCellNumByName = new Map<string, number>();
+  const flatNextCellNum = new Map<string, number>();
   let shelfCtr = 0;
   let cellCtr = 0;
 
@@ -516,16 +519,41 @@ async function main(): Promise<void> {
       cellNum = cellNum ?? meta.cell;
     }
 
-    // Partial / flat surfaces
     if (shelfNum == null) shelfNum = 1;
-    if (cellNum == null) cellNum = 1;
+
+    // סטנד חוברות: באקסל «סטנד» — ממפים ל־«חוברת N» שנוצר מראש
+    if (r.wall === "סטנד חוברות" && (cellName === "סטנד" || !cellName)) {
+      cellName = truncateCellName(`חוברת ${shelfNum}`, r.row, report.warnings);
+    }
+
     if (!cellName) {
       if (r.wall === "סטים") cellName = "סטים";
-      else if (r.wall === "ארון תצוגה") cellName = `תצוגה ${cellNum}`;
-      else if (r.wall === "סטנד חוברות") cellName = `חוברת ${shelfNum}`;
+      else if (r.wall === "ארון תצוגה") cellName = `תצוגה ${cellNum ?? 1}`;
       else if (r.wall === "ספרי כיס") cellName = `מדף ${shelfNum}`;
-      else cellName = String(cellNum);
+      else cellName = String(cellNum ?? 1);
       cellName = truncateCellName(cellName, r.row, report.warnings);
+    }
+
+    const isFlatSurface =
+      wall.kind === "unit" && (wall.position === "display" || wall.position === "stacks");
+
+    if (cellNum == null) {
+      if (isFlatSurface) {
+        // שמות תא שונים על אותו מדף (למשל תצוגה / תצוגה חלון) → cell_number נפרד
+        const allocKey = `${wall.position}:${shelfNum}`;
+        const nameKey = `${allocKey}:${cellName}`;
+        const existingNum = flatCellNumByName.get(nameKey);
+        if (existingNum != null) {
+          cellNum = existingNum;
+        } else {
+          const next = flatNextCellNum.get(allocKey) ?? 1;
+          cellNum = next;
+          flatNextCellNum.set(allocKey, next + 1);
+          flatCellNumByName.set(nameKey, cellNum);
+        }
+      } else {
+        cellNum = 1;
+      }
     }
 
     if (wall.kind === "island_side") {
@@ -615,7 +643,7 @@ async function main(): Promise<void> {
       warehouseTotal = warehouses.reduce((a, b) => a + b, 0);
     }
     const stock = sumStore + warehouseTotal;
-    /** `is_new` רק אם כל המיקומים בתצוגה — אחרת `assertValidBookCellPlacement` ייכשל. */
+    /** `is_new` רק אם כל המיקומים בתצוגה (סימון לוגי; אין הגבלת מיקום בשרת). */
     const isNew =
       g.rows.length > 0 && g.rows.every((r) => r.wall === "ארון תצוגה");
 

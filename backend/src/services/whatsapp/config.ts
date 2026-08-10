@@ -32,7 +32,6 @@ export interface WhatsappRuntimeConfig {
   humanHoursEnd: number;
   templateLang: string;
   templateOrderReady: string;
-  adminPhone: string;
 }
 
 function parseHoursRange(raw: string | undefined): { start: number; end: number } {
@@ -63,7 +62,6 @@ export function getWhatsappConfig(): WhatsappRuntimeConfig {
     humanHoursEnd: hours.end,
     templateLang: env("WHATSAPP_TEMPLATE_LANG") ?? "he",
     templateOrderReady: env("WHATSAPP_TEMPLATE_ORDER_READY") ?? "order_ready_pickup",
-    adminPhone: env("WHATSAPP_ADMIN_PHONE") ?? "972508846929",
   };
 }
 
@@ -117,6 +115,7 @@ export function botStoreInfoDefaults(): BotStoreInfo {
     delivery_point_fee: envNum("BOT_DELIVERY_POINT_FEE", 25),
     human_hours_start: hours.start,
     human_hours_end: hours.end,
+    admin_phone: "972508846929",
   };
 }
 

@@ -29,6 +29,7 @@ function draftToStoreInfo(draft: Record<keyof BotStoreInfo, string>): BotStoreIn
     delivery_point_fee: num(draft.delivery_point_fee, 0),
     human_hours_start: num(draft.human_hours_start, 0),
     human_hours_end: num(draft.human_hours_end, 0),
+    admin_phone: draft.admin_phone.trim(),
   };
 }
 
@@ -55,6 +56,7 @@ export function StoreInfoEditor(): JSX.Element {
       delivery_point_fee: String(s.delivery_point_fee),
       human_hours_start: String(s.human_hours_start),
       human_hours_end: String(s.human_hours_end),
+      admin_phone: s.admin_phone ?? "",
     });
   }, [configQuery.data, draft]);
 
@@ -91,6 +93,13 @@ export function StoreInfoEditor(): JSX.Element {
               <LabeledInput label={he.bot.fieldDeliveryPointFee} value={draft.delivery_point_fee} onChangeText={(v) => set("delivery_point_fee", v)} keyboardType="numeric" />
               <LabeledInput label={he.bot.fieldHumanHoursStart} value={draft.human_hours_start} onChangeText={(v) => set("human_hours_start", v)} keyboardType="numeric" />
               <LabeledInput label={he.bot.fieldHumanHoursEnd} value={draft.human_hours_end} onChangeText={(v) => set("human_hours_end", v)} keyboardType="numeric" />
+              <LabeledInput
+                label={he.bot.fieldAdminPhone}
+                value={draft.admin_phone}
+                onChangeText={(v) => set("admin_phone", v)}
+                hint={he.bot.fieldAdminPhoneHint}
+                keyboardType="phone-pad"
+              />
           </BotKeyboardScrollView>
         ) : null}
       </CenterState>

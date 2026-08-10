@@ -1,5 +1,6 @@
 import type { StoreMapBook, StoreMapShelf } from "@avihay-books/shared";
 import { sortByHebrewKeys } from "./hebrewSort";
+import { resolveGhostSpineSlots } from "./spineShortageSlots";
 
 /** מיקום בתצוגה — כולל `cell_id` / `cell_name` ל־`PATCH` ולתצוגה (לא חלק מ־`StoreMapBook`). */
 export interface DisplayLocationSpot extends StoreMapBook {
@@ -23,7 +24,8 @@ export interface StacksSetItem extends DisplayLocationSpot {
 export function expandStacksFromShelves(
   shelves: StoreMapShelf[],
   cellBooks: Map<string, StoreMapBook[]>,
-  shortagedIds?: Set<string>,
+  _shortagedIds?: Set<string>,
+  ghostSlotsByLocation?: ReadonlyMap<string, readonly number[]>,
 ): StacksSetItem[] {
   const items: StacksSetItem[] = [];
   for (const shelf of shelves) {
@@ -31,17 +33,28 @@ export function expandStacksFromShelves(
       const books = cellBooks.get(cell.id) ?? cell.books;
       for (const b of books) {
         const qty = Math.max(0, Math.floor(Number(b.quantity_in_cell)));
-        const isShortaged =
-          Boolean(b.is_pending_shortage) || Boolean(shortagedIds?.has(b.location_id));
-        // מיקום חסר (qty 0 + shortage) — פריט אחד מטושטש בגריד סטים.
-        const count = qty > 0 ? qty : isShortaged ? 1 : 0;
-        for (let i = 0; i < count; i++) {
+        const shortageCount = Math.max(
+          0,
+          Math.floor(
+            Number(b.pending_shortage_count ?? (b.is_pending_shortage ? 1 : 0)),
+          ),
+        );
+        const totalSlots = qty + shortageCount;
+        const ghostSlots = resolveGhostSpineSlots(
+          totalSlots,
+          shortageCount,
+          ghostSlotsByLocation?.get(b.location_id),
+        );
+        for (let slot = 0; slot < totalSlots; slot++) {
+          const dimmed = ghostSlots.has(slot);
           items.push({
             ...b,
-            quantity_in_cell: 1,
+            quantity_in_cell: dimmed ? 0 : 1,
+            is_pending_shortage: dimmed,
+            pending_shortage_count: dimmed ? shortageCount : 0,
             cell_id: cell.id,
             cell_name: cell.cell_name,
-            copy_index: i,
+            copy_index: slot,
           });
         }
       }

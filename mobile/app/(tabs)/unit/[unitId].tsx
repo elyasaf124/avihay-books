@@ -46,13 +46,21 @@ import {
   type DisplayBookAggregate,
   type StacksSetItem,
 } from "../../../src/utils/displayBookAggregate";
+import {
+  addPreferredGhostSlot,
+  reconcilePreferredGhostSlots,
+  removePreferredGhostSlot,
+} from "../../../src/utils/spineShortageSlots";
 import { markUnitOpenFor } from "../../../src/utils/unitOpenTiming";
 import { resetSpineCounters, spineCounters } from "../../../src/utils/spineRenderCounter";
 import { startBookTapTiming } from "../../../src/utils/bookTapTiming";
 import { startJsBlockHeartbeat } from "../../../src/utils/renderPhaseProbe";
 
-function isLocationShortaged(book: StoreMapBook, shortagedIds: Set<string>): boolean {
-  return shortagedIds.has(book.location_id) || Boolean(book.is_pending_shortage);
+function isLocationShortaged(book: StoreMapBook): boolean {
+  /** רק שדרת־החוסר (`quantity_in_cell === 0` + דגל מה־cache) — בלי Set אופטימי נפרד. */
+  const qty = Math.max(0, Math.floor(Number(book.quantity_in_cell)));
+  if (qty > 0) return false;
+  return Boolean(book.is_pending_shortage);
 }
 
 /** זהות יציבה — מונע רינדור מחדש של ה־`FlatList` כשאין מדפים להציג. */
@@ -60,6 +68,9 @@ const NO_SHELVES: StoreMapShelf[] = [];
 /** זהויות יציבות ליחידות שאינן תצוגה/ערימות, כדי שלא לחשב צבירות מיותרות. */
 const NO_AGGREGATES: DisplayBookAggregate[] = [];
 const NO_STACKS_SETS: StacksSetItem[] = [];
+/** Set ריק יציב — הטשטוש מגיע רק מ־`is_pending_shortage` ב־cache. */
+const EMPTY_SHORTAGED_IDS: Set<string> = new Set();
+const EMPTY_GHOST_SLOTS: ReadonlyMap<string, readonly number[]> = new Map();
 
 function shelfKeyExtractor(shelf: StoreMapShelf): string {
   return shelf.id;
@@ -114,9 +125,17 @@ export default function UnitScreen(): JSX.Element {
         : null;
   const [saleFor, setSaleFor] = useState<DisplayBookAggregate | null>(null);
   const [undoShortageTargets, setUndoShortageTargets] = useState<StoreMapBook[]>([]);
+  /** אינדקס שדרה שנלחץ לכל יעד ביטול חוסר. */
+  const undoSpineSlotsRef = useRef<Map<string, number>>(new Map());
+  /**
+   * אינדקסי שדרה שסומנו כחוסר לפי `location_id` — כדי לטשטש את העותק שנלחץ
+   * (ולא תמיד את האחרון) כשיש כמה עותקים באותו מיקום.
+   */
+  const [ghostSlotsByLocation, setGhostSlotsByLocation] = useState<
+    ReadonlyMap<string, readonly number[]>
+  >(EMPTY_GHOST_SLOTS);
 
-  /** מיקומים (`location_id`) שסומנו אופטימית כחוסר — פר־עותק, לא לפי `book_id`. */
-  const [optimisticShortage, setOptimisticShortage] = useState<Set<string>>(new Set());
+  /** מיקומים שממתינים לביטול בזמן ש־add עדיין בדרך (מניעת race). */
   const pendingUndoLocationsRef = useRef<Set<string>>(new Set());
   const openTimingReadyLoggedRef = useRef(false);
   const openTimingPaintLoggedRef = useRef(false);
@@ -159,22 +178,6 @@ export default function UnitScreen(): JSX.Element {
   }, [unit, effectiveSideId]);
 
   const unitTopics = useMemo(() => (unit ? collectTopicsFromUnit(unit) : []), [unit]);
-
-  /** אחרי השלמת חוסר ממסך אחר / רענון `store-map`: מנקים טשטוש אופטימי אם השרת כבר לא מדווח על חוסר למיקום זה. */
-  useEffect(() => {
-    setOptimisticShortage((prev) => {
-      if (prev.size === 0) return prev;
-      const next = new Set(prev);
-      for (const shelf of shelves) {
-        for (const cell of shelf.cells) {
-          for (const b of cell.books) {
-            if (next.has(b.location_id) && !b.is_pending_shortage) next.delete(b.location_id);
-          }
-        }
-      }
-      return next.size === prev.size ? prev : next;
-    });
-  }, [shelves]);
 
   const filtersActive =
     isUnitFilterActive(filters) || bookTitleSearch.trim().length > 0;
@@ -244,9 +247,9 @@ export default function UnitScreen(): JSX.Element {
   const stacksSetsAll = useMemo(
     () =>
       isStacksUnit
-        ? expandStacksFromShelves(shelves, allCellBooksMap, optimisticShortage)
+        ? expandStacksFromShelves(shelves, allCellBooksMap, undefined, ghostSlotsByLocation)
         : NO_STACKS_SETS,
-    [isStacksUnit, shelves, allCellBooksMap, optimisticShortage],
+    [isStacksUnit, shelves, allCellBooksMap, ghostSlotsByLocation],
   );
   const stacksSetsFiltered = useMemo(
     () =>
@@ -254,9 +257,55 @@ export default function UnitScreen(): JSX.Element {
         ? NO_STACKS_SETS
         : !filtersActive
           ? stacksSetsAll
-          : expandStacksFromShelves(shelves, filteredCellBooks, optimisticShortage),
-    [isStacksUnit, filtersActive, stacksSetsAll, shelves, filteredCellBooks, optimisticShortage],
+          : expandStacksFromShelves(
+              shelves,
+              filteredCellBooks,
+              undefined,
+              ghostSlotsByLocation,
+            ),
+    [
+      isStacksUnit,
+      filtersActive,
+      stacksSetsAll,
+      shelves,
+      filteredCellBooks,
+      ghostSlotsByLocation,
+    ],
   );
+
+  /** אחרי refetch — גוזרים העדפות שדרה שלא תואמות יותר לספירת החוסרים. */
+  useEffect(() => {
+    const counts = new Map<string, number>();
+    for (const arr of allCellBooksMap.values()) {
+      for (const b of arr) {
+        counts.set(
+          b.location_id,
+          Math.max(
+            0,
+            Math.floor(
+              Number(b.pending_shortage_count ?? (b.is_pending_shortage ? 1 : 0)),
+            ),
+          ),
+        );
+      }
+    }
+    setGhostSlotsByLocation((prev) => {
+      if (prev.size === 0) return prev;
+      const next = reconcilePreferredGhostSlots(prev, counts);
+      if (next.size === prev.size) {
+        let same = true;
+        for (const [k, v] of next) {
+          const old = prev.get(k);
+          if (!old || old.length !== v.length || old.some((n, i) => n !== v[i])) {
+            same = false;
+            break;
+          }
+        }
+        if (same) return prev;
+      }
+      return next;
+    });
+  }, [allCellBooksMap]);
 
   const totalBooks = useMemo(() => {
     if (isStacksUnit) {
@@ -323,22 +372,9 @@ export default function UnitScreen(): JSX.Element {
     unitQuery.isFetching,
   ]);
 
-  const removeOptimisticShortage = useCallback((locationId: string) => {
-    setOptimisticShortage((prev) => {
-      if (!prev.has(locationId)) return prev;
-      const next = new Set(prev);
-      next.delete(locationId);
-      return next;
-    });
+  const clearPendingUndo = useCallback((locationId: string) => {
+    pendingUndoLocationsRef.current.delete(locationId);
   }, []);
-
-  const clearShortageVisual = useCallback(
-    (locationId: string) => {
-      removeOptimisticShortage(locationId);
-      pendingUndoLocationsRef.current.delete(locationId);
-    },
-    [removeOptimisticShortage],
-  );
 
   const runUndoShortage = useCallback(
     async (targets: StoreMapBook[]) => {
@@ -348,7 +384,11 @@ export default function UnitScreen(): JSX.Element {
 
       for (const book of targets) {
         pendingUndoLocationsRef.current.add(book.location_id);
-        removeOptimisticShortage(book.location_id);
+        const slot = undoSpineSlotsRef.current.get(book.location_id);
+        setGhostSlotsByLocation((prev) =>
+          removePreferredGhostSlot(prev, book.location_id, slot),
+        );
+        undoSpineSlotsRef.current.delete(book.location_id);
       }
       timer.mark("optimistic_state_cleared", { targets: targets.length });
 
@@ -356,7 +396,7 @@ export default function UnitScreen(): JSX.Element {
       for (const book of targets) {
         try {
           await cancelShelfShortage.mutateAsync(book.location_id);
-          clearShortageVisual(book.location_id);
+          clearPendingUndo(book.location_id);
           deletedCount += 1;
         } catch (err: unknown) {
           const status =
@@ -390,18 +430,25 @@ export default function UnitScreen(): JSX.Element {
         }
       }
     },
-    [cancelShelfShortage, removeOptimisticShortage, clearShortageVisual, unitQuery],
+    [cancelShelfShortage, clearPendingUndo, unitQuery],
   );
 
   const addBookToShortage = useCallback(
-    async (book: StoreMapBook) => {
+    async (book: StoreMapBook, spineSlot = 0) => {
       const timer = startBookTapTiming("mark_shortage", book.location_id);
-      if (isLocationShortaged(book, optimisticShortage)) {
+      if (isLocationShortaged(book)) {
+        undoSpineSlotsRef.current.set(book.location_id, spineSlot);
         setUndoShortageTargets([book]);
         timer.mark("opened_undo_dialog");
         return;
       }
-      setOptimisticShortage((prev) => new Set(prev).add(book.location_id));
+      /**
+       * `onMutate` של `useAddShortage` מעדכן `quantity_in_cell` + `is_pending_shortage`
+       * יחד ב־cache; אחרי הצלחה יש refetch של היחידה כדי למנוע drift.
+       */
+      setGhostSlotsByLocation((prev) =>
+        addPreferredGhostSlot(prev, book.location_id, spineSlot),
+      );
       timer.mark("optimistic_state_set");
       try {
         await addShortage.mutateAsync({
@@ -413,49 +460,52 @@ export default function UnitScreen(): JSX.Element {
         if (pendingUndoLocationsRef.current.has(book.location_id)) {
           try {
             await cancelShelfShortage.mutateAsync(book.location_id);
+            setGhostSlotsByLocation((prev) =>
+              removePreferredGhostSlot(prev, book.location_id, spineSlot),
+            );
           } catch {
             Alert.alert(he.generic.errorTitle, he.unit.undoShortageFailed);
           }
-          clearShortageVisual(book.location_id);
+          clearPendingUndo(book.location_id);
         }
       } catch {
-        clearShortageVisual(book.location_id);
+        setGhostSlotsByLocation((prev) =>
+          removePreferredGhostSlot(prev, book.location_id, spineSlot),
+        );
+        clearPendingUndo(book.location_id);
         timer.mark("failed");
       }
     },
-    [optimisticShortage, addShortage, cancelShelfShortage, clearShortageVisual],
+    [addShortage, cancelShelfShortage, clearPendingUndo],
   );
 
   /**
    * ארון גדול מרנדר מאות שדרות, ולכן הפרופס שיורדים אליהן חייבים להיות יציבים —
-   * אחרת `React.memo` של `CellCard`/`BookSpine` לא חוסם כלום. `addBookToShortage`
-   * מקבל זהות חדשה בכל לחיצה (הוא תלוי ב־`optimisticShortage`), ולכן קוראים לו
-   * דרך ref במקום להעביר אותו ישירות.
+   * אחרת `React.memo` של `CellCard`/`BookSpine` לא חוסם כלום.
    */
   const bookActionsRef = useRef({ press: addBookToShortage });
   useEffect(() => {
     bookActionsRef.current.press = addBookToShortage;
   }, [addBookToShortage]);
 
-  const onBookPress = useCallback((book: StoreMapBook) => {
-    void bookActionsRef.current.press(book);
+  const onBookPress = useCallback((book: StoreMapBook, spineSlot: number) => {
+    void bookActionsRef.current.press(book, spineSlot);
   }, []);
 
   const onBookLongPress = useCallback((book: StoreMapBook) => {
     setDetailsFor(book);
   }, []);
 
-  const onDisplayBookPress = useCallback(
-    (agg: DisplayBookAggregate) => {
-      const shortedSpots = agg.spots.filter((s) => isLocationShortaged(s, optimisticShortage));
-      if (shortedSpots.length > 0) {
-        setUndoShortageTargets(shortedSpots);
-        return;
-      }
-      setSaleFor(agg);
-    },
-    [optimisticShortage],
-  );
+  const onDisplayBookPress = useCallback((agg: DisplayBookAggregate) => {
+    const shortedSpots = agg.spots.filter((s) => isLocationShortaged(s));
+    /** ביטול חוסר רק כשאין עותקים שנותרו — אחרת מאפשרים מכירה נוספת. */
+    if (shortedSpots.length > 0 && agg.totalQuantity <= 0) {
+      setUndoShortageTargets(shortedSpots);
+      return;
+    }
+    if (agg.totalQuantity <= 0) return;
+    setSaleFor(agg);
+  }, []);
 
   const closeMove = () => {
     setMoveFor(null);
@@ -497,13 +547,14 @@ export default function UnitScreen(): JSX.Element {
         <ShelfRow
           shelf={item}
           cellBooks={filteredCellBooks}
-          shortagedIds={optimisticShortage}
+          shortagedIds={EMPTY_SHORTAGED_IDS}
+          ghostSlotsByLocation={ghostSlotsByLocation}
           onBookPress={onBookPress}
           onBookLongPress={onBookLongPress}
         />
       </View>
     ),
-    [filteredCellBooks, optimisticShortage, onBookPress, onBookLongPress],
+    [filteredCellBooks, ghostSlotsByLocation, onBookPress, onBookLongPress],
   );
 
   /**
@@ -528,15 +579,15 @@ export default function UnitScreen(): JSX.Element {
           <DisplayGrid
             variant="stacks"
             setItems={stacksSetsFiltered}
-            shortagedIds={optimisticShortage}
-            onSetPress={(item) => void addBookToShortage(item)}
+            shortagedIds={EMPTY_SHORTAGED_IDS}
+            onSetPress={(item) => void addBookToShortage(item, item.copy_index)}
             onSetLongPress={(item) => setDetailsFor(item)}
           />
         ) : (
           <DisplayGrid
             variant="display"
             aggregates={displayAggregatesFiltered}
-            shortagedIds={optimisticShortage}
+            shortagedIds={EMPTY_SHORTAGED_IDS}
             onAggregatePress={onDisplayBookPress}
             onAggregateLongPress={(agg) => setDetailsFor(agg.representative)}
           />
@@ -647,7 +698,7 @@ export default function UnitScreen(): JSX.Element {
         ItemSeparatorComponent={ShelfSeparator}
         ListHeaderComponent={listHeader}
         ListHeaderComponentStyle={showShelfList ? styles.headerSpacing : undefined}
-        extraData={optimisticShortage}
+        extraData={unit}
         initialNumToRender={2}
         maxToRenderPerBatch={1}
         windowSize={3}
@@ -677,7 +728,12 @@ export default function UnitScreen(): JSX.Element {
             : ""
         }
         confirmLabel={he.unit.confirmUndoShortageOk}
-        onCancel={() => setUndoShortageTargets([])}
+        onCancel={() => {
+          for (const book of undoShortageTargets) {
+            undoSpineSlotsRef.current.delete(book.location_id);
+          }
+          setUndoShortageTargets([]);
+        }}
         onConfirm={() => void runUndoShortage(undoShortageTargets)}
       />
 
@@ -743,6 +799,7 @@ export default function UnitScreen(): JSX.Element {
         storeMap={effectiveMap}
         submitting={moveBook.isPending}
         errorMessage={moveError}
+        preferredUnitId={unitIdStr}
         onClose={closeMove}
         onSubmit={onSubmitMove}
       />

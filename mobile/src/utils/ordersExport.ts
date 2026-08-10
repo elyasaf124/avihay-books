@@ -231,7 +231,6 @@ export async function emailSupplierOrders(group: OrdersBySupplierGroup): Promise
     .map((o) =>
       he.orders.mail.bodyLine
         .replace("{{title}}", o.book_title)
-        .replace("{{author}}", o.book_author)
         .replace("{{quantity}}", String(o.quantity)),
     )
     .join("\n");

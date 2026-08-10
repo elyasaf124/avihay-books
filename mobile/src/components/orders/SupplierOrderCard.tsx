@@ -10,6 +10,7 @@ import {
 } from "../../api/orders";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
+import { OrderQtyStepper } from "./OrderQtyStepper";
 
 interface Props {
   group: OrdersBySupplierGroup;
@@ -18,6 +19,9 @@ interface Props {
   onSendEmail: (group: OrdersBySupplierGroup) => void;
   onRemoveOrderLine: (order: OrderListItem) => void;
   onEditOrderLine?: (order: OrderListItem) => void;
+  onQtyChange?: (order: OrderListItem, nextQty: number) => void;
+  /** כמות מינימום לשורה (למשל כשחלק מהכמות מגיע מהזמנות לקוח). */
+  qtyMinForLine?: (order: OrderListItem) => number;
   onToggleSupplierOrdered?: (group: OrdersBySupplierGroup) => void;
   onToggleLineOrdered?: (order: OrderListItem) => void;
   removingOrderLineKey: string | null;
@@ -39,6 +43,8 @@ export function SupplierOrderCard({
   onSendEmail,
   onRemoveOrderLine,
   onEditOrderLine,
+  onQtyChange,
+  qtyMinForLine,
   onToggleSupplierOrdered,
   onToggleLineOrdered,
   removingOrderLineKey,
@@ -108,7 +114,7 @@ export function SupplierOrderCard({
       </View>
 
       <View style={styles.list}>
-        {group.orders.map((o) => {
+        {group.orders.map((o, index) => {
           const lineKey = orderDisplayLineKey(o);
           return (
             <OrderLine
@@ -116,7 +122,10 @@ export function SupplierOrderCard({
               order={o}
               showCustomer={!isInventory}
               showEdit={onEditOrderLine != null}
+              showQtyStepper={onQtyChange != null}
+              qtyMin={qtyMinForLine?.(o) ?? 1}
               showOrderedToggle={isInventory && onToggleLineOrdered != null && isOpenOrder(o)}
+              isLast={index === group.orders.length - 1}
               busy={
                 removingOrderLineKey === lineKey ||
                 updatingOrderLineKey === lineKey ||
@@ -124,6 +133,7 @@ export function SupplierOrderCard({
               }
               onRemove={() => onRemoveOrderLine(o)}
               onEdit={onEditOrderLine ? () => onEditOrderLine(o) : undefined}
+              onQtyChange={onQtyChange ? (next) => onQtyChange(o, next) : undefined}
               onToggleOrdered={
                 onToggleLineOrdered ? () => onToggleLineOrdered(o) : undefined
               }
@@ -166,95 +176,116 @@ function OrderLine({
   order,
   showCustomer,
   showEdit,
+  showQtyStepper,
+  qtyMin,
   showOrderedToggle,
+  isLast,
   busy,
   onRemove,
   onEdit,
+  onQtyChange,
   onToggleOrdered,
 }: {
   order: OrderListItem;
   showCustomer: boolean;
   showEdit: boolean;
+  showQtyStepper: boolean;
+  qtyMin: number;
   showOrderedToggle: boolean;
+  isLast: boolean;
   busy: boolean;
   onRemove: () => void;
   onEdit?: () => void;
+  onQtyChange?: (next: number) => void;
   onToggleOrdered?: () => void;
 }): JSX.Element {
   const isOrdered = order.status === "sent";
 
   return (
-    <View style={styles.lineRow}>
-      <View style={styles.lineLeft}>
-        <Text style={styles.lineTitle} numberOfLines={1}>
-          {order.book_title}
-        </Text>
-        <Text style={styles.lineMeta} numberOfLines={1}>
-          {(order.book_author?.trim() ? order.book_author : he.orders.authorNotSpecified) +
-            (showCustomer && order.customer_name ? ` · ${order.customer_name}` : "")}
-        </Text>
-        {showCustomer && order.customer_phone ? (
+    <View style={[styles.lineBlock, isLast && styles.lineBlockLast]}>
+      <View style={styles.lineRow}>
+        <View style={styles.lineLeft}>
+          <Text style={styles.lineTitle} numberOfLines={1}>
+            {order.book_title}
+          </Text>
           <Text style={styles.lineMeta} numberOfLines={1}>
-            {he.orders.phone}: {order.customer_phone}
+            {(order.book_author?.trim() ? order.book_author : he.orders.authorNotSpecified) +
+              (showCustomer && order.customer_name ? ` · ${order.customer_name}` : "")}
           </Text>
-        ) : null}
-      </View>
-      <View style={styles.lineRight}>
-        <Text style={styles.qty}>×{order.quantity}</Text>
-        {showOrderedToggle && onToggleOrdered ? (
-          <Pressable
-            onPress={onToggleOrdered}
-            style={({ pressed }) => [styles.lineOrderedToggle, pressed && styles.lineActionPressed]}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            accessibilityRole="button"
-            accessibilityLabel={
-              isOrdered ? he.orders.orderUnmarkOrderedA11y : he.orders.orderMarkOrderedA11y
-            }
-          >
-            <MaterialCommunityIcons
-              name={isOrdered ? "truck" : "clock-outline"}
-              size={18}
-              color={isOrdered ? theme.colors.primary : theme.colors.onSurfaceVariant}
-            />
-          </Pressable>
-        ) : (
-          <Text style={styles.statusText}>
-            {he.orders.statusLabels[order.status]}
-          </Text>
-        )}
-      </View>
-      {busy ? (
-        <ActivityIndicator style={styles.lineActionWrap} color={theme.colors.primary} />
-      ) : (
-        <View style={styles.lineActions}>
-          {showEdit && onEdit ? (
+          {showCustomer && order.customer_phone ? (
+            <Text style={styles.lineMeta} numberOfLines={1}>
+              {he.orders.phone}: {order.customer_phone}
+            </Text>
+          ) : null}
+        </View>
+        <View style={styles.lineRight}>
+          {!showQtyStepper ? <Text style={styles.qty}>×{order.quantity}</Text> : null}
+          {showOrderedToggle && onToggleOrdered ? (
             <Pressable
-              onPress={onEdit}
+              onPress={onToggleOrdered}
+              style={({ pressed }) => [
+                styles.lineOrderedToggle,
+                pressed && styles.lineActionPressed,
+              ]}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel={
+                isOrdered ? he.orders.orderUnmarkOrderedA11y : he.orders.orderMarkOrderedA11y
+              }
+            >
+              <MaterialCommunityIcons
+                name={isOrdered ? "truck" : "clock-outline"}
+                size={18}
+                color={isOrdered ? theme.colors.primary : theme.colors.onSurfaceVariant}
+              />
+            </Pressable>
+          ) : (
+            <Text style={styles.statusText}>{he.orders.statusLabels[order.status]}</Text>
+          )}
+        </View>
+        {busy ? (
+          <ActivityIndicator style={styles.lineActionWrap} color={theme.colors.primary} />
+        ) : (
+          <View style={styles.lineActions}>
+            {showEdit && onEdit ? (
+              <Pressable
+                onPress={onEdit}
+                style={({ pressed }) => [
+                  styles.lineActionBtn,
+                  pressed && styles.lineActionPressed,
+                ]}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                accessibilityRole="button"
+                accessibilityLabel={he.orders.editLineA11y}
+              >
+                <Ionicons name="pencil-outline" size={20} color={theme.colors.primary} />
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={onRemove}
               style={({ pressed }) => [
                 styles.lineActionBtn,
                 pressed && styles.lineActionPressed,
               ]}
               hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               accessibilityRole="button"
-              accessibilityLabel={he.orders.editLineA11y}
+              accessibilityLabel={he.orders.removeLineA11y}
             >
-              <Ionicons name="pencil-outline" size={20} color={theme.colors.primary} />
+              <Ionicons name="close-circle-outline" size={22} color={theme.colors.error} />
             </Pressable>
-          ) : null}
-          <Pressable
-            onPress={onRemove}
-            style={({ pressed }) => [
-              styles.lineActionBtn,
-              pressed && styles.lineActionPressed,
-            ]}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            accessibilityRole="button"
-            accessibilityLabel={he.orders.removeLineA11y}
-          >
-            <Ionicons name="close-circle-outline" size={22} color={theme.colors.error} />
-          </Pressable>
+          </View>
+        )}
+      </View>
+      {showQtyStepper && onQtyChange ? (
+        <View style={styles.qtyRow}>
+          <OrderQtyStepper
+            quantity={order.quantity}
+            min={qtyMin}
+            disabled={busy}
+            onChange={onQtyChange}
+          />
         </View>
-      )}
+      ) : null}
     </View>
   );
 }
@@ -322,13 +353,24 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.lg,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
-    gap: theme.spacing.xs,
+    gap: theme.spacing.sm,
+  },
+  lineBlock: {
+    gap: theme.spacing.sm,
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.outlineVariant,
+  },
+  lineBlockLast: {
+    borderBottomWidth: 0,
   },
   lineRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
+  },
+  qtyRow: {
+    alignSelf: "stretch",
   },
   lineLeft: { flex: 1, gap: 1 },
   lineTitle: {

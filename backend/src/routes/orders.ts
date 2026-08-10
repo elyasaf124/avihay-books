@@ -11,6 +11,10 @@ import {
   updateOrdersBySupplierStatus,
   upsertOrder,
 } from "../repos/orders.repo.js";
+import {
+  markBookShortagesAsOrderPending,
+  restoreBookShortagesIfNoOpenOrders,
+} from "../repos/shortageList.repo.js";
 import { ORDER_TYPES, type OrderType } from "@avihay-books/shared";
 import { getWhatsappConfig, isWhatsappConfigured } from "../services/whatsapp/config.js";
 import { sendTemplate } from "../services/whatsapp/client.js";
@@ -32,18 +36,26 @@ ordersRouter.post(
     const body = req.body ?? {};
     const isInventoryWithoutCustomer =
       body.order_type === "inventory" && !body.customer_name && !body.customer_phone;
-    res.status(201).json(
-      isInventoryWithoutCustomer
-        ? await appendToPendingInventoryOrder(body)
-        : await upsertOrder(body),
-    );
+    const order = isInventoryWithoutCustomer
+      ? await appendToPendingInventoryOrder(body)
+      : await upsertOrder(body);
+    if (order.book_id && (order.status === "pending" || order.status === "sent")) {
+      await markBookShortagesAsOrderPending(order.book_id);
+    }
+    res.status(201).json(order);
   }),
 );
 
 ordersRouter.patch(
   "/:id",
   asyncHandler(async (req, res) => {
-    res.json(await upsertOrder({ ...req.body, id: req.params.id }));
+    const order = await upsertOrder({ ...req.body, id: req.params.id });
+    if (order.book_id && (order.status === "pending" || order.status === "sent")) {
+      await markBookShortagesAsOrderPending(order.book_id);
+    } else if (order.book_id) {
+      await restoreBookShortagesIfNoOpenOrders(order.book_id);
+    }
+    res.json(order);
   }),
 );
 
@@ -96,6 +108,9 @@ ordersRouter.post(
       manual_book_title: manualNorm,
     });
     if (n < 1) throw new HttpError(404, "orders_line_not_found");
+    if (body.book_id) {
+      await restoreBookShortagesIfNoOpenOrders(body.book_id);
+    }
     res.json({ deleted: n });
   }),
 );
