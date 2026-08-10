@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
+import { pool } from "../db/pool.js";
 import {
   findAllBooks,
   findBookById,
@@ -8,10 +9,12 @@ import {
   upsertBook,
 } from "../repos/books.repo.js";
 import { findBookLocationsExpandedByBookIds } from "../repos/bookLocations.repo.js";
+import { restoreBookShortagesIfNoOpenOrders } from "../repos/shortageList.repo.js";
 import { getBookLocationPaths } from "../services/bookLocation.js";
-import { notifyLowStockAfterBookChange } from "../services/notifications.js";
 import { reconcileOrdersOnStockArrival } from "../services/orderReconciliation.js";
+import { maybePromoteEmptyCellShortagesToOrder } from "../services/shortage.js";
 import { invalidateStoreMapCache } from "../services/storeMapCache.js";
+import { logger } from "../utils/logger.js";
 import type { BookWithLocations } from "@avihay-books/shared";
 
 export const booksRouter = Router();
@@ -25,7 +28,17 @@ booksRouter.get(
         typeof req.query.supplier_id === "string" && req.query.supplier_id.length > 0
           ? req.query.supplier_id
           : undefined;
-      res.json(await searchBooks(q, { supplierId: searchSupplierId }));
+      const books = await searchBooks(q, { supplierId: searchSupplierId });
+      if (req.query.expand === "locations") {
+        const locsByBook = await findBookLocationsExpandedByBookIds(books.map((b) => b.id));
+        const withLocs: BookWithLocations[] = books.map((b) => ({
+          ...b,
+          locations: locsByBook.get(b.id) ?? [],
+        }));
+        res.json(withLocs);
+        return;
+      }
+      res.json(books);
       return;
     }
     const supplierId =
@@ -72,12 +85,6 @@ booksRouter.post(
   asyncHandler(async (req, res) => {
     const row = await upsertBook(req.body);
     invalidateStoreMapCache();
-    if (Number(row.stock_quantity) <= Number(row.reorder_threshold)) {
-      await notifyLowStockAfterBookChange(
-        { ...row, stock_quantity: row.stock_quantity + 1 },
-        row,
-      );
-    }
     res.status(201).json(row);
   }),
 );
@@ -88,14 +95,38 @@ booksRouter.patch(
     const existing = await findBookById(req.params.id!);
     if (!existing) throw new HttpError(404, "book_not_found");
     const merged = { ...existing, ...req.body, id: req.params.id };
-    const row = await upsertBook(merged);
+    const oldStock = Number(existing.stock_quantity);
+
+    // מלאי + ריקונסיליאציית הזמנות באותה טרנזקציה — מונע מצב שבו המלאי עלה וההזמנה נשארה
+    const client = await pool.connect();
+    let row;
+    try {
+      await client.query("BEGIN");
+      row = await upsertBook(merged, client);
+      const arrived = Number(row.stock_quantity) - oldStock;
+      if (arrived > 0) {
+        await reconcileOrdersOnStockArrival(req.params.id!, arrived, client);
+      }
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
+
     invalidateStoreMapCache();
-    const oldStock = existing.stock_quantity;
-    const newStock = row.stock_quantity;
+    const newStock = Number(row.stock_quantity);
     if (newStock > oldStock) {
-      await reconcileOrdersOnStockArrival(req.params.id!, newStock - oldStock);
-    } else {
-      await notifyLowStockAfterBookChange(existing, row);
+      // best-effort אחרי commit — לא מפיל את עדכון המלאי
+      await restoreBookShortagesIfNoOpenOrders(req.params.id!).catch(() => {});
+    } else if (newStock < oldStock) {
+      await maybePromoteEmptyCellShortagesToOrder(req.params.id!).catch((err: unknown) => {
+        logger.error(
+          { err, bookId: req.params.id },
+          "maybePromoteEmptyCellShortagesToOrder failed",
+        );
+      });
     }
     res.json(row);
   }),

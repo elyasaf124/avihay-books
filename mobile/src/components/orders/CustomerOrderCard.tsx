@@ -5,6 +5,7 @@ import { customerOrderBundleKey, orderDisplayLineKey, whatsappOrderGroupKey } fr
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
 import { buildWhatsappOrderMetaRows } from "../../utils/whatsappOrderDisplay";
+import { OrderQtyStepper } from "./OrderQtyStepper";
 
 interface Props {
   group: OrdersByCustomerGroup;
@@ -16,10 +17,12 @@ interface Props {
   onRemoveOrderLine?: (order: OrderListItem) => void;
   onFinishOrderLine?: (order: OrderListItem) => void;
   onEditOrderLine?: (order: OrderListItem) => void;
+  onQtyChange?: (order: OrderListItem, nextQty: number) => void;
   /** שליחת עדכון יזום ללקוח בוואטסאפ (לשונית וואטסאפ/לקוח). */
   onNotifyCustomer?: (group: OrdersByCustomerGroup) => void;
   removingOrderLineKey?: string | null;
   finishingOrderLineKey?: string | null;
+  updatingOrderLineKey?: string | null;
 }
 
 /**
@@ -35,9 +38,11 @@ export function CustomerOrderCard({
   onRemoveOrderLine,
   onFinishOrderLine,
   onEditOrderLine,
+  onQtyChange,
   onNotifyCustomer,
   removingOrderLineKey = null,
   finishingOrderLineKey = null,
+  updatingOrderLineKey = null,
 }: Props): JSX.Element {
   const isHistory = variant === "history";
   const totalUnits = group.orders.reduce((s, o) => s + o.quantity, 0);
@@ -95,7 +100,7 @@ export function CustomerOrderCard({
       ) : null}
 
       <View style={styles.list}>
-        {group.orders.map((o) => {
+        {group.orders.map((o, index) => {
           const lineKey = orderDisplayLineKey(o);
           const supplierLabel =
             o.supplier_id != null && o.supplier_name
@@ -103,117 +108,136 @@ export function CustomerOrderCard({
               : he.orders.unassignedSupplierGroup;
           const isOrdered = o.status === "sent";
           const isCompleted = o.status === "completed";
+          const isLast = index === group.orders.length - 1;
+          const lineBusy =
+            finishingOrderLineKey === lineKey ||
+            removingOrderLineKey === lineKey ||
+            updatingOrderLineKey === lineKey;
           return (
-            <View key={lineKey} style={styles.lineRow}>
-              <View style={styles.lineLeft}>
-                <View style={styles.titleRow}>
-                  {!isHistory && showOrderedIndicator && isOrdered && !isCompleted ? (
-                    <View
-                      style={styles.truckIndicator}
-                      accessibilityLabel={he.orders.orderOrderedIndicatorA11y}
-                      importantForAccessibility="yes"
-                    >
-                      <MaterialCommunityIcons
-                        name="truck"
+            <View
+              key={lineKey}
+              style={[styles.lineBlock, isLast && styles.lineBlockLast]}
+            >
+              <View style={styles.lineRow}>
+                <View style={styles.lineLeft}>
+                  <View style={styles.titleRow}>
+                    {!isHistory && showOrderedIndicator && isOrdered && !isCompleted ? (
+                      <View
+                        style={styles.truckIndicator}
+                        accessibilityLabel={he.orders.orderOrderedIndicatorA11y}
+                        importantForAccessibility="yes"
+                      >
+                        <MaterialCommunityIcons
+                          name="truck"
+                          size={22}
+                          color={theme.colors.primary}
+                        />
+                      </View>
+                    ) : isCompleted ? (
+                      <Ionicons
+                        name="checkmark-circle"
                         size={22}
-                        color={theme.colors.primary}
+                        color={theme.colors.secondary}
+                        accessibilityLabel={he.orders.orderCompletedA11y}
                       />
-                    </View>
-                  ) : isCompleted ? (
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={22}
-                      color={theme.colors.secondary}
-                      accessibilityLabel={he.orders.orderCompletedA11y}
-                    />
-                  ) : null}
-                  <Text style={styles.lineTitle} numberOfLines={1}>
-                    {o.book_title}
+                    ) : null}
+                    <Text style={styles.lineTitle} numberOfLines={1}>
+                      {o.book_title}
+                    </Text>
+                  </View>
+                  <Text style={styles.lineMeta} numberOfLines={1}>
+                    {(o.book_author?.trim() ? o.book_author : he.orders.authorNotSpecified) +
+                      ` · ${he.orders.customerOrderSupplier}: ${supplierLabel}`}
                   </Text>
                 </View>
-                <Text style={styles.lineMeta} numberOfLines={1}>
-                  {(o.book_author?.trim() ? o.book_author : he.orders.authorNotSpecified) +
-                    ` · ${he.orders.customerOrderSupplier}: ${supplierLabel}`}
-                </Text>
-              </View>
-              <View style={styles.lineRight}>
-                <Text style={styles.qty}>×{o.quantity}</Text>
+                <View style={styles.lineRight}>
+                  {isHistory || !onQtyChange || isCompleted ? (
+                    <Text style={styles.qty}>×{o.quantity}</Text>
+                  ) : null}
+                  {!isHistory ? (
+                    <Text style={styles.statusText}>
+                      {he.orders.statusLabels[o.status]}
+                    </Text>
+                  ) : null}
+                </View>
                 {!isHistory ? (
-                  <Text style={styles.statusText}>
-                    {he.orders.statusLabels[o.status]}
-                  </Text>
+                  lineBusy ? (
+                    <ActivityIndicator style={styles.lineActionWrap} color={theme.colors.primary} />
+                  ) : (
+                    <View style={styles.lineActions}>
+                      {onEditOrderLine && !isCompleted ? (
+                        <Pressable
+                          onPress={() => onEditOrderLine(o)}
+                          style={({ pressed }) => [
+                            styles.lineActionBtn,
+                            pressed && styles.lineActionPressed,
+                          ]}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          accessibilityRole="button"
+                          accessibilityLabel={he.orders.customerOrderEditLineA11y}
+                        >
+                          <Ionicons name="pencil-outline" size={20} color={theme.colors.primary} />
+                        </Pressable>
+                      ) : null}
+                      {isCompleted && onFinishOrderLine ? (
+                        <Pressable
+                          onPress={() => onFinishOrderLine(o)}
+                          style={({ pressed }) => [
+                            styles.finishOrderBtn,
+                            pressed && styles.lineActionPressed,
+                          ]}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          accessibilityRole="button"
+                          accessibilityLabel={he.orders.finishOrderButtonA11y}
+                        >
+                          <Text style={styles.finishOrderBtnText} numberOfLines={1}>
+                            {he.orders.finishOrderButton}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                      {onRemoveOrderLine && !isCompleted ? (
+                        <Pressable
+                          onPress={() => onRemoveOrderLine(o)}
+                          style={({ pressed }) => [
+                            styles.lineActionBtn,
+                            pressed && styles.lineActionPressed,
+                          ]}
+                          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                          accessibilityRole="button"
+                          accessibilityLabel={he.orders.removeLineA11y}
+                        >
+                          <Ionicons name="close-circle-outline" size={22} color={theme.colors.error} />
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  )
+                ) : onRemoveOrderLine ? (
+                  removingOrderLineKey === lineKey ? (
+                    <ActivityIndicator style={styles.lineActionWrap} color={theme.colors.primary} />
+                  ) : (
+                    <Pressable
+                      onPress={() => onRemoveOrderLine(o)}
+                      style={({ pressed }) => [
+                        styles.lineActionBtn,
+                        pressed && styles.lineActionPressed,
+                      ]}
+                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      accessibilityRole="button"
+                      accessibilityLabel={he.orders.removeLineA11y}
+                    >
+                      <Ionicons name="close-circle-outline" size={22} color={theme.colors.error} />
+                    </Pressable>
+                  )
                 ) : null}
               </View>
-              {!isHistory ? (
-                finishingOrderLineKey === lineKey ? (
-                  <ActivityIndicator style={styles.lineActionWrap} color={theme.colors.primary} />
-                ) : removingOrderLineKey === lineKey ? (
-                  <ActivityIndicator style={styles.lineActionWrap} color={theme.colors.primary} />
-                ) : (
-                  <View style={styles.lineActions}>
-                    {onEditOrderLine && !isCompleted ? (
-                      <Pressable
-                        onPress={() => onEditOrderLine(o)}
-                        style={({ pressed }) => [
-                          styles.lineActionBtn,
-                          pressed && styles.lineActionPressed,
-                        ]}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        accessibilityRole="button"
-                        accessibilityLabel={he.orders.customerOrderEditLineA11y}
-                      >
-                        <Ionicons name="pencil-outline" size={20} color={theme.colors.primary} />
-                      </Pressable>
-                    ) : null}
-                    {isCompleted && onFinishOrderLine ? (
-                      <Pressable
-                        onPress={() => onFinishOrderLine(o)}
-                        style={({ pressed }) => [
-                          styles.finishOrderBtn,
-                          pressed && styles.lineActionPressed,
-                        ]}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        accessibilityRole="button"
-                        accessibilityLabel={he.orders.finishOrderButtonA11y}
-                      >
-                        <Text style={styles.finishOrderBtnText} numberOfLines={1}>
-                          {he.orders.finishOrderButton}
-                        </Text>
-                      </Pressable>
-                    ) : null}
-                    {onRemoveOrderLine && !isCompleted ? (
-                      <Pressable
-                        onPress={() => onRemoveOrderLine(o)}
-                        style={({ pressed }) => [
-                          styles.lineActionBtn,
-                          pressed && styles.lineActionPressed,
-                        ]}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        accessibilityRole="button"
-                        accessibilityLabel={he.orders.removeLineA11y}
-                      >
-                        <Ionicons name="close-circle-outline" size={22} color={theme.colors.error} />
-                      </Pressable>
-                    ) : null}
-                  </View>
-                )
-              ) : onRemoveOrderLine ? (
-                removingOrderLineKey === lineKey ? (
-                  <ActivityIndicator style={styles.lineActionWrap} color={theme.colors.primary} />
-                ) : (
-                  <Pressable
-                    onPress={() => onRemoveOrderLine(o)}
-                    style={({ pressed }) => [
-                      styles.lineActionBtn,
-                      pressed && styles.lineActionPressed,
-                    ]}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    accessibilityRole="button"
-                    accessibilityLabel={he.orders.removeLineA11y}
-                  >
-                    <Ionicons name="close-circle-outline" size={22} color={theme.colors.error} />
-                  </Pressable>
-                )
+              {!isHistory && onQtyChange && !isCompleted ? (
+                <View style={styles.qtyRow}>
+                  <OrderQtyStepper
+                    quantity={o.quantity}
+                    disabled={lineBusy}
+                    onChange={(next) => onQtyChange(o, next)}
+                  />
+                </View>
               ) : null}
             </View>
           );
@@ -296,13 +320,24 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.lg,
     paddingHorizontal: theme.spacing.md,
     paddingVertical: theme.spacing.sm,
-    gap: theme.spacing.xs,
+    gap: theme.spacing.sm,
+  },
+  lineBlock: {
+    gap: theme.spacing.sm,
+    paddingVertical: theme.spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.outlineVariant,
+  },
+  lineBlockLast: {
+    borderBottomWidth: 0,
   },
   lineRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing.sm,
-    paddingVertical: theme.spacing.xs,
+  },
+  qtyRow: {
+    alignSelf: "stretch",
   },
   lineLeft: { flex: 1, gap: 1 },
   titleRow: {

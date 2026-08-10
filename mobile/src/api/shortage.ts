@@ -28,6 +28,14 @@ function invalidateShortageSideEffects(
   }
 }
 
+/** אחרי שינוי חוסר במדף — סנכרון מוחלט של יחידות פעילות מול השרת. */
+function refetchActiveStoreMapUnits(client: ReturnType<typeof useQueryClient>): void {
+  void client.invalidateQueries({
+    queryKey: ["store-map", "unit"],
+    refetchType: "active",
+  });
+}
+
 export function useShortageList() {
   return useQuery<ShortageListItem[]>({
     queryKey: SHORTAGE_KEY,
@@ -74,33 +82,66 @@ export function useMoveShortageToOrder() {
   });
 }
 
+export interface DeleteShortagePayload {
+  shortageId: string;
+  /** כמה רשומות למחוק בקבוצת ספר+תא (ברירת מחדל 1). */
+  quantity?: number;
+}
+
 export function useDeleteShortage() {
   const client = useQueryClient();
-  return useMutation<void, Error, string>({
-    mutationFn: async (shortageId) => {
-      await api.delete(`/shortage/${shortageId}`);
+  return useMutation<void, Error, DeleteShortagePayload>({
+    mutationFn: async ({ shortageId, quantity = 1 }) => {
+      await api.delete(`/shortage/${shortageId}`, { data: { quantity } });
     },
-    onSuccess: (_void, shortageId) => {
-      client.setQueryData<ShortageListItem[]>(SHORTAGE_KEY, (old) =>
-        old ? old.filter((row) => row.id !== shortageId) : old,
-      );
+    onSuccess: () => {
       invalidateShortageSideEffects(client);
     },
   });
 }
 
-/** ביטול חוסר במדף לפי `location_id` — מוחק מרשימת החוסרים בלי שינוי מלאי. */
+/**
+ * ביטול חוסר במדף לפי `location_id`.
+ * בלי onMutate של delta — רק ערכים מוחלטים מהשרת + refetch, כדי לא ליצור עותק עודף/מטושטש.
+ */
 export function useCancelShelfShortage() {
   const client = useQueryClient();
-  return useMutation<void, Error, string>({
+  return useMutation<
+    { still_pending: boolean; quantity_in_cell: number },
+    Error,
+    string
+  >({
     mutationFn: async (locationId) => {
-      await api.delete(`/shortage/by-location/${locationId}`);
+      const { data } = await api.delete<{
+        still_pending: boolean;
+        quantity_in_cell: number;
+      }>(`/shortage/by-location/${locationId}`);
+      return data;
     },
-    onSuccess: (_void, locationId) => {
-      client.setQueryData<ShortageListItem[]>(SHORTAGE_KEY, (old) =>
-        old ? old.filter((row) => row.location_id !== locationId) : old,
-      );
-      patchStoreMapLocationShortage(client, locationId, false);
+    onSuccess: (data, locationId) => {
+      client.setQueryData<ShortageListItem[]>(SHORTAGE_KEY, (old) => {
+        if (!old) return old;
+        const idx = old.findIndex((row) => row.location_id === locationId);
+        if (idx < 0) return old;
+        const row = old[idx]!;
+        if ((row.missing_count ?? 1) <= 1) {
+          return [...old.slice(0, idx), ...old.slice(idx + 1)];
+        }
+        const next = [...old];
+        next[idx] = { ...row, missing_count: row.missing_count - 1 };
+        return next;
+      });
+      const qty = Number(data?.quantity_in_cell);
+      if (Number.isFinite(qty)) {
+        patchStoreMapLocationShortage(
+          client,
+          locationId,
+          Boolean(data.still_pending),
+          qty,
+        );
+      }
+      refetchActiveStoreMapUnits(client);
+      void client.invalidateQueries({ queryKey: SHORTAGE_KEY });
       void client.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
     },
   });
@@ -109,19 +150,26 @@ export function useCancelShelfShortage() {
 export interface UpdateShortageStatusPayload {
   shortageId: string;
   status: ShortageStatus;
+  /** בהשלמה — כמה עותקים בקבוצת ספר+תא (ברירת מחדל 1). */
+  quantity?: number;
 }
 
 export function useUpdateShortageStatus() {
   const client = useQueryClient();
   return useMutation<ShortageItem, Error, UpdateShortageStatusPayload>({
-    mutationFn: async ({ shortageId, status }) => {
+    mutationFn: async ({ shortageId, status, quantity }) => {
       const { data } = await api.patch<ShortageItem>(`/shortage/${shortageId}/status`, {
         status,
+        ...(status === "completed" && quantity != null ? { quantity } : {}),
       });
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       invalidateShortageSideEffects(client);
+      /** השלמה מחזירה עותק לתא — חובה לרענן יחידות פעילות (לא רק soft). */
+      if (vars.status === "completed") {
+        refetchActiveStoreMapUnits(client);
+      }
     },
   });
 }

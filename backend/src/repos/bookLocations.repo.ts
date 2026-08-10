@@ -3,41 +3,15 @@ import { HttpError } from "../middleware/errorHandler.js";
 import { bookLocationInputSchema, type BookLocationInput } from "./schemas.js";
 import type { BookLocation, BookLocationExpanded } from "@avihay-books/shared";
 
-/**
- * `display` — רק ספרים חדשים; `stacks` (סטנד) — כל ספר;
- * ארונות רגילים — רק ספרים שאינם חדשים.
- */
+/** מוודא שספר והתא קיימים — אין הגבלת `is_new` / ארון תצוגה (חופש מיקום מלא). */
 async function assertValidBookCellPlacement(bookId: string, cellId: string): Promise<void> {
-  const { rows } = await pool.query<{ is_new: boolean; store_position: string }>(
-    `SELECT b.is_new, pos.store_position::text AS store_position
-     FROM books b
-     INNER JOIN (
-       SELECT su.store_position
-       FROM cells c
-       INNER JOIN shelves s ON s.id = c.shelf_id
-       LEFT JOIN unit_sides us ON us.id = s.side_id
-       INNER JOIN shelving_units su ON su.id = COALESCE(s.unit_id, us.unit_id)
-       WHERE c.id = $2
-     ) pos ON TRUE
-     WHERE b.id = $1`,
+  const { rows } = await pool.query<{ ok: boolean }>(
+    `SELECT EXISTS(SELECT 1 FROM books WHERE id = $1)
+            AND EXISTS(SELECT 1 FROM cells WHERE id = $2) AS ok`,
     [bookId, cellId],
   );
-  const row = rows[0];
-  if (!row) {
+  if (!rows[0]?.ok) {
     throw new HttpError(404, "book_or_cell_not_found", { book_id: bookId, cell_id: cellId });
-  }
-  const pos = row.store_position;
-  if (row.is_new && pos !== "display") {
-    throw new HttpError(422, "new_book_must_be_in_display", {
-      book_id: bookId,
-      cell_id: cellId,
-    });
-  }
-  if (!row.is_new && pos === "display") {
-    throw new HttpError(422, "only_new_books_in_display", {
-      book_id: bookId,
-      cell_id: cellId,
-    });
   }
 }
 
@@ -283,8 +257,44 @@ export async function findBookLocationsExpandedByBookIds(
   return byBook;
 }
 
+/**
+ * הסרת מיקום מהמפה:
+ * - אם יש מלאי בתא (`quantity_in_cell > 0`) — רק מוחקים את השורה; המלאי הכללי
+ *   נשאר כמלאי מחסן לא ממוקם. חוסרים פתוחים מקבלים `location_id = NULL` (FK).
+ * - אם התא ריק / חוסר (`quantity_in_cell <= 0`) — מוחקים גם רשומות `shortage`
+ *   למיקום (בלי להחזיר מלאי), כדי שהבועה והחוסר ייעלמו מהרשימה.
+ */
 export async function deleteBookLocation(id: string): Promise<void> {
-  await pool.query("DELETE FROM book_locations WHERE id = $1", [id]);
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const { rows } = await client.query<BookLocation>(
+      "SELECT * FROM book_locations WHERE id = $1 FOR UPDATE",
+      [id],
+    );
+    const loc = rows[0];
+    if (!loc) {
+      await client.query("COMMIT");
+      return;
+    }
+    if (loc.quantity_in_cell <= 0) {
+      await client.query(
+        `DELETE FROM shortage_list
+          WHERE location_id = $1::uuid
+            AND status = 'shortage'`,
+        [id],
+      );
+    }
+    await client.query("DELETE FROM book_locations WHERE id = $1", [id]);
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK").catch(() => {
+      /* best-effort */
+    });
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function findBookLocationById(id: string): Promise<BookLocation | null> {

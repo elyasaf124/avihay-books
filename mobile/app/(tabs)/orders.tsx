@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -42,6 +42,7 @@ import {
   useRemoveOrderLine,
   useToggleInventoryLineOrderedStatus,
   useToggleInventorySupplierOrderedStatus,
+  useUpdateDemandOrderQuantity,
   useUpdateInventoryOrderQuantity,
   whatsappOrderGroupKey,
 } from "../../src/api/orders";
@@ -54,9 +55,20 @@ import { mockOrderList } from "../../src/mocks/shortageOrders";
 import { OrderTabs } from "../../src/components/orders/OrderTabs";
 import { SupplierOrderCard } from "../../src/components/orders/SupplierOrderCard";
 import {
+  SearchablePickerField,
+  type PickerListItem,
+} from "../../src/components/pickers/SearchablePicker";
+import { sortByHebrewKeys } from "../../src/utils/hebrewSort";
+import {
   emailSupplierOrders,
   exportSupplierOrdersToPdf,
 } from "../../src/utils/ordersExport";
+
+const UNASSIGNED_SUPPLIER_FILTER_ID = "__unassigned__";
+
+function toSupplierFilterId(supplierId: string | null): string {
+  return supplierId ?? UNASSIGNED_SUPPLIER_FILTER_ID;
+}
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: theme.colors.background },
@@ -123,6 +135,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.marginMobile,
     paddingTop: theme.spacing.md,
     paddingBottom: theme.spacing.sm,
+  },
+  filterWrap: {
+    paddingTop: theme.spacing.xs,
   },
   list: {
     paddingHorizontal: theme.spacing.marginMobile,
@@ -230,6 +245,7 @@ export default function OrdersScreen(): JSX.Element {
   const navigation = useNavigation();
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<OrderType>("inventory");
+  const [supplierId, setSupplierId] = useState<string | null>(null);
   const [removeOrderTarget, setRemoveOrderTarget] = useState<OrderListItem | null>(null);
   const [finishOrderTarget, setFinishOrderTarget] = useState<OrderListItem | null>(null);
   const [toggleSupplierTarget, setToggleSupplierTarget] = useState<OrdersBySupplierGroup | null>(
@@ -270,6 +286,7 @@ export default function OrdersScreen(): JSX.Element {
   const toggleSupplierMutation = useToggleInventorySupplierOrderedStatus();
   const toggleLineMutation = useToggleInventoryLineOrderedStatus();
   const updateInventoryQtyMutation = useUpdateInventoryOrderQuantity();
+  const updateDemandQtyMutation = useUpdateDemandOrderQuantity();
   const notifyCustomerMutation = useNotifyCustomer();
 
   const inventoryQuery = useOrdersList("inventory");
@@ -345,6 +362,70 @@ export default function OrdersScreen(): JSX.Element {
 
   const demandGroups =
     activeTab === "customer" ? customerGroups : whatsappGroups;
+
+  const supplierPickerItems = useMemo((): PickerListItem[] => {
+    const byId = new Map<string, PickerListItem>();
+    if (activeTab === "inventory") {
+      for (const group of inventoryGroups) {
+        const id = toSupplierFilterId(group.supplier_id);
+        if (!byId.has(id)) {
+          byId.set(id, {
+            id,
+            label: group.supplier_name,
+            accentColor: group.supplier_color,
+          });
+        }
+      }
+    } else {
+      for (const group of demandGroups) {
+        for (const order of group.orders) {
+          const id = toSupplierFilterId(order.supplier_id);
+          if (!byId.has(id)) {
+            byId.set(id, {
+              id,
+              label:
+                order.supplier_id == null
+                  ? he.orders.unassignedSupplierGroup
+                  : order.supplier_name,
+              accentColor: order.supplier_color,
+            });
+          }
+        }
+      }
+    }
+    return sortByHebrewKeys([...byId.values()], (item) => [item.label]);
+  }, [activeTab, inventoryGroups, demandGroups]);
+
+  const filteredInventoryGroups = useMemo(() => {
+    if (!supplierId) return inventoryGroups;
+    return inventoryGroups.filter(
+      (group) => toSupplierFilterId(group.supplier_id) === supplierId,
+    );
+  }, [inventoryGroups, supplierId]);
+
+  const filteredDemandGroups = useMemo(() => {
+    if (!supplierId) return demandGroups;
+    return demandGroups
+      .map((group) => ({
+        ...group,
+        orders: group.orders.filter(
+          (order) => toSupplierFilterId(order.supplier_id) === supplierId,
+        ),
+      }))
+      .filter((group) => group.orders.length > 0);
+  }, [demandGroups, supplierId]);
+
+  const emptyListText = supplierId ? he.orders.emptyFiltered : he.orders.emptyTab;
+
+  useEffect(() => {
+    if (
+      supplierId &&
+      supplierPickerItems.length > 0 &&
+      !supplierPickerItems.some((item) => item.id === supplierId)
+    ) {
+      setSupplierId(null);
+    }
+  }, [supplierId, supplierPickerItems]);
 
   const counts: Record<OrderType, number> = useMemo(
     () => ({
@@ -512,7 +593,11 @@ export default function OrdersScreen(): JSX.Element {
     ]);
   };
 
-  const confirmUpdateInventoryQty = async (line: OrderListItem, newBaseQty: number) => {
+  const confirmUpdateInventoryQty = async (
+    line: OrderListItem,
+    newBaseQty: number,
+    options?: { silent?: boolean },
+  ) => {
     if (updateInventoryQtyMutation.isPending) return;
     try {
       await updateInventoryQtyMutation.mutateAsync({
@@ -521,10 +606,48 @@ export default function OrdersScreen(): JSX.Element {
         newBaseQty,
       });
       setEditInventoryTarget(null);
-      Alert.alert(he.orders.customerOrderSuccessTitle, he.orders.inventoryOrderEditQtySuccess);
+      if (!options?.silent) {
+        Alert.alert(he.orders.customerOrderSuccessTitle, he.orders.inventoryOrderEditQtySuccess);
+      }
     } catch {
       Alert.alert(he.generic.errorTitle, he.orders.inventoryOrderEditQtyFailed);
     }
+  };
+
+  const quickUpdateInventoryQty = (line: OrderListItem, nextDisplayQty: number) => {
+    if (isOffline) {
+      Alert.alert(he.orders.removeBlockedOffline);
+      return;
+    }
+    const key = inventorySupplierBookKey(line);
+    const extra = extraCustomerWhatsappByBookSupplier.get(key) ?? 0;
+    const newBaseQty = nextDisplayQty - extra;
+    if (newBaseQty < 1) return;
+    void confirmUpdateInventoryQty(line, newBaseQty, { silent: true });
+  };
+
+  const quickUpdateDemandQty = (line: OrderListItem, nextQty: number) => {
+    if (isOffline) {
+      Alert.alert(he.orders.removeBlockedOffline);
+      return;
+    }
+    if (updateDemandQtyMutation.isPending || line.status === "completed") return;
+    if (nextQty < 1) return;
+    void (async () => {
+      try {
+        await updateDemandQtyMutation.mutateAsync({ line, newQty: nextQty });
+      } catch {
+        Alert.alert(he.generic.errorTitle, he.orders.inventoryOrderEditQtyFailed);
+      }
+    })();
+  };
+
+  const inventoryQtyMinForLine = (line: OrderListItem): number => {
+    const key = inventorySupplierBookKey(line);
+    const extra = extraCustomerWhatsappByBookSupplier.get(key) ?? 0;
+    const base = inventoryBaseQtyByKey.get(key) ?? 0;
+    // לא ניתן לרדת מתחת לכמות לקוח/וואטסאפ; בסיס מלאי מינימלי הוא 1 כשקיים
+    return base > 0 ? extra + 1 : extra;
   };
 
   const editInventoryBaseQty = editInventoryTarget
@@ -534,9 +657,11 @@ export default function OrdersScreen(): JSX.Element {
     ? (extraCustomerWhatsappByBookSupplier.get(inventorySupplierBookKey(editInventoryTarget)) ?? 0)
     : 0;
 
-  const updatingOrderLineKey =
-    updateInventoryQtyMutation.isPending && editInventoryTarget
-      ? orderDisplayLineKey(editInventoryTarget)
+  const updatingOrderLineKey = updateInventoryQtyMutation.isPending
+    && updateInventoryQtyMutation.variables
+    ? orderDisplayLineKey(updateInventoryQtyMutation.variables.line)
+    : updateDemandQtyMutation.isPending && updateDemandQtyMutation.variables
+      ? orderDisplayLineKey(updateDemandQtyMutation.variables.line)
       : null;
 
   const togglingSupplierKey =
@@ -566,6 +691,21 @@ export default function OrdersScreen(): JSX.Element {
         <OrderTabs active={activeTab} counts={counts} onChange={setActiveTab} />
       </View>
 
+      {!isLoading && supplierPickerItems.length > 0 ? (
+        <View style={styles.filterWrap}>
+          <SearchablePickerField
+            items={supplierPickerItems}
+            valueId={supplierId}
+            onChange={setSupplierId}
+            fieldLabel={he.orders.filterBySupplier}
+            emptySelectionLabel={he.orders.filterAll}
+            searchPlaceholder={he.picker.searchInList}
+            clearSelectionLabel={he.orders.filterAll}
+            emptyListMessage={he.picker.noMatches}
+          />
+        </View>
+      ) : null}
+
       {isLoading ? (
         <View style={styles.loadingBox}>
           <ActivityIndicator color={theme.colors.primary} />
@@ -573,7 +713,7 @@ export default function OrdersScreen(): JSX.Element {
         </View>
       ) : activeTab === "inventory" ? (
         <FlatList
-          data={inventoryGroups}
+          data={filteredInventoryGroups}
           keyExtractor={(g) => g.supplier_id ?? "__unassigned__"}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
@@ -590,8 +730,12 @@ export default function OrdersScreen(): JSX.Element {
           }
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons name="cart-outline" size={36} color={theme.colors.primary} />
-              <Text style={styles.emptyText}>{he.orders.emptyTab}</Text>
+              <Ionicons
+                name={supplierId ? "filter-outline" : "cart-outline"}
+                size={36}
+                color={theme.colors.primary}
+              />
+              <Text style={styles.emptyText}>{emptyListText}</Text>
             </View>
           }
           renderItem={({ item }) => (
@@ -602,6 +746,8 @@ export default function OrdersScreen(): JSX.Element {
               onSendEmail={(g) => void emailSupplierOrders(g)}
               onRemoveOrderLine={askRemoveOrderLine}
               onEditOrderLine={isOffline ? undefined : openEditOrderLine}
+              onQtyChange={isOffline ? undefined : quickUpdateInventoryQty}
+              qtyMinForLine={inventoryQtyMinForLine}
               onToggleSupplierOrdered={isOffline ? undefined : toggleSupplierOrderedStatus}
               onToggleLineOrdered={isOffline ? undefined : toggleLineOrderedStatus}
               removingOrderLineKey={removingLineKey}
@@ -613,7 +759,7 @@ export default function OrdersScreen(): JSX.Element {
         />
       ) : (
         <FlatList
-          data={demandGroups}
+          data={filteredDemandGroups}
           keyExtractor={activeTab === "whatsapp" ? whatsappGroupListKey : customerGroupListKey}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={() => <View style={styles.sep} />}
@@ -648,8 +794,12 @@ export default function OrdersScreen(): JSX.Element {
           }
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Ionicons name="cart-outline" size={36} color={theme.colors.primary} />
-              <Text style={styles.emptyText}>{he.orders.emptyTab}</Text>
+              <Ionicons
+                name={supplierId ? "filter-outline" : "cart-outline"}
+                size={36}
+                color={theme.colors.primary}
+              />
+              <Text style={styles.emptyText}>{emptyListText}</Text>
             </View>
           }
           renderItem={({ item }) => (
@@ -660,9 +810,11 @@ export default function OrdersScreen(): JSX.Element {
               onRemoveOrderLine={isOffline ? undefined : askRemoveOrderLine}
               onFinishOrderLine={isOffline ? undefined : askFinishOrderLine}
               onEditOrderLine={isOffline ? undefined : openEditOrderLine}
+              onQtyChange={isOffline ? undefined : quickUpdateDemandQty}
               onNotifyCustomer={isOffline ? undefined : notifyCustomer}
               removingOrderLineKey={removingLineKey}
               finishingOrderLineKey={finishingLineKey}
+              updatingOrderLineKey={updatingOrderLineKey}
             />
           )}
         />

@@ -81,6 +81,7 @@ const storeInfoSchema = z.object({
   delivery_point_fee: z.number().nonnegative(),
   human_hours_start: z.number().int().min(0).max(23),
   human_hours_end: z.number().int().min(0).max(23),
+  admin_phone: z.string().max(20).default(""),
 });
 
 const botConfigSchema = z

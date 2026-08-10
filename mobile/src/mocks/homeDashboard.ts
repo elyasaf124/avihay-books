@@ -349,6 +349,7 @@ function buildBook(spec: MockBookSpec, position: number): StoreMapBook {
     price: spec.price,
     topic: spec.topic,
     is_pending_shortage: false,
+    pending_shortage_count: 0,
   };
 }
 

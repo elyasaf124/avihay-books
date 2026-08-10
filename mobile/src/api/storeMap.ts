@@ -1,6 +1,8 @@
-import { useQuery, type QueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type {
   Book,
+  BookWithLocations,
+  Cell,
   StoreMap,
   StoreMapBook,
   StoreMapFilteredCopyCounts,
@@ -22,7 +24,7 @@ export const STORE_MAP_KEY = ["store-map"] as const;
 export const STORE_MAP_SUMMARY_KEY = ["store-map", "summary"] as const;
 export const storeMapUnitKey = (unitId: string) => ["store-map", "unit", unitId] as const;
 const BOOKS_SEARCH_KEY = (q: string, supplierId: string) =>
-  ["books", "search", q, supplierId || "all"] as const;
+  ["books", "search", q, supplierId || "all", "locations"] as const;
 
 function isNotFoundError(err: unknown): boolean {
   return axios.isAxiosError(err) && err.response?.status === 404;
@@ -112,7 +114,13 @@ function countSpinesInShelves(shelves: StoreMapShelf[] | undefined): number {
     for (const cell of shelf.cells) {
       for (const b of cell.books) {
         const qty = Math.max(0, Math.floor(Number(b.quantity_in_cell)));
-        total += qty > 0 ? qty : b.is_pending_shortage ? 1 : 0;
+        const shortageCount = Math.max(
+          0,
+          Math.floor(
+            Number(b.pending_shortage_count ?? (b.is_pending_shortage ? 1 : 0)),
+          ),
+        );
+        total += qty + shortageCount;
       }
     }
   }
@@ -181,15 +189,31 @@ function mapUnitShelves(
   }));
 }
 
+function shortageCountOf(book: StoreMapBook): number {
+  if (typeof book.pending_shortage_count === "number") {
+    return Math.max(0, book.pending_shortage_count);
+  }
+  return book.is_pending_shortage ? 1 : 0;
+}
+
 function patchUnitLocationShortage(
   unit: StoreMapUnit,
   locationId: string,
   isPendingShortage: boolean,
+  quantityInCell?: number,
 ): StoreMapUnit {
-  const mapper = (book: StoreMapBook): StoreMapBook =>
-    book.location_id === locationId
-      ? { ...book, is_pending_shortage: isPendingShortage }
-      : book;
+  const mapper = (book: StoreMapBook): StoreMapBook => {
+    if (book.location_id !== locationId) return book;
+    const prevCount = shortageCountOf(book);
+    /** ביטול עותק אחד מהמדף: מורידים 1; אם עדיין יש חוסר — לפחות 1. */
+    const nextCount = isPendingShortage ? Math.max(1, prevCount - 1) : 0;
+    return {
+      ...book,
+      is_pending_shortage: nextCount > 0,
+      pending_shortage_count: nextCount,
+      ...(quantityInCell !== undefined ? { quantity_in_cell: quantityInCell } : {}),
+    };
+  };
   return {
     ...unit,
     shelves: mapUnitShelves(unit.shelves, mapper),
@@ -201,26 +225,70 @@ function patchUnitLocationShortage(
 }
 
 /**
- * מעדכן `is_pending_shortage` ב־cache של יחידות / מפה מלאה בלי refetch כבד.
+ * מעדכן `is_pending_shortage` (+ אופציונלי `quantity_in_cell`) ב־cache של יחידות / מפה.
  * מסמן את ה־summary כ־stale בלי לכפות רענון מיידי של שאילתות לא־פעילות.
  */
 export function patchStoreMapLocationShortage(
   client: QueryClient,
   locationId: string,
   isPendingShortage: boolean,
+  quantityInCell?: number,
 ): void {
   client.setQueriesData<StoreMapUnit>({ queryKey: ["store-map", "unit"] }, (old) => {
     if (!old) return old;
-    return patchUnitLocationShortage(old, locationId, isPendingShortage);
+    return patchUnitLocationShortage(old, locationId, isPendingShortage, quantityInCell);
   });
   client.setQueryData<StoreMap>(STORE_MAP_KEY, (old) => {
     if (!old) return old;
     return {
       ...old,
       units: old.units.map((u) =>
-        patchUnitLocationShortage(u, locationId, isPendingShortage),
+        patchUnitLocationShortage(u, locationId, isPendingShortage, quantityInCell),
       ),
     };
+  });
+  void client.invalidateQueries({
+    queryKey: STORE_MAP_SUMMARY_KEY,
+    refetchType: "none",
+  });
+}
+
+/** מוריד/מעלה `quantity_in_cell` ב־cache ומעדכן דגל חוסר — לאופטימיות לפני תשובת שרת. */
+export function adjustStoreMapLocationShortage(
+  client: QueryClient,
+  locationId: string,
+  quantityDelta: number,
+  _isPendingShortage: boolean,
+): void {
+  const apply = (unit: StoreMapUnit): StoreMapUnit => {
+    const mapper = (book: StoreMapBook): StoreMapBook => {
+      if (book.location_id !== locationId) return book;
+      const prevCount = shortageCountOf(book);
+      // quantityDelta שלילי במכירה → ספירת חוסר עולה; חיובי בביטול → יורדת.
+      const nextCount = Math.max(0, prevCount - quantityDelta);
+      return {
+        ...book,
+        quantity_in_cell: Math.max(0, book.quantity_in_cell + quantityDelta),
+        pending_shortage_count: nextCount,
+        is_pending_shortage: nextCount > 0,
+      };
+    };
+    return {
+      ...unit,
+      shelves: mapUnitShelves(unit.shelves, mapper),
+      sides: unit.sides.map((side) => ({
+        ...side,
+        shelves: mapUnitShelves(side.shelves, mapper),
+      })),
+    };
+  };
+  client.setQueriesData<StoreMapUnit>({ queryKey: ["store-map", "unit"] }, (old) => {
+    if (!old) return old;
+    return apply(old);
+  });
+  client.setQueryData<StoreMap>(STORE_MAP_KEY, (old) => {
+    if (!old) return old;
+    return { ...old, units: old.units.map(apply) };
   });
   void client.invalidateQueries({
     queryKey: STORE_MAP_SUMMARY_KEY,
@@ -231,6 +299,33 @@ export function patchStoreMapLocationShortage(
 /** מסמן store-map כ־stale; מרענן רק שאילתות פעילות (בלי `type: "all"`). */
 export function softInvalidateStoreMap(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: STORE_MAP_KEY });
+}
+
+export interface EnsureCellPayload {
+  shelfId: string;
+  cellName: string;
+  cellNumber?: number;
+  capacity?: number;
+}
+
+/** יוצר תא במדף אם חסר (תאים ריקים שלא נוצרו בייבוא), או מחזיר קיים. */
+export function useEnsureCell() {
+  const client = useQueryClient();
+  return useMutation<Cell, Error, EnsureCellPayload>({
+    mutationFn: async ({ shelfId, cellName, cellNumber, capacity }) => {
+      const { data } = await api.post<Cell>(`/shelving-units/shelves/${shelfId}/cells`, {
+        cell_name: cellName,
+        ...(cellNumber != null ? { cell_number: cellNumber } : {}),
+        ...(capacity != null ? { capacity } : {}),
+      });
+      return data;
+    },
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: STORE_MAP_KEY });
+      void client.invalidateQueries({ queryKey: STORE_MAP_SUMMARY_KEY });
+      void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
+    },
+  });
 }
 
 export function useStoreMap(options?: { enabled?: boolean }) {
@@ -352,12 +447,12 @@ export function useSearchBooks(query: string, options?: UseSearchBooksOptions) {
   const supplierParam = options?.supplierId?.trim() || undefined;
   const extraEnabled = options?.enabled !== false;
 
-  return useQuery<Book[]>({
+  return useQuery<BookWithLocations[]>({
     queryKey: BOOKS_SEARCH_KEY(trimmed, supplierKey),
     queryFn: async () => {
-      const params: Record<string, string> = { q: trimmed };
+      const params: Record<string, string> = { q: trimmed, expand: "locations" };
       if (supplierParam) params.supplier_id = supplierParam;
-      const { data } = await api.get<Book[]>("/books", { params });
+      const { data } = await api.get<BookWithLocations[]>("/books", { params });
       return data;
     },
     enabled: extraEnabled && trimmed.length > 0,

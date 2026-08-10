@@ -8,16 +8,6 @@ interface PathRow {
   cell_name: string;
 }
 
-/** חוסר פעיל במדף — תואם ל־`is_pending_shortage` במפת החנות. */
-const ACTIVE_SHELF_SHORTAGE = `
-  EXISTS (
-    SELECT 1
-      FROM shortage_list sl
-     WHERE sl.location_id = bl.id
-       AND sl.status <> 'completed'
-  )
-`;
-
 function mapPathRows(bookId: string, rows: PathRow[]): BookLocationPath[] {
   return rows.map((r) => ({
     book_id: bookId,
@@ -58,7 +48,7 @@ export async function getBookLocationPaths(bookId: string): Promise<BookLocation
   return mapPathRows(bookId, rows);
 }
 
-/** מיקומים פיזיים זמינים ללקוח — ללא מדפים שסומנו כחוסר (`shortage_list`). */
+/** מיקומים פיזיים זמינים ללקוח — רק תאים עם עותקים פיזיים שנותרו. */
 export async function getAvailableBookLocationPaths(bookId: string): Promise<BookLocationPath[]> {
   const sql = `
     SELECT
@@ -73,14 +63,14 @@ export async function getAvailableBookLocationPaths(bookId: string): Promise<Boo
     LEFT JOIN shelving_units su
       ON su.id = COALESCE(sh.unit_id, us.unit_id)
     WHERE bl.book_id = $1
-      AND NOT ${ACTIVE_SHELF_SHORTAGE}
+      AND bl.quantity_in_cell > 0
     ORDER BY bl.position_in_cell`;
   const { rows } = await pool.query<PathRow>(sql, [bookId]);
   return mapPathRows(bookId, rows);
 }
 
 /**
- * האם הספר זמין לרכישה בחנות — מבוסס מלאי עדכני + מדפים שלא בחוסר.
+ * האם הספר זמין לרכישה בחנות — מלאי כללי + עותקים פיזיים על המדף.
  * אם אין מיקום במדף אבל יש מלאי כללי — נחשב זמין (ללא כתובת תא).
  */
 export async function isBookAvailableForCustomer(
@@ -92,7 +82,7 @@ export async function isBookAvailableForCustomer(
   const { rows } = await pool.query<{ shelf_count: string; available_count: string }>(
     `SELECT
        COUNT(*)::text AS shelf_count,
-       COUNT(*) FILTER (WHERE NOT ${ACTIVE_SHELF_SHORTAGE})::text AS available_count
+       COUNT(*) FILTER (WHERE bl.quantity_in_cell > 0)::text AS available_count
      FROM book_locations bl
      WHERE bl.book_id = $1`,
     [bookId],

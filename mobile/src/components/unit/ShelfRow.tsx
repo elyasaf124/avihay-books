@@ -3,7 +3,7 @@ import { FlatList, StyleSheet, Text, View, type ListRenderItemInfo } from "react
 import type { StoreMapBook, StoreMapCell, StoreMapShelf } from "@avihay-books/shared";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
-import { CellCard } from "./CellCard";
+import { CellCard, type BookSpinePressHandler } from "./CellCard";
 
 interface Props {
   shelf: StoreMapShelf;
@@ -11,8 +11,15 @@ interface Props {
   cellBooks: Map<string, StoreMapBook[]>;
   /** `location_id` של עותקים שסומנו כחוסר (אופטימי). */
   shortagedIds: Set<string>;
-  onBookPress: (book: StoreMapBook) => void;
+  ghostSlotsByLocation: ReadonlyMap<string, readonly number[]>;
+  onBookPress: BookSpinePressHandler;
   onBookLongPress: (book: StoreMapBook) => void;
+}
+
+function interpolate(template: string, vars: Record<string, string>): string {
+  return Object.entries(vars).reduce((s, [k, v]) => {
+    return s.replace(new RegExp(`\\{\\{${k}\\}\\}`, "g"), v);
+  }, template);
 }
 
 function keyExtractor(cell: StoreMapCell): string {
@@ -27,15 +34,25 @@ function ShelfRowImpl({
   shelf,
   cellBooks,
   shortagedIds,
+  ghostSlotsByLocation,
   onBookPress,
   onBookLongPress,
 }: Props): JSX.Element {
-  const heading = shelf.label ?? `${he.unit.shelfLabel} ${shelf.shelf_number}`;
+  const shelfTitle = shelf.label ?? `${he.unit.shelfLabel} ${shelf.shelf_number}`;
   /** תא 1 = שמאלי — מיון עולה + כיוון LTR כדי לא להתהפך תחת RTL גלובלי. */
   const cellsLtr = useMemo(
     () => [...shelf.cells].sort((a, b) => a.cell_number - b.cell_number),
     [shelf.cells],
   );
+  const heading = useMemo(
+    () =>
+      interpolate(he.unit.shelfHeadingWithCells, {
+        shelf: shelfTitle,
+        n: String(cellsLtr.length),
+      }),
+    [shelfTitle, cellsLtr.length],
+  );
+  const canScrollHorizontally = cellsLtr.length > 2;
 
   const renderItem = useCallback(
     ({ item }: ListRenderItemInfo<StoreMapCell>) => (
@@ -43,11 +60,12 @@ function ShelfRowImpl({
         cell={item}
         books={cellBooks.get(item.id) ?? item.books}
         shortagedIds={shortagedIds}
+        ghostSlotsByLocation={ghostSlotsByLocation}
         onBookPress={onBookPress}
         onBookLongPress={onBookLongPress}
       />
     ),
-    [cellBooks, shortagedIds, onBookPress, onBookLongPress],
+    [cellBooks, shortagedIds, ghostSlotsByLocation, onBookPress, onBookLongPress],
   );
 
   return (
@@ -58,13 +76,13 @@ function ShelfRowImpl({
           data={cellsLtr}
           keyExtractor={keyExtractor}
           horizontal
-          showsHorizontalScrollIndicator={false}
+          showsHorizontalScrollIndicator={canScrollHorizontally}
           contentContainerStyle={styles.list}
           ItemSeparatorComponent={CellSeparator}
           renderItem={renderItem}
-          initialNumToRender={2}
-          maxToRenderPerBatch={2}
-          windowSize={3}
+          initialNumToRender={4}
+          maxToRenderPerBatch={4}
+          windowSize={5}
         />
       </View>
     </View>

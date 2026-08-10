@@ -14,11 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import type { Book } from "@avihay-books/shared";
 import { api } from "../../api/client";
-import {
-  useDeleteBookLocation,
-  usePatchBook,
-  usePatchBookLocation,
-} from "../../api/inventory";
+import { useAddShortage } from "../../api/unit";
 import { he } from "../../i18n/he";
 import { theme } from "../../theme";
 import type { DisplayBookAggregate } from "../../utils/displayBookAggregate";
@@ -51,9 +47,7 @@ export function DisplaySaleModal({
     staleTime: 0,
   });
 
-  const patchBook = usePatchBook();
-  const patchLoc = usePatchBookLocation();
-  const deleteLoc = useDeleteBookLocation();
+  const addShortage = useAddShortage();
 
   useEffect(() => {
     if (!visible) return;
@@ -61,8 +55,7 @@ export function DisplaySaleModal({
     setError(null);
   }, [visible, aggregate?.book_id]);
 
-  const busy =
-    patchBook.isPending || patchLoc.isPending || deleteLoc.isPending || bookQuery.isFetching;
+  const busy = addShortage.isPending || bookQuery.isFetching;
 
   const stock = bookQuery.data?.stock_quantity ?? null;
   const displayQty = aggregate?.totalQuantity ?? 0;
@@ -84,17 +77,17 @@ export function DisplaySaleModal({
     }
 
     setError(null);
-    const spots = [...aggregate.spots].sort((a, b) =>
-      a.location_id.localeCompare(b.location_id),
-    );
+    const spots = [...aggregate.spots]
+      .filter((s) => s.quantity_in_cell > 0)
+      .sort((a, b) => a.location_id.localeCompare(b.location_id));
     let remaining = sold;
-    const plan: { spot: (typeof spots)[0]; newQty: number; deleteRow: boolean }[] = [];
+    const plan: { locationId: string; take: number }[] = [];
     for (const s of spots) {
       if (remaining <= 0) break;
       const take = Math.min(remaining, s.quantity_in_cell);
-      const newQty = s.quantity_in_cell - take;
+      if (take <= 0) continue;
       remaining -= take;
-      plan.push({ spot: s, newQty, deleteRow: newQty === 0 });
+      plan.push({ locationId: s.location_id, take });
     }
     if (remaining > 0) {
       setError(he.unit.displaySale.soldExceedsDisplay);
@@ -102,25 +95,20 @@ export function DisplaySaleModal({
     }
 
     try {
-      for (const { spot, newQty, deleteRow } of plan) {
-        if (deleteRow) {
-          await deleteLoc.mutateAsync({ id: spot.location_id });
-        } else {
-          await patchLoc.mutateAsync({
-            location: {
-              id: spot.location_id,
-              book_id: spot.book_id,
-              cell_id: spot.cell_id,
-              position_in_cell: spot.position_in_cell,
-              quantity_in_cell: newQty,
-            },
+      /**
+       * אותו מסלול כמו מכירה מהמדף: `POST /shortage` מפחית מלאי + כמות בתא
+       * ויוצר רשומת חוסר (עותק אחד לכל קריאה — כדי שביטול/השלמה ישחזרו עותק בודד).
+       * לא מוחקים `book_locations` — אחרת הספר נעלם בלי אפשרות השלמה.
+       */
+      for (const { locationId, take } of plan) {
+        for (let i = 0; i < take; i += 1) {
+          await addShortage.mutateAsync({
+            bookId: aggregate.book_id,
+            soldQuantity: 1,
+            locationId,
           });
         }
       }
-      await patchBook.mutateAsync({
-        id: aggregate.book_id,
-        patch: { stock_quantity: stock - sold },
-      });
       onDone();
       onClose();
     } catch {
@@ -131,9 +119,7 @@ export function DisplaySaleModal({
     soldDraft,
     stock,
     displayQty,
-    deleteLoc,
-    patchLoc,
-    patchBook,
+    addShortage,
     onClose,
     onDone,
   ]);

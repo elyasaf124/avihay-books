@@ -38,7 +38,14 @@ export async function getDashboardStats(): Promise<DashboardStats> {
         WHERE status_rank IN (0, 1)`,
     ),
     pool.query<{ count: string }>(
-      `SELECT COUNT(*)::text AS count FROM shortage_list WHERE status = 'shortage'`,
+      `SELECT COUNT(*)::text AS count
+         FROM shortage_list sl
+        WHERE sl.status = 'shortage'
+          AND NOT EXISTS (
+            SELECT 1 FROM orders o
+             WHERE o.book_id = sl.book_id
+               AND o.status IN ('pending', 'sent')
+          )`,
     ),
   ]);
 

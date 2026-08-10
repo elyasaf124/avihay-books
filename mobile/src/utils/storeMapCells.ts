@@ -94,21 +94,13 @@ function flattenUnitShelves(
   return out;
 }
 
-/** תאים המותרים למיקום לפי `is_new` (`display` לחדשים; `stacks` — כל ספר; רגילים — לא ב־`display`). */
+/** בעבר סינן לפי `is_new`/תצוגה — כעת חופש מיקום מלא (מוחזר כמות־שהוא לתאימות קוראים). */
 export function filterCellRefsForPlacement(
   refs: CellRef[],
-  storeMap: StoreMap | null,
-  treatAsNewBook: boolean,
+  _storeMap: StoreMap | null,
+  _treatAsNewBook: boolean,
 ): CellRef[] {
-  if (!storeMap) return refs;
-  const allowedUnitIds = new Set(
-    storeMap.units
-      .filter((u) =>
-        treatAsNewBook ? u.store_position === "display" : u.store_position !== "display",
-      )
-      .map((u) => u.id),
-  );
-  return refs.filter((r) => allowedUnitIds.has(r.unitId));
+  return refs;
 }
 
 /** כל התאים בכל הארונות (למהירות חיפוש לפי שם תא). */
@@ -135,7 +127,9 @@ export function normalizedNumericKey(s: string): string | null {
   return Number.isFinite(n) ? String(n) : null;
 }
 
-/** התאמת `cell_name` (כולל מספר עם אפשרות לריפוד מאפס). */
+/** התאמת `cell_name` (כולל מספר עם אפשרות לריפוד מאפס).
+ * לשאילתות לא־מספריות: גם התאמת חלקית לשם תא / שם ארון
+ * (למשל «חוברת» או «סטנד» → תאי סטנד חוברות). */
 export function findCellsMatchingName(
   storeMap: StoreMap | null,
   raw: string,
@@ -146,22 +140,72 @@ export function findCellsMatchingName(
 
   const all = listAllCells(storeMap, shelfWord);
   const qNum = normalizedNumericKey(q);
+  /** שאילתה שהיא רק ספרות — נשארים בהתאמה מדויקת למספר תא. */
+  const numericOnly = qNum !== null && /^\d+$/.test(q.trim());
 
-  return all.filter((c) => {
+  const exact = all.filter((c) => {
     const nm = normalizeCellQuery(c.cell_name);
     if (nm === q) return true;
     if (qNum !== null && normalizedNumericKey(c.cell_name) === qNum) return true;
     return false;
   });
+  if (exact.length > 0 || numericOnly) return exact;
+
+  return all.filter((c) => {
+    const nm = normalizeCellQuery(c.cell_name);
+    const un = normalizeCellQuery(c.unitName);
+    return nm.includes(q) || un.includes(q);
+  });
 }
 
-/** תא ראשון ביחידת `display` — למיקום אצווה בספר חדש. */
+/**
+ * ארון תצוגה — במפה יכולים להיות כמה שמות תא היסטוריים («תצוגה» / «תצוגה חלון»)
+ * שמייצגים אותו יעד בפועל; ב־UI בוחרים אוטומטית בלי להציג רשימה.
+ */
+export function unitCollapsesCellChoice(
+  unit: Pick<StoreMapUnit, "store_position"> | null | undefined,
+): boolean {
+  return unit?.store_position === "display";
+}
+
+/** תא מועדף על מדף כשיש כמה שמות זהים־בפועל (מעדיף «תצוגה» בלי «חלון»). */
+export function pickPreferredCellOnShelf(shelf: StoreMapShelf): StoreMapCell | null {
+  const list = shelf.cells;
+  if (list.length === 0) return null;
+  if (list.length === 1) return list[0]!;
+  const exact = list.find((c) => c.cell_name.trim() === "תצוגה");
+  if (exact) return exact;
+  const noWindow = list.find((c) => !c.cell_name.includes("חלון"));
+  if (noWindow) return noWindow;
+  return [...list].sort((a, b) => a.cell_number - b.cell_number)[0] ?? null;
+}
+
+/** האם לבחור תא אוטומטית (תא יחיד, או ארון תצוגה עם שמות כפולים). */
+export function shouldAutoPickCellOnShelf(
+  unit: Pick<StoreMapUnit, "store_position"> | null | undefined,
+  shelf: StoreMapShelf | null | undefined,
+): boolean {
+  if (!shelf || shelf.cells.length === 0) return false;
+  return shelf.cells.length === 1 || unitCollapsesCellChoice(unit);
+}
+
+export function autoPickCellIdOnShelf(
+  unit: Pick<StoreMapUnit, "store_position"> | null | undefined,
+  shelf: StoreMapShelf | null | undefined,
+): string | null {
+  if (!shelf || !shouldAutoPickCellOnShelf(unit, shelf)) return null;
+  if (shelf.cells.length === 1) return shelf.cells[0]!.id;
+  return pickPreferredCellOnShelf(shelf)?.id ?? null;
+}
+
+/** תא מועדף ביחידת `display` — למיקום אצווה בספר חדש. */
 export function findFirstDisplayCellId(storeMap: StoreMap | null): string | null {
   const u = storeMap?.units.find((x) => x.store_position === "display");
   if (!u) return null;
   const shList = u.has_sides ? u.sides.flatMap((s) => s.shelves) : u.shelves;
-  const cell = shList[0]?.cells[0];
-  return cell?.id ?? null;
+  const shelf = shList[0];
+  if (!shelf) return null;
+  return autoPickCellIdOnShelf(u, shelf) ?? pickPreferredCellOnShelf(shelf)?.id ?? null;
 }
 
 /** תווית ארון › צד › מדף › תא */
@@ -173,4 +217,26 @@ export function cellRefToSummary(cr: CellRef, cellWord: string): string {
     `${cellWord} ${cr.cell_name}`,
   ].filter((p): p is string => Boolean(p?.trim()));
   return parts.join(" · ");
+}
+
+/** שם תא לפי `location_id` של רשומת `book_locations` במפה. */
+export function findCellNameByLocationId(
+  storeMap: StoreMap | null,
+  locationId: string,
+): string | null {
+  if (!storeMap || !locationId) return null;
+  const needle = locationId.trim().toLowerCase();
+  for (const u of storeMap.units) {
+    const shelves: StoreMapShelf[] = u.has_sides
+      ? u.sides.flatMap((s) => s.shelves)
+      : u.shelves;
+    for (const sh of shelves) {
+      for (const cell of sh.cells) {
+        if (cell.books.some((b) => b.location_id.trim().toLowerCase() === needle)) {
+          return cell.cell_name;
+        }
+      }
+    }
+  }
+  return null;
 }

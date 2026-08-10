@@ -63,6 +63,7 @@ interface LocationRow {
   price: string | null;
   topic: string;
   is_pending_shortage: boolean;
+  pending_shortage_count: number;
 }
 
 const LOCATIONS_SELECT = `
@@ -70,15 +71,17 @@ const LOCATIONS_SELECT = `
          b.title, b.author, b.supplier_id, b.is_new, b.price::text AS price,
          b.topic,
          s.color_hex AS supplier_color,
-         (sl_open.location_id IS NOT NULL) AS is_pending_shortage
+         (COALESCE(sl_open.cnt, 0) > 0) AS is_pending_shortage,
+         COALESCE(sl_open.cnt, 0)::int AS pending_shortage_count
     FROM book_locations bl
     JOIN books     b ON b.id = bl.book_id
     JOIN suppliers s ON s.id = b.supplier_id
     LEFT JOIN (
-      SELECT DISTINCT location_id
+      SELECT location_id, COUNT(*)::int AS cnt
         FROM shortage_list
        WHERE status <> 'completed'
          AND location_id IS NOT NULL
+       GROUP BY location_id
     ) sl_open ON sl_open.location_id = bl.id
    WHERE b.is_active = TRUE
 `;
@@ -106,6 +109,7 @@ function buildStoreMapFromRows(
       price: l.price,
       topic: l.topic ?? "",
       is_pending_shortage: Boolean(l.is_pending_shortage),
+      pending_shortage_count: Math.max(0, Number(l.pending_shortage_count) || 0),
     });
     booksByCell.set(l.cell_id, arr);
   }
@@ -366,15 +370,17 @@ export async function getStoreMapUnit(unitId: string): Promise<StoreMapUnit | nu
                 b.title, b.author, b.supplier_id, b.is_new, b.price::text AS price,
                 b.topic,
                 s.color_hex AS supplier_color,
-                (sl_open.location_id IS NOT NULL) AS is_pending_shortage
+                (COALESCE(sl_open.cnt, 0) > 0) AS is_pending_shortage,
+                COALESCE(sl_open.cnt, 0)::int AS pending_shortage_count
            FROM book_locations bl
            JOIN books     b ON b.id = bl.book_id
            JOIN suppliers s ON s.id = b.supplier_id
            LEFT JOIN (
-             SELECT DISTINCT location_id
+             SELECT location_id, COUNT(*)::int AS cnt
                FROM shortage_list
               WHERE status <> 'completed'
                 AND location_id IS NOT NULL
+              GROUP BY location_id
            ) sl_open ON sl_open.location_id = bl.id
           WHERE b.is_active = TRUE
             AND bl.cell_id IN (SELECT id FROM c)

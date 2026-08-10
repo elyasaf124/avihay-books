@@ -1,7 +1,7 @@
 import { upsertNotification } from "../../repos/notifications.repo.js";
+import { getBotConfig } from "../../repos/botConfig.repo.js";
 import { sendChatPush } from "../push.js";
 import type { WhatsappSession } from "@avihay-books/shared";
-import { getWhatsappConfig } from "./config.js";
 import { sendText } from "./client.js";
 import { generateFreeChatSummary } from "./summarizer.js";
 
@@ -28,6 +28,13 @@ async function dispatchPush(args: ChatPushArgs): Promise<void> {
     return;
   }
   await sendChatPush(args).catch(() => undefined);
+}
+
+/** נרמול מספר לפורמט ספרות בינלאומי (050… → 97250…). */
+function normalizeWhatsappDigits(raw: string): string {
+  let digits = raw.replace(/\D/g, "");
+  if (digits.startsWith("0")) digits = `972${digits.slice(1)}`;
+  return digits;
 }
 
 /** האם השיחה במצב מענה אנושי פעיל (הבוט מושהה). */
@@ -57,9 +64,10 @@ export async function notifyWhatsappHumanHandover(args: {
     phone: args.phone ?? "",
   });
 
-  // שליחת הודעת ווטסאפ ישירה למספר המנהל בווטסאפ (WhatsApp Admin Notification)
-  const cfg = getWhatsappConfig();
-  if (cfg.adminPhone) {
+  // שליחת הודעת ווטסאפ ישירה למספר המנהל (מתוך פרטי החנות בקונפיג הבוט)
+  const botConfig = await getBotConfig();
+  const adminPhone = normalizeWhatsappDigits(botConfig.store_info.admin_phone ?? "");
+  if (adminPhone) {
     const rawPhone = args.phone ?? "";
     const cleanPhone = rawPhone.replace(/\D/g, "");
     const customerName = args.profileName ? args.profileName : (rawPhone || "לקוח");
@@ -74,7 +82,7 @@ export async function notifyWhatsappHumanHandover(args: {
       `📝 *הודעות אחרונות מהלקוח:*\n${summary}\n\n` +
       (waLink ? `🔗 *לחץ לפתיחת צ'אט ישיר בווטסאפ:*\n${waLink}` : "");
 
-    await sendText(cfg.adminPhone, adminText).catch(() => undefined);
+    await sendText(adminPhone, adminText).catch(() => undefined);
   }
 }
 
