@@ -378,3 +378,34 @@ export function usePatchBookLocation() {
     },
   });
 }
+
+export interface SetShelfStockArgs {
+  locationId: string;
+  shelfStock: number;
+}
+
+export type SetShelfStockResult = BookLocation & {
+  cell_name: string;
+  pending_shortage_count: number;
+};
+
+/** סנכרון מלאי מדף לתצוגת ארון — ממלא ממחסן / יוצר חוסרים / מחזיר למחסן. */
+export function useSetShelfStock() {
+  const client = useQueryClient();
+  return useMutation<SetShelfStockResult, Error, SetShelfStockArgs>({
+    mutationFn: async ({ locationId, shelfStock }) => {
+      const { data } = await api.patch<SetShelfStockResult>(
+        `/book-locations/${locationId}/shelf-stock`,
+        { shelf_stock: shelfStock },
+      );
+      return data;
+    },
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: inventoryBooksPrefix });
+      void client.invalidateQueries({ queryKey: STORE_MAP_KEY });
+      void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
+      void client.invalidateQueries({ queryKey: ["shortage"] });
+      void client.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
+    },
+  });
+}
