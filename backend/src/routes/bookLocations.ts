@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import {
   deleteBookLocation,
@@ -10,10 +11,15 @@ import {
   clearShortageForRestockedCell,
   ensureShortageForEmptyCell,
 } from "../services/shortage.js";
+import { setLocationShelfStock } from "../services/shelfStock.js";
 import { invalidateStoreMapCache } from "../services/storeMapCache.js";
 import { logger } from "../utils/logger.js";
 
 export const bookLocationsRouter = Router();
+
+const shelfStockBodySchema = z.object({
+  shelf_stock: z.number().int().min(0).max(9999),
+});
 
 bookLocationsRouter.get(
   "/book/:bookId",
@@ -28,6 +34,18 @@ bookLocationsRouter.post(
     const row = await upsertBookLocation(req.body);
     invalidateStoreMapCache();
     res.status(201).json(row);
+  }),
+);
+
+/** סנכרון מלאי מדף לתצוגת ארון (שדרות = qty + חוסרים). */
+bookLocationsRouter.patch(
+  "/:id/shelf-stock",
+  asyncHandler(async (req, res) => {
+    const locationId = req.params.id!;
+    const { shelf_stock } = shelfStockBodySchema.parse(req.body);
+    const row = await setLocationShelfStock(locationId, shelf_stock);
+    invalidateStoreMapCache();
+    res.json(row);
   }),
 );
 

@@ -30,6 +30,7 @@ import {
   useInventoryBooksBySupplier,
   usePatchBook,
   usePatchBookLocation,
+  useSetShelfStock,
 } from "../../src/api/inventory";
 import { api } from "../../src/api/client";
 import { useSearchBooks, useStoreMap, useStoreMapSummary } from "../../src/api/storeMap";
@@ -123,6 +124,7 @@ export default function AddRemoveScreen(): JSX.Element {
   const topicSuggestions = storeMapSummaryQuery.data?.topics ?? NO_TOPICS;
   const patchBook = usePatchBook();
   const patchLoc = usePatchBookLocation();
+  const setShelfStock = useSetShelfStock();
   const adjustInventoryStock = useAdjustInventoryStock();
   const createBook = useCreateBook();
   const createBookLocation = useCreateBookLocation();
@@ -1474,7 +1476,7 @@ export default function AddRemoveScreen(): JSX.Element {
         cellName={shelfStockEdit?.loc.cell_name ?? ""}
         initialShelfStock={shelfStockEdit?.loc.shelf_stock ?? 0}
         submitting={
-          patchLoc.isPending &&
+          setShelfStock.isPending &&
           shelfStockEdit !== null &&
           busyBookId === shelfStockEdit.book.id
         }
@@ -1489,11 +1491,9 @@ export default function AddRemoveScreen(): JSX.Element {
             setShelfStockError(null);
             setBusyBookId(shelfStockEdit.book.id);
             try {
-              await patchLoc.mutateAsync({
-                location: {
-                  ...shelfStockEdit.loc,
-                  shelf_stock: next,
-                },
+              await setShelfStock.mutateAsync({
+                locationId: shelfStockEdit.loc.id,
+                shelfStock: next,
               });
               setShelfStockEdit(null);
             } catch {

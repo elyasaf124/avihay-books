@@ -653,6 +653,8 @@ export const he = {
     shelfStockLabel: "מלאי מדף",
     shelfStockModalTitle: "עריכת מלאי מדף",
     shelfStockA11y: "עריכת מלאי מדף",
+    shelfStockHint:
+      "המספר קובע כמה שדרות יופיעו בארון. קודם ימולאו חוסרים ממחסן; אם אין מלאי — יתווספו כחוסרים.",
     shelfStockFailed: "לא ניתן לעדכן את מלאי המדף — נסה שוב",
     locationChipWarehouse: "מחסן ({{qty}})",
     locationChipCell: "תא {{name}} ({{qty}})",

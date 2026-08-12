@@ -26,7 +26,7 @@ interface Props {
 }
 
 /**
- * מודאל קטן לעריכת מלאי מדף קבוע למיקום ספר בתא.
+ * מודאל לעריכת מלאי מדף — מספר השדרות בארון (ממלא ממחסן / חוסרים).
  */
 export function ShelfStockModal({
   visible,
@@ -61,6 +61,8 @@ export function ShelfStockModal({
 
           <Field label={he.addRemove.fieldTitle} value={bookTitle} />
           <Field label={he.unit.cellLabel} value={cellName} />
+
+          <Text style={styles.hint}>{he.addRemove.shelfStockHint}</Text>
 
           <View style={styles.stepper}>
             <Text style={styles.stepperLabel}>{he.addRemove.shelfStockLabel}</Text>
@@ -170,6 +172,11 @@ const styles = StyleSheet.create({
   fieldValue: {
     ...theme.typography.bodyLg,
     color: theme.colors.onSurface,
+    textAlign: "left",
+  },
+  hint: {
+    ...theme.typography.caption,
+    color: theme.colors.onSurfaceVariant,
     textAlign: "left",
   },
   stepper: {
