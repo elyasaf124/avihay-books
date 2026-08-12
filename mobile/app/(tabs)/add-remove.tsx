@@ -42,6 +42,7 @@ import { SearchableBookPickerField } from "../../src/components/pickers/Searchab
 import { SearchableFreeTextField } from "../../src/components/pickers/SearchableFreeTextField";
 import { ConfirmDialog } from "../../src/components/ConfirmDialog";
 import { EditBookModal } from "../../src/components/inventory/EditBookModal";
+import { ShelfStockModal } from "../../src/components/inventory/ShelfStockModal";
 import type { MapPlacementSubmitTarget } from "../../src/components/unit/MoveBookModal";
 import {
   InventoryMoveBookModal,
@@ -380,6 +381,12 @@ export default function AddRemoveScreen(): JSX.Element {
     loc: BookWithLocations["locations"][number];
   } | null>(null);
   const [editBook, setEditBook] = useState<BookWithLocations | null>(null);
+  /** עריכת מלאי מדף למיקום נבחר. */
+  const [shelfStockEdit, setShelfStockEdit] = useState<{
+    book: BookWithLocations;
+    loc: BookWithLocations["locations"][number];
+  } | null>(null);
+  const [shelfStockError, setShelfStockError] = useState<string | null>(null);
 
   /** הקשר למודאל פר־עותק בספר חדש (נסגר לאחר שמירת הבחירה) */
   const [newBookPcCtx, setNewBookPcCtx] = useState<{
@@ -957,9 +964,31 @@ export default function AddRemoveScreen(): JSX.Element {
                       </View>
 
                       <View style={styles.totalStockRow}>
-                        <Text style={styles.dimLabel}>{he.addRemove.totalStockLabel}</Text>
+                        <Text style={styles.totalStockLabel}>{he.addRemove.totalStockLabel}</Text>
                         <Text style={styles.totalStockQty}>{book.stock_quantity}</Text>
                       </View>
+
+                      {selectedLoc ? (
+                        <View style={styles.shelfStockRow}>
+                          <Text style={styles.dimLabel}>{he.addRemove.shelfStockLabel}</Text>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityLabel={he.addRemove.shelfStockA11y}
+                            hitSlop={8}
+                            disabled={busyBookId !== null || patchLoc.isPending}
+                            onPress={() => {
+                              setShelfStockError(null);
+                              setShelfStockEdit({ book, loc: selectedLoc });
+                            }}
+                            style={({ pressed }) => [
+                              styles.shelfStockQtyHit,
+                              pressed && styles.shelfStockQtyHitPressed,
+                            ]}
+                          >
+                            <Text style={styles.shelfStockQty}>{selectedLoc.shelf_stock ?? 0}</Text>
+                          </Pressable>
+                        </View>
+                      ) : null}
 
                       <Text style={styles.sectionLabel}>{he.addRemove.locationLabel}</Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsRow}>
@@ -1436,6 +1465,43 @@ export default function AddRemoveScreen(): JSX.Element {
           } finally {
             setBusyBookId(null);
           }
+        }}
+      />
+
+      <ShelfStockModal
+        visible={shelfStockEdit !== null}
+        bookTitle={shelfStockEdit?.book.title ?? ""}
+        cellName={shelfStockEdit?.loc.cell_name ?? ""}
+        initialShelfStock={shelfStockEdit?.loc.shelf_stock ?? 0}
+        submitting={
+          patchLoc.isPending &&
+          shelfStockEdit !== null &&
+          busyBookId === shelfStockEdit.book.id
+        }
+        errorMessage={shelfStockError}
+        onCancel={() => {
+          setShelfStockEdit(null);
+          setShelfStockError(null);
+        }}
+        onSubmit={(next) => {
+          if (!shelfStockEdit) return;
+          void (async () => {
+            setShelfStockError(null);
+            setBusyBookId(shelfStockEdit.book.id);
+            try {
+              await patchLoc.mutateAsync({
+                location: {
+                  ...shelfStockEdit.loc,
+                  shelf_stock: next,
+                },
+              });
+              setShelfStockEdit(null);
+            } catch {
+              setShelfStockError(he.addRemove.shelfStockFailed);
+            } finally {
+              setBusyBookId(null);
+            }
+          })();
         }}
       />
     </>
@@ -2153,12 +2219,46 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: theme.spacing.sm,
     marginBottom: theme.spacing.xs,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.radius.lg,
+    backgroundColor: theme.colors.surfaceContainerHigh,
+  },
+  totalStockLabel: {
+    ...theme.typography.labelMd,
+    color: theme.colors.onSurface,
+    fontWeight: "700",
+    textAlign: "left",
   },
   totalStockQty: {
-    ...theme.typography.headlineSm,
-    color: theme.colors.onSurface,
+    ...theme.typography.headlineMd,
+    color: theme.colors.primary,
     textAlign: "center",
     minWidth: 36,
+    fontWeight: "700",
+  },
+  shelfStockRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
+  },
+  shelfStockQtyHit: {
+    minWidth: 44,
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: theme.spacing.xs,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.surfaceContainerLow,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  shelfStockQtyHitPressed: { opacity: 0.75 },
+  shelfStockQty: {
+    ...theme.typography.bodyLg,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: "center",
+    minWidth: 28,
   },
   stepper: {
     flexDirection: "row",

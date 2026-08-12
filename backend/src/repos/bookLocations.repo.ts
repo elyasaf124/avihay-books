@@ -26,9 +26,14 @@ function isCellPositionDuplicateKey(err: unknown): boolean {
   );
 }
 
+function shelfStockForInsert(v: BookLocationInput): number {
+  return v.shelf_stock ?? v.quantity_in_cell;
+}
+
 /**
  * הוספת שורת מיקום לתא `{ cell_id, position_in_cell }`: אם המשבצת פנויה — INSERT;
  * אם אותו ספר כבר שם — מיזוג כמות (`quantity_in_cell`); אחרת משבצת תפוסה.
+ * במיזוג לא דורסים `shelf_stock`.
  */
 async function insertOrMergeBookLocationAtSlot(v: BookLocationInput): Promise<BookLocation> {
   const client = await pool.connect();
@@ -67,23 +72,24 @@ async function insertOrMergeBookLocationAtSlot(v: BookLocationInput): Promise<Bo
     }
 
     await assertValidBookCellPlacement(v.book_id, v.cell_id);
+    const shelfStock = shelfStockForInsert(v);
 
     if (v.id) {
       const { rows } = await client.query<BookLocation>(
-        `INSERT INTO book_locations (id, book_id, cell_id, position_in_cell, quantity_in_cell)
-         VALUES ($1::uuid, $2, $3, $4, $5)
+        `INSERT INTO book_locations (id, book_id, cell_id, position_in_cell, quantity_in_cell, shelf_stock)
+         VALUES ($1::uuid, $2, $3, $4, $5, $6)
          RETURNING *`,
-        [v.id, v.book_id, v.cell_id, v.position_in_cell, v.quantity_in_cell],
+        [v.id, v.book_id, v.cell_id, v.position_in_cell, v.quantity_in_cell, shelfStock],
       );
       await client.query("COMMIT");
       return rows[0]!;
     }
 
     const { rows } = await client.query<BookLocation>(
-      `INSERT INTO book_locations (book_id, cell_id, position_in_cell, quantity_in_cell)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO book_locations (book_id, cell_id, position_in_cell, quantity_in_cell, shelf_stock)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [v.book_id, v.cell_id, v.position_in_cell, v.quantity_in_cell],
+      [v.book_id, v.cell_id, v.position_in_cell, v.quantity_in_cell, shelfStock],
     );
     await client.query("COMMIT");
     return rows[0]!;
@@ -125,12 +131,13 @@ async function moveExistingBookLocation(
 
     if (sameSlot) {
       await assertValidBookCellPlacement(v.book_id, v.cell_id);
+      const shelfStock = v.shelf_stock ?? current.shelf_stock;
       const { rows } = await client.query<BookLocation>(
         `UPDATE book_locations
-         SET book_id = $1, quantity_in_cell = $2
-         WHERE id = $3
+         SET book_id = $1, quantity_in_cell = $2, shelf_stock = $3
+         WHERE id = $4
          RETURNING *`,
-        [v.book_id, v.quantity_in_cell, v.id],
+        [v.book_id, v.quantity_in_cell, shelfStock, v.id],
       );
       await client.query("COMMIT");
       return rows[0]!;
@@ -150,12 +157,14 @@ async function moveExistingBookLocation(
       await client.query(
         "SET CONSTRAINTS book_locations_cell_id_position_in_cell_key DEFERRED",
       );
+      const shelfStock = v.shelf_stock ?? current.shelf_stock;
       const swapRes = await client.query<BookLocation>(
         `UPDATE book_locations SET
            cell_id = CASE id WHEN $1::uuid THEN $3::uuid WHEN $2::uuid THEN $5::uuid END,
            position_in_cell = CASE id WHEN $1::uuid THEN $4::int WHEN $2::uuid THEN $6::int END,
            book_id = CASE WHEN id = $1::uuid THEN $7::uuid ELSE book_id END,
-           quantity_in_cell = CASE WHEN id = $1::uuid THEN $8::int ELSE quantity_in_cell END
+           quantity_in_cell = CASE WHEN id = $1::uuid THEN $8::int ELSE quantity_in_cell END,
+           shelf_stock = CASE WHEN id = $1::uuid THEN $9::int ELSE shelf_stock END
          WHERE id IN ($1::uuid, $2::uuid)
          RETURNING *`,
         [
@@ -167,6 +176,7 @@ async function moveExistingBookLocation(
           current.position_in_cell,
           v.book_id,
           v.quantity_in_cell,
+          shelfStock,
         ],
       );
       await client.query("COMMIT");
@@ -174,13 +184,14 @@ async function moveExistingBookLocation(
     }
 
     await assertValidBookCellPlacement(v.book_id, v.cell_id);
+    const shelfStock = v.shelf_stock ?? current.shelf_stock;
 
     const { rows: movedRows } = await client.query<BookLocation>(
       `UPDATE book_locations
-       SET book_id = $1, cell_id = $2, position_in_cell = $3, quantity_in_cell = $4
-       WHERE id = $5
+       SET book_id = $1, cell_id = $2, position_in_cell = $3, quantity_in_cell = $4, shelf_stock = $5
+       WHERE id = $6
        RETURNING *`,
-      [v.book_id, v.cell_id, v.position_in_cell, v.quantity_in_cell, v.id],
+      [v.book_id, v.cell_id, v.position_in_cell, v.quantity_in_cell, shelfStock, v.id],
     );
 
     await client.query("COMMIT");
@@ -223,7 +234,7 @@ export async function findBookLocationsByBook(bookId: string): Promise<BookLocat
 
 export async function findBookLocationsExpandedByBook(bookId: string): Promise<BookLocationExpanded[]> {
   const { rows } = await pool.query<BookLocationExpanded>(
-    `SELECT bl.id, bl.book_id, bl.cell_id, bl.position_in_cell, bl.quantity_in_cell, c.cell_name
+    `SELECT bl.id, bl.book_id, bl.cell_id, bl.position_in_cell, bl.quantity_in_cell, bl.shelf_stock, c.cell_name
      FROM book_locations bl
      JOIN cells c ON c.id = bl.cell_id
      WHERE bl.book_id = $1
@@ -242,7 +253,7 @@ export async function findBookLocationsExpandedByBookIds(
   if (bookIds.length === 0) return byBook;
 
   const { rows } = await pool.query<BookLocationExpanded>(
-    `SELECT bl.id, bl.book_id, bl.cell_id, bl.position_in_cell, bl.quantity_in_cell, c.cell_name
+    `SELECT bl.id, bl.book_id, bl.cell_id, bl.position_in_cell, bl.quantity_in_cell, bl.shelf_stock, c.cell_name
      FROM book_locations bl
      JOIN cells c ON c.id = bl.cell_id
      WHERE bl.book_id = ANY($1::uuid[])

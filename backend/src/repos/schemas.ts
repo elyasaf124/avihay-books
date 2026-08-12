@@ -107,6 +107,8 @@ export const bookLocationInputSchema = z.object({
   cell_id: uuid,
   position_in_cell: z.number().int().min(1),
   quantity_in_cell: z.number().int().min(0),
+  /** אם לא נשלח ב-INSERT — ברירת מחדל = `quantity_in_cell`. במיזוג לא נדרס. */
+  shelf_stock: z.number().int().min(0).optional(),
 });
 export type BookLocationInput = z.infer<typeof bookLocationInputSchema>;
 

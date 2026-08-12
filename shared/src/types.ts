@@ -77,6 +77,8 @@ export interface BookLocation {
   cell_id: UUID;
   position_in_cell: number;
   quantity_in_cell: number;
+  /** כמה עותקים אמורים להיות באופן קבוע על המדף במיקום זה (לא נגזר אוטומטית ממלאי חי). */
+  shelf_stock: number;
 }
 
 /** מיקום ספר עם שם תא — לתצוגה במסך עדכון מלאי. */
