@@ -4,7 +4,7 @@ import type { StoreMapBook, StoreMapCell } from "@avihay-books/shared";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
 import { BookSpine } from "./BookSpine";
-import { resolveGhostSpineSlots } from "../../utils/spineShortageSlots";
+import { resolveGhostSpineSlots, spineDisplayCounts } from "../../utils/spineShortageSlots";
 
 function interpolate(template: string, vars: Record<string, string>): string {
   return Object.entries(vars).reduce((s, [k, v]) => {
@@ -33,17 +33,10 @@ function CellCardImpl({
   onBookPress,
   onBookLongPress,
 }: Props): JSX.Element {
-  const occupied = books.reduce((sum, b) => sum + b.quantity_in_cell, 0);
+  const occupied = books.reduce((sum, b) => sum + spineDisplayCounts(b).total, 0);
 
   const spineRows = books.flatMap((b) => {
-    const qty = Math.max(0, Math.floor(Number(b.quantity_in_cell)));
-    const shortageCount = Math.max(
-      0,
-      Math.floor(
-        Number(b.pending_shortage_count ?? (b.is_pending_shortage ? 1 : 0)),
-      ),
-    );
-    const totalSlots = qty + shortageCount;
+    const { ghosts: shortageCount, total: totalSlots } = spineDisplayCounts(b);
     const ghostSlots = resolveGhostSpineSlots(
       totalSlots,
       shortageCount,
@@ -123,6 +116,7 @@ function areCellPropsEqual(prev: Props, next: Props): boolean {
       x.title !== y.title ||
       x.supplier_color !== y.supplier_color ||
       x.quantity_in_cell !== y.quantity_in_cell ||
+      (x.shelf_stock ?? 0) !== (y.shelf_stock ?? 0) ||
       x.is_new !== y.is_new ||
       x.is_pending_shortage !== y.is_pending_shortage ||
       (x.pending_shortage_count ?? 0) !== (y.pending_shortage_count ?? 0)

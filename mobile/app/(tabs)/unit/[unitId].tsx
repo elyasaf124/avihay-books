@@ -50,6 +50,7 @@ import {
   addPreferredGhostSlot,
   reconcilePreferredGhostSlots,
   removePreferredGhostSlot,
+  spineDisplayCounts,
 } from "../../../src/utils/spineShortageSlots";
 import { sortShelfBooksByTitle } from "../../../src/utils/hebrewSort";
 import { markUnitOpenFor } from "../../../src/utils/unitOpenTiming";
@@ -275,15 +276,7 @@ export default function UnitScreen(): JSX.Element {
     const counts = new Map<string, number>();
     for (const arr of allCellBooksMap.values()) {
       for (const b of arr) {
-        counts.set(
-          b.location_id,
-          Math.max(
-            0,
-            Math.floor(
-              Number(b.pending_shortage_count ?? (b.is_pending_shortage ? 1 : 0)),
-            ),
-          ),
-        );
+        counts.set(b.location_id, spineDisplayCounts(b).ghosts);
       }
     }
     setGhostSlotsByLocation((prev) => {

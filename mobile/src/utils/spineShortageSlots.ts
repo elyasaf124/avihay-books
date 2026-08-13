@@ -1,4 +1,28 @@
 /**
+ * מספר השדרות בארון נגזר מ-`shelf_stock` בלבד:
+ * פיזיים = `quantity_in_cell`, חוסרים = השאר עד היעד.
+ * אם `shelf_stock` חסר (cache ישן) — נספר qty + חוסרים כפי שהיה.
+ */
+export function spineDisplayCounts(book: {
+  quantity_in_cell: number;
+  shelf_stock?: number;
+  pending_shortage_count?: number;
+  is_pending_shortage?: boolean;
+}): { physical: number; ghosts: number; total: number } {
+  const physical = Math.max(0, Math.floor(Number(book.quantity_in_cell)));
+  const shelfRaw = book.shelf_stock;
+  if (shelfRaw != null && Number.isFinite(Number(shelfRaw))) {
+    const total = Math.max(physical, Math.floor(Number(shelfRaw)));
+    return { physical, total, ghosts: total - physical };
+  }
+  const ghosts = Math.max(
+    0,
+    Math.floor(Number(book.pending_shortage_count ?? (book.is_pending_shortage ? 1 : 0))),
+  );
+  return { physical, ghosts, total: physical + ghosts };
+}
+
+/**
  * בוחר אילו סלוטי שדרה (0..total-1) יוצגו כחוסר.
  * מעדיף אינדקסים שנבחרו בלחיצה; משלים מהסוף אם חסר.
  */

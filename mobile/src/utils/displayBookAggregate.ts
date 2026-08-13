@@ -1,6 +1,6 @@
 import type { StoreMapBook, StoreMapShelf } from "@avihay-books/shared";
 import { sortByHebrewKeys } from "./hebrewSort";
-import { resolveGhostSpineSlots } from "./spineShortageSlots";
+import { resolveGhostSpineSlots, spineDisplayCounts } from "./spineShortageSlots";
 
 /** מיקום בתצוגה — כולל `cell_id` / `cell_name` ל־`PATCH` ולתצוגה (לא חלק מ־`StoreMapBook`). */
 export interface DisplayLocationSpot extends StoreMapBook {
@@ -32,14 +32,7 @@ export function expandStacksFromShelves(
     for (const cell of shelf.cells) {
       const books = cellBooks.get(cell.id) ?? cell.books;
       for (const b of books) {
-        const qty = Math.max(0, Math.floor(Number(b.quantity_in_cell)));
-        const shortageCount = Math.max(
-          0,
-          Math.floor(
-            Number(b.pending_shortage_count ?? (b.is_pending_shortage ? 1 : 0)),
-          ),
-        );
-        const totalSlots = qty + shortageCount;
+        const { ghosts: shortageCount, total: totalSlots } = spineDisplayCounts(b);
         const ghostSlots = resolveGhostSpineSlots(
           totalSlots,
           shortageCount,

@@ -17,6 +17,7 @@ import type { UnitFilterState } from "../components/unit/UnitFilterBar";
 import { normalizeUnitFilterState } from "../components/unit/UnitFilterBar";
 import { isUnitFilterActive } from "../utils/unitFilters";
 import { markUnitOpenFor } from "../utils/unitOpenTiming";
+import { spineDisplayCounts } from "../utils/spineShortageSlots";
 import { compareHebrew } from "../utils/hebrewSort";
 
 /** מפתח מלא + prefix ל-invalidation של כל וריאנטי store-map. */
@@ -113,14 +114,8 @@ function countSpinesInShelves(shelves: StoreMapShelf[] | undefined): number {
   for (const shelf of shelves ?? []) {
     for (const cell of shelf.cells) {
       for (const b of cell.books) {
-        const qty = Math.max(0, Math.floor(Number(b.quantity_in_cell)));
-        const shortageCount = Math.max(
-          0,
-          Math.floor(
-            Number(b.pending_shortage_count ?? (b.is_pending_shortage ? 1 : 0)),
-          ),
-        );
-        total += qty + shortageCount;
+        const { total: spines } = spineDisplayCounts(b);
+        total += spines;
       }
     }
   }
@@ -263,12 +258,12 @@ export function adjustStoreMapLocationShortage(
   const apply = (unit: StoreMapUnit): StoreMapUnit => {
     const mapper = (book: StoreMapBook): StoreMapBook => {
       if (book.location_id !== locationId) return book;
-      const prevCount = shortageCountOf(book);
-      // quantityDelta שלילי במכירה → ספירת חוסר עולה; חיובי בביטול → יורדת.
-      const nextCount = Math.max(0, prevCount - quantityDelta);
+      const nextQty = Math.max(0, book.quantity_in_cell + quantityDelta);
+      const { total: shelfTarget } = spineDisplayCounts(book);
+      const nextCount = Math.max(0, shelfTarget - nextQty);
       return {
         ...book,
-        quantity_in_cell: Math.max(0, book.quantity_in_cell + quantityDelta),
+        quantity_in_cell: nextQty,
         pending_shortage_count: nextCount,
         is_pending_shortage: nextCount > 0,
       };

@@ -55,6 +55,7 @@ interface LocationRow {
   book_id: string;
   position_in_cell: number;
   quantity_in_cell: number;
+  shelf_stock: number;
   title: string;
   author: string | null;
   supplier_id: string;
@@ -68,21 +69,15 @@ interface LocationRow {
 
 const LOCATIONS_SELECT = `
   SELECT bl.id, bl.cell_id, bl.book_id, bl.position_in_cell, bl.quantity_in_cell,
+         bl.shelf_stock,
          b.title, b.author, b.supplier_id, b.is_new, b.price::text AS price,
          b.topic,
          s.color_hex AS supplier_color,
-         (COALESCE(sl_open.cnt, 0) > 0) AS is_pending_shortage,
-         COALESCE(sl_open.cnt, 0)::int AS pending_shortage_count
+         (bl.shelf_stock > bl.quantity_in_cell) AS is_pending_shortage,
+         GREATEST(bl.shelf_stock - bl.quantity_in_cell, 0)::int AS pending_shortage_count
     FROM book_locations bl
     JOIN books     b ON b.id = bl.book_id
     JOIN suppliers s ON s.id = b.supplier_id
-    LEFT JOIN (
-      SELECT location_id, COUNT(*)::int AS cnt
-        FROM shortage_list
-       WHERE status <> 'completed'
-         AND location_id IS NOT NULL
-       GROUP BY location_id
-    ) sl_open ON sl_open.location_id = bl.id
    WHERE b.is_active = TRUE
 `;
 
@@ -96,6 +91,9 @@ function buildStoreMapFromRows(
   const booksByCell = new Map<string, StoreMapBook[]>();
   for (const l of locs) {
     const arr = booksByCell.get(l.cell_id) ?? [];
+    const shelfStock = Math.max(0, Number(l.shelf_stock) || 0);
+    const qty = Math.max(0, Number(l.quantity_in_cell) || 0);
+    const ghosts = Math.max(0, shelfStock - qty);
     arr.push({
       location_id: l.id,
       book_id: l.book_id,
@@ -104,12 +102,13 @@ function buildStoreMapFromRows(
       supplier_id: l.supplier_id,
       supplier_color: l.supplier_color,
       position_in_cell: l.position_in_cell,
-      quantity_in_cell: l.quantity_in_cell,
+      quantity_in_cell: qty,
+      shelf_stock: shelfStock,
       is_new: l.is_new,
       price: l.price,
       topic: l.topic ?? "",
-      is_pending_shortage: Boolean(l.is_pending_shortage),
-      pending_shortage_count: Math.max(0, Number(l.pending_shortage_count) || 0),
+      is_pending_shortage: ghosts > 0,
+      pending_shortage_count: ghosts,
     });
     booksByCell.set(l.cell_id, arr);
   }
@@ -375,21 +374,15 @@ export async function getStoreMapUnit(unitId: string): Promise<StoreMapUnit | nu
        ),
        loc AS (
          SELECT bl.id, bl.cell_id, bl.book_id, bl.position_in_cell, bl.quantity_in_cell,
+                bl.shelf_stock,
                 b.title, b.author, b.supplier_id, b.is_new, b.price::text AS price,
                 b.topic,
                 s.color_hex AS supplier_color,
-                (COALESCE(sl_open.cnt, 0) > 0) AS is_pending_shortage,
-                COALESCE(sl_open.cnt, 0)::int AS pending_shortage_count
+                (bl.shelf_stock > bl.quantity_in_cell) AS is_pending_shortage,
+                GREATEST(bl.shelf_stock - bl.quantity_in_cell, 0)::int AS pending_shortage_count
            FROM book_locations bl
            JOIN books     b ON b.id = bl.book_id
            JOIN suppliers s ON s.id = b.supplier_id
-           LEFT JOIN (
-             SELECT location_id, COUNT(*)::int AS cnt
-               FROM shortage_list
-              WHERE status <> 'completed'
-                AND location_id IS NOT NULL
-              GROUP BY location_id
-           ) sl_open ON sl_open.location_id = bl.id
           WHERE b.is_active = TRUE
             AND bl.cell_id IN (SELECT id FROM c)
        )
