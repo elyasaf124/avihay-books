@@ -92,6 +92,7 @@ export function useAddShortage() {
         softInvalidateStoreMap(client);
       }
       void client.invalidateQueries({ queryKey: ["shortage"] });
+      void client.invalidateQueries({ queryKey: ["books", "inventory"] });
       void client.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
       void client.invalidateQueries({
         queryKey: NOTIFICATIONS_LIST_KEY,
