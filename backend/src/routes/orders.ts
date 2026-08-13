@@ -7,6 +7,7 @@ import {
   deleteOrdersMatchingLine,
   findAllOrdersExpanded,
   findOrderExpandedById,
+  setOrdersMatchingLineQuantity,
   updateOrdersMatchingLineStatus,
   updateOrdersBySupplierStatus,
   upsertOrder,
@@ -93,6 +94,13 @@ const setLineStatusBodySchema = orderLineMatchBodySchema.and(
   z.object({ status: z.enum(["pending", "sent"]) }),
 );
 
+const setLineQuantityBodySchema = orderLineMatchBodySchema.and(
+  z.object({
+    quantity: z.number().int().positive(),
+    manual_book_author: z.string().max(255).nullable().optional(),
+  }),
+);
+
 ordersRouter.post(
   "/remove-line",
   asyncHandler(async (req, res) => {
@@ -131,6 +139,40 @@ ordersRouter.post(
     });
     if (n < 1) throw new HttpError(404, "orders_line_not_found");
     res.json({ archived: n });
+  }),
+);
+
+ordersRouter.post(
+  "/set-line-quantity",
+  asyncHandler(async (req, res) => {
+    const body = setLineQuantityBodySchema.parse(req.body ?? {});
+    const manualNorm =
+      body.book_id != null ? null : body.manual_book_title?.trim() ? body.manual_book_title.trim() : null;
+    const result = await setOrdersMatchingLineQuantity(
+      {
+        book_id: body.book_id,
+        supplier_id: body.supplier_id,
+        order_type: body.order_type,
+        customer_name: body.customer_name ?? null,
+        customer_phone: body.customer_phone ?? null,
+        manual_book_title: manualNorm,
+      },
+      body.quantity,
+      {
+        createIfMissing: body.order_type === "inventory",
+        manual_book_author:
+          body.book_id != null
+            ? null
+            : body.manual_book_author?.trim()
+              ? body.manual_book_author.trim()
+              : null,
+      },
+    );
+    if (result.updated < 1 && !result.created) throw new HttpError(404, "orders_line_not_found");
+    if (body.book_id && result.created) {
+      await markBookShortagesAsOrderPending(body.book_id);
+    }
+    res.json(result);
   }),
 );
 

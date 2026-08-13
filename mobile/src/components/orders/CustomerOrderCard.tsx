@@ -22,7 +22,6 @@ interface Props {
   onNotifyCustomer?: (group: OrdersByCustomerGroup) => void;
   removingOrderLineKey?: string | null;
   finishingOrderLineKey?: string | null;
-  updatingOrderLineKey?: string | null;
 }
 
 /**
@@ -42,7 +41,6 @@ export function CustomerOrderCard({
   onNotifyCustomer,
   removingOrderLineKey = null,
   finishingOrderLineKey = null,
-  updatingOrderLineKey = null,
 }: Props): JSX.Element {
   const isHistory = variant === "history";
   const totalUnits = group.orders.reduce((s, o) => s + o.quantity, 0);
@@ -111,8 +109,7 @@ export function CustomerOrderCard({
           const isLast = index === group.orders.length - 1;
           const lineBusy =
             finishingOrderLineKey === lineKey ||
-            removingOrderLineKey === lineKey ||
-            updatingOrderLineKey === lineKey;
+            removingOrderLineKey === lineKey;
           return (
             <View
               key={lineKey}

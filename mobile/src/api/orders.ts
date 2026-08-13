@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import type {
   OrderListItem,
   OrderRow,
@@ -24,6 +24,125 @@ function pickMergedStatus(a: OrderStatus, b: OrderStatus): OrderStatus {
 }
 
 const ORDERS_LIST_KEY = (type: OrderType) => ["orders", "list", type] as const;
+const ORDER_LIST_TYPES: OrderType[] = ["inventory", "customer", "whatsapp"];
+
+type OrdersCacheSnapshot = Partial<Record<OrderType, OrderListItem[] | undefined>>;
+
+const pendingQtyByLine = new Map<string, number>();
+const pendingQtyByType = new Map<OrderType, number>();
+
+function trackPendingQty(lineKey: string, type: OrderType): void {
+  pendingQtyByLine.set(lineKey, (pendingQtyByLine.get(lineKey) ?? 0) + 1);
+  pendingQtyByType.set(type, (pendingQtyByType.get(type) ?? 0) + 1);
+}
+
+function releasePendingQty(lineKey: string, type: OrderType): { line: number; type: number } {
+  const nextLine = (pendingQtyByLine.get(lineKey) ?? 0) - 1;
+  if (nextLine <= 0) pendingQtyByLine.delete(lineKey);
+  else pendingQtyByLine.set(lineKey, nextLine);
+
+  const nextType = (pendingQtyByType.get(type) ?? 0) - 1;
+  if (nextType <= 0) pendingQtyByType.delete(type);
+  else pendingQtyByType.set(type, nextType);
+
+  return { line: Math.max(0, nextLine), type: Math.max(0, nextType) };
+}
+
+async function cancelOrderListQueries(
+  client: QueryClient,
+  types: readonly OrderType[] = ORDER_LIST_TYPES,
+): Promise<void> {
+  await Promise.all(types.map((type) => client.cancelQueries({ queryKey: ORDERS_LIST_KEY(type) })));
+}
+
+function snapshotOrderLists(
+  client: QueryClient,
+  types: readonly OrderType[] = ORDER_LIST_TYPES,
+): OrdersCacheSnapshot {
+  const snap: OrdersCacheSnapshot = {};
+  for (const type of types) {
+    snap[type] = client.getQueryData<OrderListItem[]>(ORDERS_LIST_KEY(type));
+  }
+  return snap;
+}
+
+function restoreOrderLists(client: QueryClient, snap: OrdersCacheSnapshot | undefined): void {
+  if (!snap) return;
+  for (const type of ORDER_LIST_TYPES) {
+    const data = snap[type];
+    if (data !== undefined) {
+      client.setQueryData(ORDERS_LIST_KEY(type), data);
+    }
+  }
+}
+
+function patchOrderList(
+  client: QueryClient,
+  type: OrderType,
+  updater: (list: OrderListItem[]) => OrderListItem[],
+): void {
+  client.setQueryData<OrderListItem[]>(ORDERS_LIST_KEY(type), (prev) =>
+    prev ? updater(prev) : prev,
+  );
+}
+
+function invalidateOrderLists(
+  client: QueryClient,
+  types: readonly OrderType[],
+  opts?: { dashboard?: boolean },
+): void {
+  for (const type of types) {
+    void client.invalidateQueries({ queryKey: ORDERS_LIST_KEY(type) });
+  }
+  if (opts?.dashboard) {
+    void client.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
+  }
+}
+
+/** מחליף כמות בשורות תואמות; מאחד כפילויות; אופציונלי יוצר שורה אם חסרה. */
+function applyOptimisticLineQuantity(
+  list: OrderListItem[] | undefined,
+  match: (o: OrderListItem) => boolean,
+  newQty: number,
+  createLine?: OrderListItem,
+): OrderListItem[] | undefined {
+  if (!list) return createLine ? [{ ...createLine, quantity: newQty }] : list;
+  let assigned = false;
+  const next: OrderListItem[] = [];
+  for (const o of list) {
+    if (!match(o)) {
+      next.push(o);
+      continue;
+    }
+    if (!assigned) {
+      next.push({ ...o, quantity: newQty });
+      assigned = true;
+    }
+  }
+  if (!assigned && createLine) {
+    next.push({ ...createLine, quantity: newQty });
+  }
+  return next;
+}
+
+function applyOptimisticLineStatus(
+  list: OrderListItem[] | undefined,
+  match: (o: OrderListItem) => boolean,
+  status: Extract<OrderStatus, "pending" | "sent">,
+): OrderListItem[] | undefined {
+  if (!list) return list;
+  return list.map((o) =>
+    match(o) && (o.status === "pending" || o.status === "sent") ? { ...o, status } : o,
+  );
+}
+
+function removeMatchingLines(
+  list: OrderListItem[] | undefined,
+  match: (o: OrderListItem) => boolean,
+): OrderListItem[] | undefined {
+  if (!list) return list;
+  return list.filter((o) => !match(o));
+}
 
 const UNASSIGNED_GROUP_KEY = "__unassigned__";
 const NEUTRAL_SUPPLIER_LABEL = "—";
@@ -362,11 +481,8 @@ export interface RemoveDisplayOrderLineParams {
   whatsappItems: OrderListItem[];
 }
 
-const ORDERS_KEY_PREFIX_REMOVE = ["orders"] as const;
-
-function invalidateOrdersCaches(client: ReturnType<typeof useQueryClient>): void {
-  void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX_REMOVE });
-  void client.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
+function invalidateOrdersCaches(client: QueryClient): void {
+  invalidateOrderLists(client, ORDER_LIST_TYPES, { dashboard: true });
 }
 
 async function postRemoveOrderLine(order: OrderListItem): Promise<void> {
@@ -377,16 +493,44 @@ async function postArchiveOrderLine(order: OrderListItem): Promise<void> {
   await api.post("/orders/archive-line", removeOrderLineBodyFromDisplayRow(order));
 }
 
+async function postSetOrderLineQuantity(order: OrderListItem, quantity: number): Promise<void> {
+  const bookId = order.book_id ?? null;
+  await api.post("/orders/set-line-quantity", {
+    ...removeOrderLineBodyFromDisplayRow(order),
+    quantity,
+    manual_book_author: bookId
+      ? null
+      : (order.manual_book_author ?? order.book_author ?? "").trim() || null,
+  });
+}
+
 export async function archiveDisplayOrderLine(order: OrderListItem): Promise<void> {
   await postArchiveOrderLine(order);
 }
 
 export function useArchiveOrderLine() {
   const client = useQueryClient();
-  return useMutation<void, Error, OrderListItem>({
+  return useMutation<void, Error, OrderListItem, { snapshot: OrdersCacheSnapshot }>({
     mutationFn: archiveDisplayOrderLine,
-    onSuccess: () => {
-      invalidateOrdersCaches(client);
+    onMutate: async (order) => {
+      const types: OrderType[] = [order.order_type];
+      await cancelOrderListQueries(client, types);
+      const snapshot = snapshotOrderLists(client, types);
+      const lineKey = orderDisplayLineKey(order);
+      patchOrderList(client, order.order_type, (list) =>
+        list.map((o) =>
+          orderDisplayLineKey(o) === lineKey && o.status === "completed"
+            ? { ...o, status: "archived" }
+            : o,
+        ),
+      );
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      restoreOrderLists(client, ctx?.snapshot);
+    },
+    onSettled: (_res, _err, order) => {
+      invalidateOrderLists(client, [order.order_type], { dashboard: true });
     },
   });
 }
@@ -449,10 +593,26 @@ export async function toggleCustomerOrderOrderedStatus({
 
 export function useToggleCustomerOrderOrderedStatus() {
   const client = useQueryClient();
-  return useMutation<void, Error, ToggleCustomerOrderParams>({
+  return useMutation<void, Error, ToggleCustomerOrderParams, { snapshot: OrdersCacheSnapshot }>({
     mutationFn: toggleCustomerOrderOrderedStatus,
-    onSuccess: () => {
-      invalidateOrdersCaches(client);
+    onMutate: async ({ order }) => {
+      const types: OrderType[] = [order.order_type];
+      await cancelOrderListQueries(client, types);
+      const snapshot = snapshotOrderLists(client, types);
+      const nextStatus: Extract<OrderStatus, "pending" | "sent"> =
+        order.status === "sent" ? "pending" : "sent";
+      const lineKey = orderDisplayLineKey(order);
+      patchOrderList(client, order.order_type, (list) =>
+        applyOptimisticLineStatus(list, (o) => orderDisplayLineKey(o) === lineKey, nextStatus) ??
+        list,
+      );
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      restoreOrderLists(client, ctx?.snapshot);
+    },
+    onSettled: (_res, _err, { order }) => {
+      invalidateOrderLists(client, [order.order_type], { dashboard: true });
     },
   });
 }
@@ -479,9 +639,30 @@ export async function toggleInventorySupplierOrderedStatus(
 
 export function useToggleInventorySupplierOrderedStatus() {
   const client = useQueryClient();
-  return useMutation<void, Error, OrdersBySupplierGroup>({
+  return useMutation<void, Error, OrdersBySupplierGroup, { snapshot: OrdersCacheSnapshot }>({
     mutationFn: toggleInventorySupplierOrderedStatus,
-    onSuccess: () => {
+    onMutate: async (group) => {
+      await cancelOrderListQueries(client);
+      const snapshot = snapshotOrderLists(client);
+      const open = group.orders.filter(isOpenOrder);
+      const allSent = open.length > 0 && open.every((o) => o.status === "sent");
+      const nextStatus: Extract<OrderStatus, "pending" | "sent"> = allSent ? "pending" : "sent";
+      const supplierId = group.supplier_id;
+      for (const type of ORDER_LIST_TYPES) {
+        patchOrderList(client, type, (list) =>
+          applyOptimisticLineStatus(
+            list,
+            (o) => (o.supplier_id ?? null) === (supplierId ?? null),
+            nextStatus,
+          ) ?? list,
+        );
+      }
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      restoreOrderLists(client, ctx?.snapshot);
+    },
+    onSettled: () => {
       invalidateOrdersCaches(client);
     },
   });
@@ -518,20 +699,39 @@ export async function toggleInventoryLineOrderedStatus({
     return;
   }
 
+  const uniqueRows: OrderListItem[] = [];
   const updatedKeys = new Set<string>();
   for (const row of matching) {
     const key = orderDisplayLineKey(row);
     if (updatedKeys.has(key)) continue;
     updatedKeys.add(key);
-    await postSetOrderLineStatus(row, nextStatus);
+    uniqueRows.push(row);
   }
+  await Promise.all(uniqueRows.map((row) => postSetOrderLineStatus(row, nextStatus)));
 }
 
 export function useToggleInventoryLineOrderedStatus() {
   const client = useQueryClient();
-  return useMutation<void, Error, ToggleInventoryLineParams>({
+  return useMutation<void, Error, ToggleInventoryLineParams, { snapshot: OrdersCacheSnapshot }>({
     mutationFn: toggleInventoryLineOrderedStatus,
-    onSuccess: () => {
+    onMutate: async ({ order }) => {
+      await cancelOrderListQueries(client);
+      const snapshot = snapshotOrderLists(client);
+      const nextStatus: Extract<OrderStatus, "pending" | "sent"> =
+        order.status === "sent" ? "pending" : "sent";
+      const bookKey = orderBookLineKey(order);
+      const supplierId = order.supplier_id;
+      const match = (o: OrderListItem) =>
+        isOpenOrder(o) && o.supplier_id === supplierId && orderBookLineKey(o) === bookKey;
+      for (const type of ORDER_LIST_TYPES) {
+        patchOrderList(client, type, (list) => applyOptimisticLineStatus(list, match, nextStatus) ?? list);
+      }
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      restoreOrderLists(client, ctx?.snapshot);
+    },
+    onSettled: () => {
       invalidateOrdersCaches(client);
     },
   });
@@ -587,13 +787,54 @@ export async function removeDisplayOrderLine(params: RemoveDisplayOrderLineParam
 
 export function useRemoveOrderLine() {
   const client = useQueryClient();
-  return useMutation<RemoveOrderLineResponse, Error, RemoveDisplayOrderLineParams>({
+  return useMutation<
+    RemoveOrderLineResponse,
+    Error,
+    RemoveDisplayOrderLineParams,
+    { snapshot: OrdersCacheSnapshot; types: OrderType[] }
+  >({
     mutationFn: async (params) => {
       await removeDisplayOrderLine(params);
       return { deleted: 1 };
     },
-    onSuccess: () => {
-      invalidateOrdersCaches(client);
+    onMutate: async ({ order, tab }) => {
+      const types: OrderType[] =
+        tab === "inventory" ? [...ORDER_LIST_TYPES] : [tab];
+      await cancelOrderListQueries(client, types);
+      const snapshot = snapshotOrderLists(client, types);
+      if (tab === "customer" || tab === "whatsapp") {
+        const lineKey = orderDisplayLineKey(order);
+        patchOrderList(client, tab, (list) =>
+          removeMatchingLines(list, (o) => orderDisplayLineKey(o) === lineKey) ?? list,
+        );
+      } else {
+        const bookSupplier = inventorySupplierBookKey(order);
+        patchOrderList(
+          client,
+          "inventory",
+          (list) =>
+            removeMatchingLines(list, (o) => inventorySupplierBookKey(o) === bookSupplier) ?? list,
+        );
+        patchOrderList(
+          client,
+          "customer",
+          (list) =>
+            removeMatchingLines(list, (o) => inventorySupplierBookKey(o) === bookSupplier) ?? list,
+        );
+        patchOrderList(
+          client,
+          "whatsapp",
+          (list) =>
+            removeMatchingLines(list, (o) => inventorySupplierBookKey(o) === bookSupplier) ?? list,
+        );
+      }
+      return { snapshot, types };
+    },
+    onError: (_err, _vars, ctx) => {
+      restoreOrderLists(client, ctx?.snapshot);
+    },
+    onSettled: (_res, _err, _vars, ctx) => {
+      invalidateOrderLists(client, ctx?.types ?? ORDER_LIST_TYPES, { dashboard: true });
     },
   });
 }
@@ -601,10 +842,23 @@ export function useRemoveOrderLine() {
 /** מחיקה מהיסטוריה — תמיד מוחק מ-DB (גם `archived`). */
 export function useRemoveHistoryOrderLine() {
   const client = useQueryClient();
-  return useMutation<void, Error, OrderListItem>({
+  return useMutation<void, Error, OrderListItem, { snapshot: OrdersCacheSnapshot }>({
     mutationFn: postRemoveOrderLine,
-    onSuccess: () => {
-      invalidateOrdersCaches(client);
+    onMutate: async (order) => {
+      const types: OrderType[] = [order.order_type];
+      await cancelOrderListQueries(client, types);
+      const snapshot = snapshotOrderLists(client, types);
+      const lineKey = orderDisplayLineKey(order);
+      patchOrderList(client, order.order_type, (list) =>
+        removeMatchingLines(list, (o) => orderDisplayLineKey(o) === lineKey) ?? list,
+      );
+      return { snapshot };
+    },
+    onError: (_err, _vars, ctx) => {
+      restoreOrderLists(client, ctx?.snapshot);
+    },
+    onSettled: (_res, _err, order) => {
+      invalidateOrderLists(client, [order.order_type], { dashboard: true });
     },
   });
 }
@@ -632,8 +886,8 @@ export function useCreateCustomerOrder() {
       });
       return data;
     },
-    onSuccess: () => {
-      invalidateOrdersCaches(client);
+    onSuccess: (_data, body) => {
+      invalidateOrderLists(client, [body.order_type], { dashboard: true });
     },
   });
 }
@@ -764,6 +1018,19 @@ function customerLinesEquivalent(
   return origTitle === nextTitle && origAuthor === nextAuthor;
 }
 
+function customerLineSameBookAndSupplier(
+  orig: OrderListItem,
+  next: CustomerOrderLineInput,
+): boolean {
+  if (orig.supplier_id !== next.supplier_id) return false;
+  if (orig.book_id) return orig.book_id === next.book_id;
+  const origTitle = (orig.manual_book_title ?? "").trim();
+  const nextTitle = (next.manual_book_title ?? "").trim();
+  const origAuthor = (orig.manual_book_author ?? "").trim();
+  const nextAuthor = (next.manual_book_author ?? "").trim();
+  return origTitle === nextTitle && origAuthor === nextAuthor;
+}
+
 async function postCreateCustomerOrder(body: CreateCustomerOrderBody): Promise<OrderRow> {
   const { data } = await api.post<OrderRow>("/orders", { ...body, status: "pending" });
   return data;
@@ -827,6 +1094,10 @@ export async function syncCustomerOrderBundle(params: {
       .filter((r) => customerOrderLineKey(r) === k)
       .reduce((s, r) => s + r.quantity, 0);
     if (customerLinesEquivalent(orig, line, origTotalQty)) continue;
+    if (customerLineSameBookAndSupplier(orig, line) && origTotalQty !== line.quantity) {
+      await postSetOrderLineQuantity(orig, line.quantity);
+      continue;
+    }
     await postRemoveOrderLine(orig);
     await postCreateCustomerOrder(buildCreateCustomerOrderBody(line, params.customer, orderType));
   }
@@ -849,9 +1120,8 @@ export function useSyncCustomerOrderBundle() {
       orderType?: "customer" | "whatsapp";
     }
   >({
-    mutationFn: syncCustomerOrderBundle,
-    onSuccess: () => {
-      invalidateOrdersCaches(client);
+    onSuccess: (_data, vars) => {
+      invalidateOrderLists(client, [vars.orderType ?? "customer"], { dashboard: true });
     },
   });
 }
@@ -865,8 +1135,8 @@ export function useCreateCustomerOrderBundle() {
   >({
     mutationFn: async ({ lines, customer, orderType = "customer" }) =>
       createCustomerOrderBundle(lines, customer, orderType),
-    onSuccess: () => {
-      invalidateOrdersCaches(client);
+    onSuccess: (_data, vars) => {
+      invalidateOrderLists(client, [vars.orderType ?? "customer"], { dashboard: true });
     },
   });
 }
@@ -885,43 +1155,8 @@ function findInventoryRowsForBookSupplier(
   });
 }
 
-function inventoryCreateBodyFromLine(
-  line: OrderListItem,
-  quantity: number,
-  status: OrderStatus = "pending",
-): {
-  supplier_id: string | null;
-  order_type: "inventory";
-  quantity: number;
-  status: OrderStatus;
-  book_id?: string;
-  manual_book_title?: string | null;
-  manual_book_author?: string | null;
-} {
-  if (line.book_id) {
-    return {
-      book_id: line.book_id,
-      supplier_id: line.supplier_id,
-      order_type: "inventory",
-      quantity,
-      status,
-    };
-  }
-  const manualTitle = (line.manual_book_title ?? line.book_title ?? "").trim();
-  const manualAuthor = (line.manual_book_author ?? line.book_author ?? "").trim();
-  return {
-    supplier_id: line.supplier_id,
-    order_type: "inventory",
-    quantity,
-    status,
-    manual_book_title: manualTitle || null,
-    manual_book_author: manualAuthor || null,
-  };
-}
-
-/** מעדכן כמות בסיס של הזמנת מלאi (מאחד שורות כפולות ושומר סטטוס). */
+/** מעדכן כמות בסיס של הזמנת מלאי בקריאה אחת (מאחד כפילויות / יוצר אם חסר). */
 export async function updateInventoryOrderBaseQuantity(
-  rawInventory: OrderListItem[],
   line: OrderListItem,
   newBaseQty: number,
 ): Promise<void> {
@@ -930,46 +1165,68 @@ export async function updateInventoryOrderBaseQuantity(
   }
   if (!Number.isFinite(newBaseQty) || newBaseQty < 1) throw new Error("invalid_quantity");
 
-  const matching = findInventoryRowsForBookSupplier(rawInventory, line);
-
-  if (matching.length === 0) {
-    await api.post<OrderRow>("/orders", inventoryCreateBodyFromLine(line, newBaseQty));
-    return;
-  }
-
-  const currentBase = matching.reduce((s, o) => s + o.quantity, 0);
-  if (currentBase === newBaseQty) return;
-
-  const status = matching.reduce((best, o) =>
-    STATUS_RANK[o.status] <= STATUS_RANK[best.status] ? o : best,
-  ).status;
-
-  await postRemoveOrderLine({
-    ...matching[0]!,
-    order_type: "inventory",
-    customer_name: null,
-    customer_phone: null,
-  });
-
-  await api.post<OrderRow>("/orders", inventoryCreateBodyFromLine(line, newBaseQty, status));
+  await postSetOrderLineQuantity(
+    {
+      ...line,
+      order_type: "inventory",
+      customer_name: null,
+      customer_phone: null,
+    },
+    newBaseQty,
+  );
 }
+
+type QtyMutationCtx = { snapshot: OrdersCacheSnapshot; lineKey: string };
 
 export function useUpdateInventoryOrderQuantity() {
   const client = useQueryClient();
-  return useMutation<
-    void,
-    Error,
-    { rawInventory: OrderListItem[]; line: OrderListItem; newBaseQty: number }
-  >({
-    mutationFn: ({ rawInventory, line, newBaseQty }) =>
-      updateInventoryOrderBaseQuantity(rawInventory, line, newBaseQty),
-    onSuccess: () => {
-      invalidateOrdersCaches(client);
+  return useMutation<void, Error, { line: OrderListItem; newBaseQty: number }, QtyMutationCtx>({
+    mutationFn: ({ line, newBaseQty }) => updateInventoryOrderBaseQuantity(line, newBaseQty),
+    onMutate: async ({ line, newBaseQty }) => {
+      const lineKey = orderDisplayLineKey({
+        ...line,
+        order_type: "inventory",
+        customer_name: null,
+        customer_phone: null,
+      });
+      trackPendingQty(lineKey, "inventory");
+      await cancelOrderListQueries(client, ["inventory"]);
+      const snapshot = snapshotOrderLists(client, ["inventory"]);
+      const createLine: OrderListItem = {
+        ...line,
+        order_type: "inventory",
+        quantity: newBaseQty,
+        customer_name: null,
+        customer_phone: null,
+      };
+      patchOrderList(client, "inventory", (list) => {
+        const next = applyOptimisticLineQuantity(
+          list,
+          (o) => findInventoryRowsForBookSupplier([o], line).length > 0,
+          newBaseQty,
+          createLine,
+        );
+        return next ?? list;
+      });
+      return { snapshot, lineKey };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx && (pendingQtyByType.get("inventory") ?? 0) <= 1) {
+        restoreOrderLists(client, ctx.snapshot);
+        return;
+      }
+      invalidateOrderLists(client, ["inventory"]);
+    },
+    onSettled: (_res, err, _vars, ctx) => {
+      const remaining = ctx ? releasePendingQty(ctx.lineKey, "inventory") : { line: 0, type: 0 };
+      if (remaining.type <= 0 && !err) {
+        invalidateOrderLists(client, ["inventory"], { dashboard: true });
+      }
     },
   });
 }
 
-/** מעדכן כמות בשורת הזמנת לקוח / וואטסאפ (מסיר ויוצר מחדש עם הכמות החדשה). */
+/** מעדכן כמות בשורת הזמנת לקוח / וואטסאפ. */
 export async function updateDemandOrderLineQuantity(
   line: OrderListItem,
   newQty: number,
@@ -980,35 +1237,42 @@ export async function updateDemandOrderLineQuantity(
   if (!Number.isFinite(newQty) || newQty < 1) throw new Error("invalid_quantity");
   if (line.quantity === newQty) return;
 
-  const customer = {
-    name: (line.customer_name ?? "").trim(),
-    phone: (line.customer_phone ?? "").trim(),
-  };
-  const bookId = line.book_id ?? null;
-  const nextLine: CustomerOrderLineInput = {
-    supplier_id: line.supplier_id,
-    book_id: bookId,
-    manual_book_title: bookId
-      ? null
-      : (line.manual_book_title ?? line.book_title ?? "").trim() || null,
-    manual_book_author: bookId
-      ? null
-      : (line.manual_book_author ?? line.book_author ?? "").trim() || null,
-    quantity: newQty,
-  };
-
-  await postRemoveOrderLine(line);
-  await postCreateCustomerOrder(
-    buildCreateCustomerOrderBody(nextLine, customer, line.order_type),
-  );
+  await postSetOrderLineQuantity(line, newQty);
 }
 
 export function useUpdateDemandOrderQuantity() {
   const client = useQueryClient();
-  return useMutation<void, Error, { line: OrderListItem; newQty: number }>({
+  return useMutation<void, Error, { line: OrderListItem; newQty: number }, QtyMutationCtx>({
     mutationFn: ({ line, newQty }) => updateDemandOrderLineQuantity(line, newQty),
-    onSuccess: () => {
-      invalidateOrdersCaches(client);
+    onMutate: async ({ line, newQty }) => {
+      const lineKey = orderDisplayLineKey(line);
+      trackPendingQty(lineKey, line.order_type);
+      await cancelOrderListQueries(client, [line.order_type]);
+      const snapshot = snapshotOrderLists(client, [line.order_type]);
+      patchOrderList(client, line.order_type, (list) => {
+        const next = applyOptimisticLineQuantity(
+          list,
+          (o) => orderDisplayLineKey(o) === lineKey,
+          newQty,
+        );
+        return next ?? list;
+      });
+      return { snapshot, lineKey };
+    },
+    onError: (_err, vars, ctx) => {
+      if (ctx && (pendingQtyByType.get(vars.line.order_type) ?? 0) <= 1) {
+        restoreOrderLists(client, ctx.snapshot);
+        return;
+      }
+      invalidateOrderLists(client, [vars.line.order_type]);
+    },
+    onSettled: (_res, err, vars, ctx) => {
+      const remaining = ctx
+        ? releasePendingQty(ctx.lineKey, vars.line.order_type)
+        : { line: 0, type: 0 };
+      if (remaining.type <= 0 && !err) {
+        invalidateOrderLists(client, [vars.line.order_type]);
+      }
     },
   });
 }
@@ -1035,7 +1299,7 @@ export function useCreateInventoryOrder() {
   return useMutation<OrderRow, Error, CreateInventoryOrderInput>({
     mutationFn: createInventoryOrder,
     onSuccess: () => {
-      invalidateOrdersCaches(client);
+      invalidateOrderLists(client, ["inventory"], { dashboard: true });
     },
   });
 }

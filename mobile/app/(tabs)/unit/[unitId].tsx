@@ -51,6 +51,7 @@ import {
   reconcilePreferredGhostSlots,
   removePreferredGhostSlot,
 } from "../../../src/utils/spineShortageSlots";
+import { sortShelfBooksByTitle } from "../../../src/utils/hebrewSort";
 import { markUnitOpenFor } from "../../../src/utils/unitOpenTiming";
 import { resetSpineCounters, spineCounters } from "../../../src/utils/spineRenderCounter";
 import { startBookTapTiming } from "../../../src/utils/bookTapTiming";
@@ -197,7 +198,7 @@ export default function UnitScreen(): JSX.Element {
     const map = new Map<string, StoreMapBook[]>();
     for (const shelf of shelves) {
       for (const cell of shelf.cells) {
-        map.set(cell.id, cell.books);
+        map.set(cell.id, sortShelfBooksByTitle(cell.books));
       }
     }
     return map;
@@ -213,7 +214,7 @@ export default function UnitScreen(): JSX.Element {
     const map = new Map<string, StoreMapBook[]>();
     for (const shelf of shelves) {
       for (const cell of shelf.cells) {
-        map.set(cell.id, cell.books.filter(passesFilter));
+        map.set(cell.id, sortShelfBooksByTitle(cell.books.filter(passesFilter)));
       }
     }
     return map;
@@ -223,11 +224,7 @@ export default function UnitScreen(): JSX.Element {
   const isDisplayUnit = unit?.store_position === "display";
   const isFlatSurface = unit != null && isFlatSurfacePosition(unit.store_position);
 
-  /**
-   * הצבירות של תצוגה/ערימות מחושבות רק ליחידות שמציגות אותן. בארון מדפים רגיל
-   * הן נזרקו לפח, אבל המיון העברי שבתוכן לקח ~10 שניות לכל אחת מארבע —
-   * זה היה עיקר ההמתנה במסך הארון.
-   */
+  /** הצבירות של תצוגה/ערימות — רק ליחידות שמציגות אותן (מיון א-ב כבר ב־`allCellBooksMap`). */
   const displayAggregatesAll = useMemo(
     () =>
       isDisplayUnit ? aggregateDisplayBooksFromShelves(shelves, allCellBooksMap) : NO_AGGREGATES,

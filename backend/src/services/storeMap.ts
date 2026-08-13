@@ -113,6 +113,14 @@ function buildStoreMapFromRows(
     });
     booksByCell.set(l.cell_id, arr);
   }
+  /** תצוגת שדרות במדף — א-ב עברי (לא לפי `position_in_cell` הפיזי). */
+  for (const arr of booksByCell.values()) {
+    arr.sort((a, b) => {
+      const byTitle = a.title.localeCompare(b.title, "he", { numeric: true, sensitivity: "base" });
+      if (byTitle !== 0) return byTitle;
+      return a.location_id.localeCompare(b.location_id);
+    });
+  }
 
   const cellsByShelf = new Map<string, StoreMapCell[]>();
   for (const c of cells) {

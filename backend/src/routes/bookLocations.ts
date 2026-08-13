@@ -54,10 +54,29 @@ bookLocationsRouter.patch(
   asyncHandler(async (req, res) => {
     const locationId = req.params.id!;
     const before = await findBookLocationById(locationId);
+    if (!before) {
+      res.status(404).json({ error: "location_not_found" });
+      return;
+    }
+
+    const requestedQty =
+      typeof req.body?.quantity_in_cell === "number" ? req.body.quantity_in_cell : null;
+    if (
+      requestedQty != null &&
+      requestedQty > before.quantity_in_cell &&
+      requestedQty > before.shelf_stock
+    ) {
+      res.status(400).json({
+        error: "quantity_above_shelf_stock",
+        details: { shelf_stock: before.shelf_stock, quantity_in_cell: before.quantity_in_cell },
+      });
+      return;
+    }
+
     const row = await upsertBookLocation({ ...req.body, id: locationId });
     invalidateStoreMapCache();
 
-    const oldQty = before?.quantity_in_cell;
+    const oldQty = before.quantity_in_cell;
     const newQty = row.quantity_in_cell;
     if (oldQty != null && oldQty > 0 && newQty === 0) {
       await ensureShortageForEmptyCell({ bookId: row.book_id, locationId: row.id }).catch(

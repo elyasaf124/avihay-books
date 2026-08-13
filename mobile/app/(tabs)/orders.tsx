@@ -593,22 +593,15 @@ export default function OrdersScreen(): JSX.Element {
     ]);
   };
 
-  const confirmUpdateInventoryQty = async (
-    line: OrderListItem,
-    newBaseQty: number,
-    options?: { silent?: boolean },
-  ) => {
+  const confirmUpdateInventoryQty = async (line: OrderListItem, newBaseQty: number) => {
     if (updateInventoryQtyMutation.isPending) return;
     try {
       await updateInventoryQtyMutation.mutateAsync({
-        rawInventory: rawInventoryItems,
         line,
         newBaseQty,
       });
       setEditInventoryTarget(null);
-      if (!options?.silent) {
-        Alert.alert(he.orders.customerOrderSuccessTitle, he.orders.inventoryOrderEditQtySuccess);
-      }
+      Alert.alert(he.orders.customerOrderSuccessTitle, he.orders.inventoryOrderEditQtySuccess);
     } catch {
       Alert.alert(he.generic.errorTitle, he.orders.inventoryOrderEditQtyFailed);
     }
@@ -623,7 +616,14 @@ export default function OrdersScreen(): JSX.Element {
     const extra = extraCustomerWhatsappByBookSupplier.get(key) ?? 0;
     const newBaseQty = nextDisplayQty - extra;
     if (newBaseQty < 1) return;
-    void confirmUpdateInventoryQty(line, newBaseQty, { silent: true });
+    updateInventoryQtyMutation.mutate(
+      { line, newBaseQty },
+      {
+        onError: () => {
+          Alert.alert(he.generic.errorTitle, he.orders.inventoryOrderEditQtyFailed);
+        },
+      },
+    );
   };
 
   const quickUpdateDemandQty = (line: OrderListItem, nextQty: number) => {
@@ -631,15 +631,16 @@ export default function OrdersScreen(): JSX.Element {
       Alert.alert(he.orders.removeBlockedOffline);
       return;
     }
-    if (updateDemandQtyMutation.isPending || line.status === "completed") return;
+    if (line.status === "completed") return;
     if (nextQty < 1) return;
-    void (async () => {
-      try {
-        await updateDemandQtyMutation.mutateAsync({ line, newQty: nextQty });
-      } catch {
-        Alert.alert(he.generic.errorTitle, he.orders.inventoryOrderEditQtyFailed);
-      }
-    })();
+    updateDemandQtyMutation.mutate(
+      { line, newQty: nextQty },
+      {
+        onError: () => {
+          Alert.alert(he.generic.errorTitle, he.orders.inventoryOrderEditQtyFailed);
+        },
+      },
+    );
   };
 
   const inventoryQtyMinForLine = (line: OrderListItem): number => {
@@ -656,13 +657,6 @@ export default function OrdersScreen(): JSX.Element {
   const editInventoryExtraQty = editInventoryTarget
     ? (extraCustomerWhatsappByBookSupplier.get(inventorySupplierBookKey(editInventoryTarget)) ?? 0)
     : 0;
-
-  const updatingOrderLineKey = updateInventoryQtyMutation.isPending
-    && updateInventoryQtyMutation.variables
-    ? orderDisplayLineKey(updateInventoryQtyMutation.variables.line)
-    : updateDemandQtyMutation.isPending && updateDemandQtyMutation.variables
-      ? orderDisplayLineKey(updateDemandQtyMutation.variables.line)
-      : null;
 
   const togglingSupplierKey =
     toggleSupplierMutation.isPending && toggleSupplierTarget
@@ -751,7 +745,6 @@ export default function OrdersScreen(): JSX.Element {
               onToggleSupplierOrdered={isOffline ? undefined : toggleSupplierOrderedStatus}
               onToggleLineOrdered={isOffline ? undefined : toggleLineOrderedStatus}
               removingOrderLineKey={removingLineKey}
-              updatingOrderLineKey={updatingOrderLineKey}
               togglingSupplierKey={togglingSupplierKey}
               togglingLineKey={togglingLineKey}
             />
@@ -814,7 +807,6 @@ export default function OrdersScreen(): JSX.Element {
               onNotifyCustomer={isOffline ? undefined : notifyCustomer}
               removingOrderLineKey={removingLineKey}
               finishingOrderLineKey={finishingLineKey}
-              updatingOrderLineKey={updatingOrderLineKey}
             />
           )}
         />
