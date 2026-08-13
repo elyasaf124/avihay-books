@@ -131,13 +131,12 @@ async function moveExistingBookLocation(
 
     if (sameSlot) {
       await assertValidBookCellPlacement(v.book_id, v.cell_id);
-      const shelfStock = v.shelf_stock ?? current.shelf_stock;
       const { rows } = await client.query<BookLocation>(
         `UPDATE book_locations
-         SET book_id = $1, quantity_in_cell = $2, shelf_stock = $3
-         WHERE id = $4
+         SET book_id = $1, quantity_in_cell = $2
+         WHERE id = $3
          RETURNING *`,
-        [v.book_id, v.quantity_in_cell, shelfStock, v.id],
+        [v.book_id, v.quantity_in_cell, v.id],
       );
       await client.query("COMMIT");
       return rows[0]!;
@@ -157,14 +156,12 @@ async function moveExistingBookLocation(
       await client.query(
         "SET CONSTRAINTS book_locations_cell_id_position_in_cell_key DEFERRED",
       );
-      const shelfStock = v.shelf_stock ?? current.shelf_stock;
       const swapRes = await client.query<BookLocation>(
         `UPDATE book_locations SET
            cell_id = CASE id WHEN $1::uuid THEN $3::uuid WHEN $2::uuid THEN $5::uuid END,
            position_in_cell = CASE id WHEN $1::uuid THEN $4::int WHEN $2::uuid THEN $6::int END,
            book_id = CASE WHEN id = $1::uuid THEN $7::uuid ELSE book_id END,
-           quantity_in_cell = CASE WHEN id = $1::uuid THEN $8::int ELSE quantity_in_cell END,
-           shelf_stock = CASE WHEN id = $1::uuid THEN $9::int ELSE shelf_stock END
+           quantity_in_cell = CASE WHEN id = $1::uuid THEN $8::int ELSE quantity_in_cell END
          WHERE id IN ($1::uuid, $2::uuid)
          RETURNING *`,
         [
@@ -176,7 +173,6 @@ async function moveExistingBookLocation(
           current.position_in_cell,
           v.book_id,
           v.quantity_in_cell,
-          shelfStock,
         ],
       );
       await client.query("COMMIT");
@@ -184,14 +180,13 @@ async function moveExistingBookLocation(
     }
 
     await assertValidBookCellPlacement(v.book_id, v.cell_id);
-    const shelfStock = v.shelf_stock ?? current.shelf_stock;
 
     const { rows: movedRows } = await client.query<BookLocation>(
       `UPDATE book_locations
-       SET book_id = $1, cell_id = $2, position_in_cell = $3, quantity_in_cell = $4, shelf_stock = $5
-       WHERE id = $6
+       SET book_id = $1, cell_id = $2, position_in_cell = $3, quantity_in_cell = $4
+       WHERE id = $5
        RETURNING *`,
-      [v.book_id, v.cell_id, v.position_in_cell, v.quantity_in_cell, shelfStock, v.id],
+      [v.book_id, v.cell_id, v.position_in_cell, v.quantity_in_cell, v.id],
     );
 
     await client.query("COMMIT");

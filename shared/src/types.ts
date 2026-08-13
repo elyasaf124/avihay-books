@@ -166,6 +166,11 @@ export interface StoreMapBook {
   supplier_color: string;
   position_in_cell: number;
   quantity_in_cell: number;
+  /**
+   * כמה שדרות חייבות להופיע בארון במיקום זה.
+   * התצוגה תמיד = `shelf_stock` (פיזיים + חוסרים).
+   */
+  shelf_stock: number;
   is_new: boolean;
   /** מחיר כפי שמוחזר מ־`books.price` (טקסט מ־`numeric` של PG). */
   price: string | null;

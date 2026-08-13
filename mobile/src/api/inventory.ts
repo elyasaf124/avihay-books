@@ -5,7 +5,7 @@ import { findStoreMapCellById, resolvePositionForPlacement } from "../utils/stor
 import { api } from "./client";
 import { DASHBOARD_STATS_KEY } from "./dashboard";
 import { NOTIFICATIONS_LIST_KEY, NOTIFICATIONS_UNREAD_KEY } from "./notifications";
-import { STORE_MAP_KEY } from "./storeMap";
+import { adjustStoreMapLocationShortage, STORE_MAP_KEY } from "./storeMap";
 
 const BOOK_LOCATION_SLOT_OCCUPIED = "book_location_slot_occupied";
 
@@ -161,7 +161,9 @@ export function useAdjustInventoryStock() {
           if (loc) {
             const newQtyCell = Math.max(0, loc.quantity_in_cell + vars.delta);
             const { data } = await api.patch<BookLocation>(`/book-locations/${loc.id}`, {
-              ...loc,
+              book_id: loc.book_id,
+              cell_id: loc.cell_id,
+              position_in_cell: loc.position_in_cell,
               quantity_in_cell: newQtyCell,
             });
             location = data;
@@ -186,9 +188,15 @@ export function useAdjustInventoryStock() {
       client.setQueryData<BookWithLocations[]>(listKey, (prev) =>
         applyOptimisticStockDeltaToList(prev, vars.bookId, vars.delta, vars.locationId),
       );
+      if (vars.locationId) {
+        adjustStoreMapLocationShortage(client, vars.locationId, vars.delta, false);
+      }
       return { listKey, previousList };
     },
     onError: (_e, vars, ctx) => {
+      if (vars.locationId) {
+        adjustStoreMapLocationShortage(client, vars.locationId, -vars.delta, false);
+      }
       if (ctx?.listKey == null) return;
       const { listKey, previousList } = ctx;
       const current = client.getQueryData<BookWithLocations[]>(listKey);
@@ -220,14 +228,20 @@ export function useAdjustInventoryStock() {
         invalidateNotifications(client);
         void client.invalidateQueries({ queryKey: STORE_MAP_KEY });
         void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
+        void client.invalidateQueries({ queryKey: ["store-map", "unit"] });
         void client.invalidateQueries({ queryKey: ["shortage"] });
       }
     },
     onSettled: (_result, error, vars) => {
       const remaining = releasePendingStockMutation(vars.bookId);
-      // עליית מלאי / ירידה בתא (חוסר→הזמנה) — מרעננים הזמנות
-      if (!error && remaining <= 0 && (vars.delta > 0 || vars.locationId != null)) {
-        void client.refetchQueries({ queryKey: ["orders"] });
+      if (!error && remaining <= 0) {
+        void client.invalidateQueries({ queryKey: STORE_MAP_KEY });
+        void client.refetchQueries({ queryKey: STORE_MAP_KEY, type: "all" });
+        void client.invalidateQueries({ queryKey: ["store-map", "unit"] });
+        if (vars.delta > 0 || vars.locationId != null) {
+          void client.refetchQueries({ queryKey: ["orders"] });
+          void client.invalidateQueries({ queryKey: ["shortage"] });
+        }
       }
     },
   });

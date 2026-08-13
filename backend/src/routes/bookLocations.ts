@@ -8,12 +8,12 @@ import {
   upsertBookLocation,
 } from "../repos/bookLocations.repo.js";
 import {
-  clearShortageForRestockedCell,
-  ensureShortageForEmptyCell,
-} from "../services/shortage.js";
-import { setLocationShelfStock } from "../services/shelfStock.js";
+  findLocationWithPendingShortageCount,
+  setLocationQuantityInCell,
+  setLocationShelfStock,
+  syncLocationDisplayToShelfStock,
+} from "../services/shelfStock.js";
 import { invalidateStoreMapCache } from "../services/storeMapCache.js";
-import { logger } from "../utils/logger.js";
 
 export const bookLocationsRouter = Router();
 
@@ -32,8 +32,10 @@ bookLocationsRouter.post(
   "/",
   asyncHandler(async (req, res) => {
     const row = await upsertBookLocation(req.body);
+    await syncLocationDisplayToShelfStock(row.id);
     invalidateStoreMapCache();
-    res.status(201).json(row);
+    const expanded = await findLocationWithPendingShortageCount(row.id);
+    res.status(201).json(expanded ?? row);
   }),
 );
 
@@ -61,11 +63,7 @@ bookLocationsRouter.patch(
 
     const requestedQty =
       typeof req.body?.quantity_in_cell === "number" ? req.body.quantity_in_cell : null;
-    if (
-      requestedQty != null &&
-      requestedQty > before.quantity_in_cell &&
-      requestedQty > before.shelf_stock
-    ) {
+    if (requestedQty != null && requestedQty > before.shelf_stock) {
       res.status(400).json({
         error: "quantity_above_shelf_stock",
         details: { shelf_stock: before.shelf_stock, quantity_in_cell: before.quantity_in_cell },
@@ -73,24 +71,23 @@ bookLocationsRouter.patch(
       return;
     }
 
-    const row = await upsertBookLocation({ ...req.body, id: locationId });
-    invalidateStoreMapCache();
+    const sameCell =
+      (req.body?.cell_id == null || req.body.cell_id === before.cell_id) &&
+      (req.body?.position_in_cell == null || req.body.position_in_cell === before.position_in_cell) &&
+      (req.body?.book_id == null || req.body.book_id === before.book_id);
 
-    const oldQty = before.quantity_in_cell;
-    const newQty = row.quantity_in_cell;
-    if (oldQty != null && oldQty > 0 && newQty === 0) {
-      await ensureShortageForEmptyCell({ bookId: row.book_id, locationId: row.id }).catch(
-        (err: unknown) => {
-          logger.error({ err, locationId: row.id }, "ensureShortageForEmptyCell failed");
-        },
-      );
-    } else if (oldQty === 0 && newQty > 0) {
-      await clearShortageForRestockedCell(row.id).catch((err: unknown) => {
-        logger.error({ err, locationId: row.id }, "clearShortageForRestockedCell failed");
-      });
+    if (requestedQty != null && sameCell) {
+      const row = await setLocationQuantityInCell(locationId, requestedQty);
+      invalidateStoreMapCache();
+      res.json(row);
+      return;
     }
 
-    res.json(row);
+    const row = await upsertBookLocation({ ...req.body, id: locationId });
+    await syncLocationDisplayToShelfStock(row.id);
+    invalidateStoreMapCache();
+    const expanded = await findLocationWithPendingShortageCount(row.id);
+    res.json(expanded ?? row);
   }),
 );
 

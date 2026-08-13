@@ -345,6 +345,7 @@ function buildBook(spec: MockBookSpec, position: number): StoreMapBook {
     supplier_color: supplier.color_hex,
     position_in_cell: position,
     quantity_in_cell: spec.qtyInCell ?? 1,
+    shelf_stock: spec.qtyInCell ?? 1,
     is_new: spec.isNew ?? false,
     price: spec.price,
     topic: spec.topic,
