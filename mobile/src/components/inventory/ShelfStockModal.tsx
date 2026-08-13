@@ -11,7 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
 
-const MIN = 0;
+const ABS_MIN = 0;
 const MAX = 999;
 
 interface Props {
@@ -19,6 +19,8 @@ interface Props {
   bookTitle: string;
   cellName: string;
   initialShelfStock: number;
+  /** מינימום = כמות פיזית בבועת התא (`quantity_in_cell`). */
+  minShelfStock: number;
   submitting: boolean;
   errorMessage: string | null;
   onCancel: () => void;
@@ -26,26 +28,56 @@ interface Props {
 }
 
 /**
- * מודאל לעריכת מלאי מדף — מספר השדרות בארון (ממלא ממחסן / חוסרים).
+ * מודאל לעריכת מלאי מדף — מספר השדרות בארון (הגדלה = חוסרים בלבד).
  */
 export function ShelfStockModal({
   visible,
   bookTitle,
   cellName,
   initialShelfStock,
+  minShelfStock,
   submitting,
   errorMessage,
   onCancel,
   onSubmit,
 }: Props): JSX.Element {
-  const [quantity, setQuantity] = useState(initialShelfStock);
+  const floor = Math.max(ABS_MIN, Math.min(MAX, Math.floor(minShelfStock)));
+  const [quantity, setQuantity] = useState(Math.max(floor, initialShelfStock));
+  const [localHint, setLocalHint] = useState<string | null>(null);
 
   useEffect(() => {
-    if (visible) setQuantity(Math.max(MIN, Math.min(MAX, initialShelfStock)));
-  }, [visible, initialShelfStock]);
+    if (!visible) return;
+    const nextFloor = Math.max(ABS_MIN, Math.min(MAX, Math.floor(minShelfStock)));
+    setQuantity(Math.max(nextFloor, Math.min(MAX, initialShelfStock)));
+    setLocalHint(null);
+  }, [visible, initialShelfStock, minShelfStock]);
 
-  const dec = () => setQuantity((q) => Math.max(MIN, q - 1));
-  const inc = () => setQuantity((q) => Math.min(MAX, q + 1));
+  const dec = () => {
+    if (submitting) return;
+    if (quantity <= floor) {
+      setLocalHint(he.addRemove.shelfStockBelowPhysicalMessage);
+      return;
+    }
+    setLocalHint(null);
+    setQuantity((q) => Math.max(floor, q - 1));
+  };
+
+  const inc = () => {
+    if (submitting) return;
+    setLocalHint(null);
+    setQuantity((q) => Math.min(MAX, q + 1));
+  };
+
+  const submit = () => {
+    if (quantity < floor) {
+      setLocalHint(he.addRemove.shelfStockBelowPhysicalMessage);
+      return;
+    }
+    setLocalHint(null);
+    onSubmit(quantity);
+  };
+
+  const displayError = localHint ?? errorMessage;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
@@ -69,11 +101,11 @@ export function ShelfStockModal({
             <View style={styles.stepperRow}>
               <Pressable
                 onPress={dec}
-                disabled={quantity <= MIN || submitting}
+                disabled={submitting}
                 style={({ pressed }) => [
                   styles.stepBtn,
-                  (quantity <= MIN || submitting) && styles.stepBtnDisabled,
-                  pressed && quantity > MIN && !submitting && styles.stepBtnPressed,
+                  submitting && styles.stepBtnDisabled,
+                  pressed && !submitting && styles.stepBtnPressed,
                 ]}
               >
                 <Ionicons name="remove" size={20} color={theme.colors.onPrimary} />
@@ -93,14 +125,14 @@ export function ShelfStockModal({
             </View>
           </View>
 
-          {errorMessage ? (
+          {displayError ? (
             <View style={styles.errorRow}>
               <Ionicons
                 name="alert-circle-outline"
                 size={16}
                 color={theme.colors.onErrorContainer}
               />
-              <Text style={styles.errorText}>{errorMessage}</Text>
+              <Text style={styles.errorText}>{displayError}</Text>
             </View>
           ) : null}
 
@@ -114,7 +146,7 @@ export function ShelfStockModal({
             </Pressable>
             <Pressable
               disabled={submitting}
-              onPress={() => onSubmit(quantity)}
+              onPress={submit}
               style={[styles.actionBtn, styles.submitBtn, submitting && styles.disabled]}
             >
               {submitting ? (

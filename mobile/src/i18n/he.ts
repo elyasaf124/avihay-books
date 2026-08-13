@@ -653,8 +653,13 @@ export const he = {
     shelfStockLabel: "מלאי מדף",
     shelfStockModalTitle: "עריכת מלאי מדף",
     shelfStockA11y: "עריכת מלאי מדף",
-    shelfStockHint:
-      "המספר קובע כמה שדרות יופיעו בארון. קודם ימולאו חוסרים ממחסן; אם אין מלאי — יתווספו כחוסרים.",
+    shelfStockHint: "הגדלה מוסיפה שדרות חוסר בארון. לא ממלאים ממחסן.",
+    shelfStockBelowPhysicalTitle: "אי אפשר להקטין",
+    shelfStockBelowPhysicalMessage:
+      "אי אפשר לרדת מתחת לכמות בתא. עדכנו קודם את הכמות בבועת התא.",
+    shelfStockCapTitle: "אי אפשר להגדיל",
+    shelfStockCapMessage:
+      "אי אפשר לעלות מעל מלאי המדף. עדכנו קודם את מלאי המדף.",
     shelfStockFailed: "לא ניתן לעדכן את מלאי המדף — נסה שוב",
     locationChipWarehouse: "מחסן ({{qty}})",
     locationChipCell: "תא {{name}} ({{qty}})",
@@ -741,6 +746,7 @@ export const he = {
     errorTitle: "שגיאה",
     cancel: "ביטול",
     confirm: "אישור",
+    gotIt: "הבנתי",
     yes: "כן",
     no: "לא",
     save: "שמור",

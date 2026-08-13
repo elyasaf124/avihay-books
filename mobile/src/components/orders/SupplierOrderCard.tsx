@@ -25,7 +25,6 @@ interface Props {
   onToggleSupplierOrdered?: (group: OrdersBySupplierGroup) => void;
   onToggleLineOrdered?: (order: OrderListItem) => void;
   removingOrderLineKey: string | null;
-  updatingOrderLineKey: string | null;
   togglingSupplierKey?: string | null;
   togglingLineKey?: string | null;
 }
@@ -48,7 +47,6 @@ export function SupplierOrderCard({
   onToggleSupplierOrdered,
   onToggleLineOrdered,
   removingOrderLineKey,
-  updatingOrderLineKey,
   togglingSupplierKey,
   togglingLineKey,
 }: Props): JSX.Element {
@@ -128,7 +126,6 @@ export function SupplierOrderCard({
               isLast={index === group.orders.length - 1}
               busy={
                 removingOrderLineKey === lineKey ||
-                updatingOrderLineKey === lineKey ||
                 togglingLineKey === lineKey
               }
               onRemove={() => onRemoveOrderLine(o)}

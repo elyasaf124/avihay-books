@@ -35,6 +35,7 @@ import {
 import { api } from "../../src/api/client";
 import { useSearchBooks, useStoreMap, useStoreMapSummary } from "../../src/api/storeMap";
 import { useMoveBook, useSuppliersWithFallback } from "../../src/api/unit";
+import axios from "axios";
 import {
   SearchablePickerField,
   suppliersToPickerItems,
@@ -71,6 +72,15 @@ function interpolate(template: string, vars: Record<string, string>): string {
 function unplacedQuantity(book: BookWithLocations): number {
   const onShelf = book.locations.reduce((s, l) => s + l.quantity_in_cell, 0);
   return Math.max(0, book.stock_quantity - onShelf);
+}
+
+/** האם הוספת `delta` לכמות בתא תעלה מעל מלאי מדף. */
+function cellQtyWouldExceedShelfStock(
+  loc: BookWithLocations["locations"][number] | null | undefined,
+  delta: number,
+): boolean {
+  if (!loc || delta <= 0) return false;
+  return loc.quantity_in_cell + delta > (loc.shelf_stock ?? 0);
 }
 
 /** שמות תאים ייחודיים לתצוגה ברשימת חיפוש. */
@@ -389,6 +399,8 @@ export default function AddRemoveScreen(): JSX.Element {
     loc: BookWithLocations["locations"][number];
   } | null>(null);
   const [shelfStockError, setShelfStockError] = useState<string | null>(null);
+  /** הודעת גבול מלאי בתא (מעל מלאי מדף) — מוצגת בתוך הכרטיס. */
+  const [stockRowHintByBook, setStockRowHintByBook] = useState<Record<string, string>>({});
 
   /** הקשר למודאל פר־עותק בספר חדש (נסגר לאחר שמירת הבחירה) */
   const [newBookPcCtx, setNewBookPcCtx] = useState<{
@@ -479,11 +491,29 @@ export default function AddRemoveScreen(): JSX.Element {
       ]);
       const cachedBook = cachedList?.find((b) => b.id === book.id) ?? book;
       const selectedLoc =
-        selId === null ? null : cachedBook.locations.find((loc) => loc.id === selId) ?? null;
+        selId === null
+          ? null
+          : (cachedBook.locations.find((loc) => loc.id === selId) ??
+            book.locations.find((loc) => loc.id === selId) ??
+            null);
 
       if (delta < 0 && cachedBook.stock_quantity <= 0) return;
       if (delta < 0 && selectedLoc && selectedLoc.quantity_in_cell <= 0) return;
       if (delta < 0 && selId === null && unplacedQuantity(cachedBook) <= 0) return;
+
+      if (cellQtyWouldExceedShelfStock(selectedLoc, delta)) {
+        setStockRowHintByBook((prev) => ({
+          ...prev,
+          [book.id]: he.addRemove.shelfStockCapMessage,
+        }));
+        return;
+      }
+
+      setStockRowHintByBook((prev) => {
+        if (!prev[book.id]) return prev;
+        const { [book.id]: _, ...rest } = prev;
+        return rest;
+      });
 
       adjustInventoryStock.mutate(
         {
@@ -493,7 +523,23 @@ export default function AddRemoveScreen(): JSX.Element {
           locationId: selId,
         },
         {
-          onError: () => Alert.alert(he.generic.errorTitle, he.addRemove.stockAdjustFailed),
+          onError: (err) => {
+            const apiError =
+              axios.isAxiosError(err) &&
+              typeof err.response?.data === "object" &&
+              err.response.data !== null &&
+              "error" in err.response.data
+                ? String((err.response.data as { error: string }).error)
+                : null;
+            if (apiError === "quantity_above_shelf_stock") {
+              setStockRowHintByBook((prev) => ({
+                ...prev,
+                [book.id]: he.addRemove.shelfStockCapMessage,
+              }));
+              return;
+            }
+            Alert.alert(he.generic.errorTitle, he.addRemove.stockAdjustFailed);
+          },
         },
       );
     },
@@ -507,13 +553,23 @@ export default function AddRemoveScreen(): JSX.Element {
       const raw = stockBulkDraft[book.id]?.trim() ?? "";
       const addQty = Number.parseInt(raw, 10);
       if (!Number.isFinite(addQty) || addQty <= 0) return;
+      const selId = locationByBook[book.id] ?? null;
+      const selectedLoc =
+        selId === null ? null : book.locations.find((loc) => loc.id === selId) ?? null;
+      if (cellQtyWouldExceedShelfStock(selectedLoc, addQty)) {
+        setStockRowHintByBook((prev) => ({
+          ...prev,
+          [book.id]: he.addRemove.shelfStockCapMessage,
+        }));
+        return;
+      }
       applyStockDelta(book, addQty);
       setStockBulkDraft((p) => {
         const { [book.id]: _, ...rest } = p;
         return rest;
       });
     },
-    [supplierId, stockBulkDraft, applyStockDelta],
+    [supplierId, stockBulkDraft, applyStockDelta, locationByBook],
   );
 
   const applyPrice = useCallback(
@@ -995,7 +1051,16 @@ export default function AddRemoveScreen(): JSX.Element {
                       <Text style={styles.sectionLabel}>{he.addRemove.locationLabel}</Text>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipsRow}>
                         <Pressable
-                          onPress={() => setLocationByBook((prev) => ({ ...prev, [book.id]: null }))}
+                          onPress={() =>
+                            setLocationByBook((prev) => {
+                              setStockRowHintByBook((hints) => {
+                                if (!hints[book.id]) return hints;
+                                const { [book.id]: _, ...rest } = hints;
+                                return rest;
+                              });
+                              return { ...prev, [book.id]: null };
+                            })
+                          }
                           style={[
                             styles.chip,
                             locId === null && styles.chipActive,
@@ -1014,10 +1079,17 @@ export default function AddRemoveScreen(): JSX.Element {
                           >
                             <Pressable
                               onPress={() =>
-                                setLocationByBook((prev) => ({
-                                  ...prev,
-                                  [book.id]: loc.id,
-                                }))
+                                setLocationByBook((prev) => {
+                                  setStockRowHintByBook((hints) => {
+                                    if (!hints[book.id]) return hints;
+                                    const { [book.id]: _, ...rest } = hints;
+                                    return rest;
+                                  });
+                                  return {
+                                    ...prev,
+                                    [book.id]: loc.id,
+                                  };
+                                })
                               }
                               style={styles.chipSelectHit}
                             >
@@ -1127,22 +1199,53 @@ export default function AddRemoveScreen(): JSX.Element {
                         <View style={styles.stepper}>
                           <Pressable
                             accessibilityRole="button"
-                            disabled={minusDisabled}
-                            onPress={() => void applyStockDelta(book, -1)}
-                            style={[styles.stepBtn, minusDisabled && styles.stepBtnDisabled]}
+                            onPress={() => {
+                              if (minusDisabled) {
+                                Alert.alert(he.generic.errorTitle, he.addRemove.cannotDecrease, [
+                                  { text: he.generic.gotIt },
+                                ]);
+                                return;
+                              }
+                              void applyStockDelta(book, -1);
+                            }}
+                            style={styles.stepBtn}
                           >
                             <Ionicons name="remove" size={22} color={theme.colors.onSurface} />
                           </Pressable>
                           <Text style={styles.qty}>{scopedQty}</Text>
                           <Pressable
                             accessibilityRole="button"
-                            onPress={() => void applyStockDelta(book, 1)}
+                            onPress={() => {
+                              if (
+                                selectedLoc &&
+                                cellQtyWouldExceedShelfStock(selectedLoc, 1)
+                              ) {
+                                setStockRowHintByBook((prev) => ({
+                                  ...prev,
+                                  [book.id]: he.addRemove.shelfStockCapMessage,
+                                }));
+                                return;
+                              }
+                              void applyStockDelta(book, 1);
+                            }}
                             style={styles.stepBtn}
                           >
                             <Ionicons name="add" size={22} color={theme.colors.onSurface} />
                           </Pressable>
                         </View>
                       </View>
+                      {stockRowHintByBook[book.id] ? (
+                        <View style={styles.stockRowHint}>
+                          <Ionicons
+                            name="alert-circle-outline"
+                            size={16}
+                            color={theme.colors.onErrorContainer}
+                          />
+                          <Text style={styles.stockRowHintText}>
+                            {stockRowHintByBook[book.id]}
+                          </Text>
+                        </View>
+                      ) : null}
 
                       <View style={styles.stockBulkBlock}>
                         <Text style={styles.dimLabel}>{he.addRemove.stockBulkAddLabel}</Text>
@@ -1475,6 +1578,7 @@ export default function AddRemoveScreen(): JSX.Element {
         bookTitle={shelfStockEdit?.book.title ?? ""}
         cellName={shelfStockEdit?.loc.cell_name ?? ""}
         initialShelfStock={shelfStockEdit?.loc.shelf_stock ?? 0}
+        minShelfStock={shelfStockEdit?.loc.quantity_in_cell ?? 0}
         submitting={
           setShelfStock.isPending &&
           shelfStockEdit !== null &&
@@ -1496,8 +1600,24 @@ export default function AddRemoveScreen(): JSX.Element {
                 shelfStock: next,
               });
               setShelfStockEdit(null);
-            } catch {
-              setShelfStockError(he.addRemove.shelfStockFailed);
+            } catch (err) {
+              const apiError =
+                axios.isAxiosError(err) &&
+                typeof err.response?.data === "object" &&
+                err.response.data !== null &&
+                "error" in err.response.data
+                  ? String((err.response.data as { error: string }).error)
+                  : null;
+              if (apiError === "shelf_stock_below_physical") {
+                Alert.alert(
+                  he.addRemove.shelfStockBelowPhysicalTitle,
+                  he.addRemove.shelfStockBelowPhysicalMessage,
+                  [{ text: he.generic.gotIt }],
+                );
+                setShelfStockError(null);
+              } else {
+                setShelfStockError(he.addRemove.shelfStockFailed);
+              }
             } finally {
               setBusyBookId(null);
             }
@@ -2212,6 +2332,22 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginTop: theme.spacing.xs,
+  },
+  stockRowHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: theme.spacing.sm,
+    marginTop: theme.spacing.xs,
+    paddingVertical: theme.spacing.sm,
+    paddingHorizontal: theme.spacing.md,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.errorContainer,
+  },
+  stockRowHintText: {
+    ...theme.typography.caption,
+    color: theme.colors.onErrorContainer,
+    flex: 1,
+    textAlign: "left",
   },
   totalStockRow: {
     flexDirection: "row",

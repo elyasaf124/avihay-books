@@ -1,7 +1,10 @@
+import { useEffect, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
+
+const QTY_DEBOUNCE_MS = 280;
 
 interface Props {
   quantity: number;
@@ -13,6 +16,7 @@ interface Props {
 
 /**
  * קאונטר כמות לשורת הזמנה — מיועד לשורה נפרדת מתחת לפרטי הספר.
+ * מציג שינוי מיד, ושולח לשרת רק אחרי רצף לחיצות (debounce).
  */
 export function OrderQtyStepper({
   quantity,
@@ -21,8 +25,44 @@ export function OrderQtyStepper({
   disabled = false,
   onChange,
 }: Props): JSX.Element {
-  const canDec = !disabled && quantity > min;
-  const canInc = !disabled && quantity < max;
+  const [draftQty, setDraftQty] = useState<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingNextRef = useRef<number | null>(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const displayQty = draftQty ?? quantity;
+
+  useEffect(() => {
+    if (draftQty !== null && quantity === draftQty) {
+      setDraftQty(null);
+    }
+  }, [quantity, draftQty]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      const pending = pendingNextRef.current;
+      if (pending != null) {
+        pendingNextRef.current = null;
+        onChangeRef.current(pending);
+      }
+    };
+  }, []);
+
+  const emit = (next: number) => {
+    setDraftQty(next);
+    pendingNextRef.current = next;
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      pendingNextRef.current = null;
+      onChangeRef.current(next);
+    }, QTY_DEBOUNCE_MS);
+  };
+
+  const canDec = !disabled && displayQty > min;
+  const canInc = !disabled && displayQty < max;
 
   return (
     <View style={styles.wrap} accessibilityRole="adjustable">
@@ -30,7 +70,7 @@ export function OrderQtyStepper({
       <View style={[styles.track, disabled && styles.trackDisabled]}>
         <Pressable
           onPress={() => {
-            if (canDec) onChange(quantity - 1);
+            if (canDec) emit(displayQty - 1);
           }}
           disabled={!canDec}
           style={({ pressed }) => [
@@ -50,13 +90,13 @@ export function OrderQtyStepper({
         </Pressable>
         <Text
           style={styles.value}
-          accessibilityLabel={`${he.orders.quantity}: ${quantity}`}
+          accessibilityLabel={`${he.orders.quantity}: ${displayQty}`}
         >
-          {quantity}
+          {displayQty}
         </Text>
         <Pressable
           onPress={() => {
-            if (canInc) onChange(quantity + 1);
+            if (canInc) emit(displayQty + 1);
           }}
           disabled={!canInc}
           style={({ pressed }) => [

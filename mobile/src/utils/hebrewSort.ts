@@ -40,3 +40,13 @@ export function sortByHebrewKeys<T>(
   });
   return decorated.map((d) => d.item);
 }
+
+/** ספרים בתא מדף — מיון א-ב לפי כותרת; `location_id` כשובר שוויון יציב. */
+export function sortShelfBooksByTitle<T extends { title: string; location_id: string }>(
+  books: readonly T[],
+): T[] {
+  if (books.length <= 1) return [...books];
+  return sortByHebrewKeys([...books], (b) => [b.title], (a, b) =>
+    a.location_id < b.location_id ? -1 : a.location_id > b.location_id ? 1 : 0,
+  );
+}

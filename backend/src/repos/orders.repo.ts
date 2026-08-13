@@ -265,6 +265,75 @@ export async function archiveOrdersMatchingLine(match: OrdersLineMatch): Promise
   return result.rowCount ?? 0;
 }
 
+const OPEN_STATUS_RANK: Record<string, number> = { pending: 0, sent: 1 };
+
+/**
+ * מעדכן כמות לכל השורות התואמות לשורת תצוגה אחת.
+ * מאחד כפילויות פתוחות לשורה אחת; במלאי בלי שורה פתוחה — יוצר הזמנה חדשה.
+ */
+export async function setOrdersMatchingLineQuantity(
+  match: OrdersLineMatch,
+  quantity: number,
+  opts?: { createIfMissing?: boolean; manual_book_author?: string | null },
+): Promise<{ updated: number; created: boolean }> {
+  const customerName = match.customer_name?.trim() ?? null;
+  const customerPhone = match.customer_phone?.trim() ?? null;
+  const manualTitle = match.manual_book_title?.trim() ?? null;
+
+  const { rows } = await pool.query<OrderRow>(
+    `SELECT * FROM orders
+      WHERE book_id IS NOT DISTINCT FROM $1
+        AND supplier_id IS NOT DISTINCT FROM $2
+        AND order_type = $3
+        AND TRIM(COALESCE(customer_name, '')) IS NOT DISTINCT FROM TRIM(COALESCE($4::text, ''))
+        AND TRIM(COALESCE(customer_phone, '')) IS NOT DISTINCT FROM TRIM(COALESCE($5::text, ''))
+        AND TRIM(COALESCE(manual_book_title, '')) IS NOT DISTINCT FROM TRIM(COALESCE($6::text, ''))
+        AND status NOT IN ('completed', 'archived')
+      ORDER BY created_at ASC`,
+    [
+      match.book_id,
+      match.supplier_id,
+      match.order_type,
+      customerName,
+      customerPhone,
+      manualTitle,
+    ],
+  );
+
+  if (rows.length === 0) {
+    if (opts?.createIfMissing && match.order_type === "inventory") {
+      await upsertOrder({
+        book_id: match.book_id,
+        supplier_id: match.supplier_id,
+        order_type: "inventory",
+        quantity,
+        customer_name: null,
+        customer_phone: null,
+        manual_book_title: manualTitle,
+        manual_book_author: opts.manual_book_author ?? null,
+        status: "pending",
+      });
+      return { updated: 0, created: true };
+    }
+    return { updated: 0, created: false };
+  }
+
+  const keep = rows[0]!;
+  const best = rows.reduce((a, b) =>
+    (OPEN_STATUS_RANK[a.status] ?? 9) <= (OPEN_STATUS_RANK[b.status] ?? 9) ? a : b,
+  );
+  const duplicateIds = rows.slice(1).map((r) => r.id);
+  if (duplicateIds.length > 0) {
+    await pool.query(`DELETE FROM orders WHERE id = ANY($1::uuid[])`, [duplicateIds]);
+  }
+  await pool.query(`UPDATE orders SET quantity = $1, status = $2 WHERE id = $3`, [
+    quantity,
+    best.status,
+    keep.id,
+  ]);
+  return { updated: rows.length, created: false };
+}
+
 /** מעדכן סטטוס לכל השורות התואמות לשורת תצוגה אחת (לאחר איחוד כפילויות בלקוח). */
 export async function updateOrdersMatchingLineStatus(
   match: OrdersLineMatch,
