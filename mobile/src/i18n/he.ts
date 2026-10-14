@@ -656,7 +656,7 @@ export const he = {
       "אין חובה למלא את כל השורות — עותקים ללא תא נשארים במלאי הכללי (למשל במחסן).",
     perCopyRowTitle: "עותק ‎{{n}}",
     perCopyRowHint: "להקלה: הקלידו מספר/שם תא והחילו או שנו ללשונית ארון › מדף › תא.",
-    perCopySubmit: "אשר והחזור",
+    perCopySubmit: "אישור",
     sameCellForAllCopies: "אותו תא לכל העותקים",
     sameCellBulkTitle: "בחירת תא לכל העותקים",
     pickFullHierarchyLink: "בחירה מלאה: ארון › מדף › תא",

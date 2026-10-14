@@ -11,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import type { ShortageListItem } from "@avihay-books/shared";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
+import { maxShortageCompleteQty } from "../../utils/shortageWarehouse";
 
 export type ShortageQuantityMode = "complete" | "remove";
 
@@ -37,11 +38,14 @@ export function ShortageQuantityModal({
   onCancel,
   onSubmit,
 }: Props): JSX.Element {
-  const max = Math.max(item?.missing_count ?? 1, 1);
-  const [quantity, setQuantity] = useState<number>(max);
+  const missing = Math.max(item?.missing_count ?? 1, 1);
+  const max =
+    mode === "complete" && item ? maxShortageCompleteQty(item) : missing;
+  const [quantity, setQuantity] = useState<number>(Math.max(max, 1));
 
   if (!item) return <></>;
 
+  const canSubmit = max >= 1 && !submitting;
   const dec = () => setQuantity((q) => Math.max(1, q - 1));
   const inc = () => setQuantity((q) => Math.min(max, q + 1));
 
@@ -96,6 +100,9 @@ export function ShortageQuantityModal({
             </View>
           </View>
 
+          {mode === "complete" && max < 1 ? (
+            <Text style={styles.noWarehouseHint}>{he.shortage.resolveNoStock}</Text>
+          ) : null}
           {errorMessage ? (
             <View style={styles.errorRow}>
               <Ionicons
@@ -116,12 +123,12 @@ export function ShortageQuantityModal({
               <Text style={styles.cancelText}>{he.generic.cancel}</Text>
             </Pressable>
             <Pressable
-              disabled={submitting}
+              disabled={!canSubmit}
               onPress={() => onSubmit(quantity)}
               style={[
                 styles.actionBtn,
                 mode === "remove" ? styles.destructiveBtn : styles.submitBtn,
-                submitting && styles.disabled,
+                !canSubmit && styles.disabled,
               ]}
             >
               {submitting ? (
@@ -248,6 +255,11 @@ const styles = StyleSheet.create({
     ...theme.typography.bodyMd,
     color: theme.colors.onErrorContainer,
     flex: 1,
+    textAlign: "left",
+  },
+  noWarehouseHint: {
+    ...theme.typography.bodyMd,
+    color: theme.colors.onErrorContainer,
     textAlign: "left",
   },
   actions: {

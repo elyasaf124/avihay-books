@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -6,14 +6,13 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
-import { useKeyboardHeight } from "../../hooks/useKeyboardHeight";
 import {
   fetchIntakePreview,
   intakeLineKey,
@@ -57,12 +56,8 @@ export function ReceiveOrderModal({
   onSubmit,
 }: Props): JSX.Element {
   const visible = target !== null;
-  const keyboardHeight = useKeyboardHeight();
   const { height: windowH } = useWindowDimensions();
-  const inputRefs = useRef<Map<string, TextInput>>(new Map());
-  const focusedInputKeyRef = useRef<string | null>(null);
-  const [modalShift, setModalShift] = useState(0);
-  const [qtyByKey, setQtyByKey] = useState<Record<string, string>>({});
+  const [qtyByKey, setQtyByKey] = useState<Record<string, number>>({});
   const [formError, setFormError] = useState<string | null>(null);
 
   const previewQuery = useQuery({
@@ -80,63 +75,23 @@ export function ReceiveOrderModal({
 
   useEffect(() => {
     if (!previewQuery.data) return;
-    const next: Record<string, string> = {};
+    const next: Record<string, number> = {};
     for (const line of previewQuery.data.lines) {
-      next[intakeLineKey(line)] = String(line.ordered_qty);
+      next[intakeLineKey(line)] = line.ordered_qty;
     }
     setQtyByKey(next);
     setFormError(null);
   }, [previewQuery.data]);
 
-  const ensureInputVisible = useCallback(
-    (key: string) => {
-      if (keyboardHeight <= 0) return;
-      const node = inputRefs.current.get(key);
-      if (!node) return;
-      node.measureInWindow((_x, y, _w, height) => {
-        const keyboardTop = windowH - keyboardHeight;
-        const margin = theme.spacing.lg;
-        const overflow = y + height - (keyboardTop - margin);
-        const baseShift = theme.spacing.xl;
-        setModalShift(overflow > 0 ? overflow : baseShift);
-      });
-    },
-    [keyboardHeight, windowH],
-  );
-
-  const onModalInputFocus = useCallback(
-    (key: string) => {
-      focusedInputKeyRef.current = key;
-      ensureInputVisible(key);
-    },
-    [ensureInputVisible],
-  );
-
   useEffect(() => {
-    if (keyboardHeight <= 0 || !focusedInputKeyRef.current) return undefined;
-    const key = focusedInputKeyRef.current;
-    const t = setTimeout(() => ensureInputVisible(key), 60);
-    return () => clearTimeout(t);
-  }, [keyboardHeight, ensureInputVisible]);
-
-  useEffect(() => {
-    if (!visible) {
-      focusedInputKeyRef.current = null;
-      setModalShift(0);
-      setFormError(null);
-    }
+    if (!visible) setFormError(null);
   }, [visible]);
-
-  useEffect(() => {
-    if (keyboardHeight <= 0) setModalShift(0);
-  }, [keyboardHeight]);
 
   const save = () => {
     if (!target || !previewQuery.data) return;
     const lines: IntakeSubmitLine[] = [];
     for (const line of previewQuery.data.lines) {
-      const raw = (qtyByKey[intakeLineKey(line)] ?? "").trim();
-      const received = Number(raw);
+      const received = qtyByKey[intakeLineKey(line)] ?? line.ordered_qty;
       if (!Number.isInteger(received) || received < 0 || received > line.ordered_qty) {
         setFormError(he.orders.receiveInvalidQty);
         return;
@@ -156,71 +111,64 @@ export function ReceiveOrderModal({
   };
 
   const lines = previewQuery.data?.lines ?? [];
+  const listMaxHeight = Math.min(420, Math.round(windowH * 0.55));
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalRoot}>
-        <Pressable style={styles.backdrop} onPress={onClose}>
-          <Pressable
-            style={[styles.modalCard, modalShift > 0 && { transform: [{ translateY: -modalShift }] }]}
-            onPress={(e) => e.stopPropagation()}
-          >
-            <Text style={styles.title}>{he.orders.receiveOrderTitle}</Text>
-            {previewQuery.isLoading ? (
-              <ActivityIndicator color={theme.colors.primary} />
-            ) : previewQuery.isError ? (
-              <Text style={styles.error}>{he.orders.receiveFailed}</Text>
-            ) : lines.length === 0 ? (
-              <Text style={styles.meta}>{he.orders.receiveEmpty}</Text>
-            ) : (
-              <ScrollView
-                style={{ maxHeight: Math.min(420, windowH * 0.5) }}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="on-drag"
-                automaticallyAdjustKeyboardInsets={false}
-              >
-                {lines.map((line) => (
+        <Pressable style={styles.backdropFill} onPress={onClose} />
+        <View style={[styles.modalCard, { maxHeight: Math.round(windowH * 0.85) }]}>
+          <Text style={styles.title}>{he.orders.receiveOrderTitle}</Text>
+          {previewQuery.isLoading ? (
+            <ActivityIndicator color={theme.colors.primary} />
+          ) : previewQuery.isError ? (
+            <Text style={styles.error}>{he.orders.receiveFailed}</Text>
+          ) : lines.length === 0 ? (
+            <Text style={styles.meta}>{he.orders.receiveEmpty}</Text>
+          ) : (
+            <ScrollView
+              style={{ maxHeight: listMaxHeight }}
+              nestedScrollEnabled
+              keyboardShouldPersistTaps="handled"
+            >
+              {lines.map((line) => {
+                const key = intakeLineKey(line);
+                return (
                   <IntakeLineFields
-                    key={intakeLineKey(line)}
+                    key={key}
                     line={line}
-                    value={qtyByKey[intakeLineKey(line)] ?? ""}
-                    onChange={(text) => {
-                      const key = intakeLineKey(line);
-                      setQtyByKey((prev) => ({ ...prev, [key]: text }));
+                    value={qtyByKey[key] ?? line.ordered_qty}
+                    disabled={submitting}
+                    onChange={(next) => {
+                      setQtyByKey((prev) => ({ ...prev, [key]: next }));
                     }}
-                    inputRef={(node) => {
-                      const key = intakeLineKey(line);
-                      if (node) inputRefs.current.set(key, node);
-                      else inputRefs.current.delete(key);
-                    }}
-                    onFocus={() => onModalInputFocus(intakeLineKey(line))}
                   />
-                ))}
-              </ScrollView>
-            )}
-            {formError ? <Text style={styles.error}>{formError}</Text> : null}
-            <View style={styles.actions}>
-              <Pressable
-                style={[styles.btn, styles.cancelBtn]}
-                onPress={onClose}
-                disabled={submitting}
-              >
-                <Text style={styles.cancelText}>{he.generic.cancel}</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.btn, styles.saveBtn, submitting && styles.btnDisabled]}
-                onPress={save}
-                disabled={submitting || previewQuery.isLoading || lines.length === 0}
-              >
-                {submitting ? (
-                  <ActivityIndicator color={theme.colors.onPrimary} />
-                ) : (
-                  <Text style={styles.saveText}>{he.orders.receiveSave}</Text>
-                )}
-              </Pressable>
-            </View>
-          </Pressable>
-        </Pressable>
+                );
+              })}
+            </ScrollView>
+          )}
+          {formError ? <Text style={styles.error}>{formError}</Text> : null}
+          <View style={styles.actions}>
+            <Pressable
+              style={[styles.btn, styles.cancelBtn]}
+              onPress={onClose}
+              disabled={submitting}
+            >
+              <Text style={styles.cancelText}>{he.generic.cancel}</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.btn, styles.saveBtn, submitting && styles.btnDisabled]}
+              onPress={save}
+              disabled={submitting || previewQuery.isLoading || lines.length === 0}
+            >
+              {submitting ? (
+                <ActivityIndicator color={theme.colors.onPrimary} />
+              ) : (
+                <Text style={styles.saveText}>{he.orders.receiveSave}</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
       </View>
     </Modal>
   );
@@ -229,16 +177,17 @@ export function ReceiveOrderModal({
 function IntakeLineFields({
   line,
   value,
+  disabled,
   onChange,
-  inputRef,
-  onFocus,
 }: {
   line: IntakePreviewLine;
-  value: string;
-  onChange: (text: string) => void;
-  inputRef: (node: TextInput | null) => void;
-  onFocus: () => void;
+  value: number;
+  disabled: boolean;
+  onChange: (next: number) => void;
 }): JSX.Element {
+  const canDec = !disabled && value > 0;
+  const canInc = !disabled && value < line.ordered_qty;
+
   return (
     <View style={styles.line}>
       <Text style={styles.bookTitle}>{line.book_title}</Text>
@@ -246,16 +195,50 @@ function IntakeLineFields({
       <Text style={styles.meta}>
         {he.orders.receiveOrderedQty.replace("{{n}}", String(line.ordered_qty))}
       </Text>
-      <Text style={styles.fieldLabel}>{he.orders.receiveArrivedLabel}</Text>
-      <TextInput
-        ref={inputRef}
-        style={styles.input}
-        value={value}
-        onChangeText={onChange}
-        keyboardType="number-pad"
-        textAlign="right"
-        onFocus={onFocus}
-      />
+      <View style={styles.stepperRow}>
+        <Text style={styles.fieldLabel}>{he.orders.receiveArrivedLabel}</Text>
+        <View style={[styles.track, disabled && styles.trackDisabled]}>
+          <Pressable
+            onPress={() => {
+              if (canDec) onChange(value - 1);
+            }}
+            disabled={!canDec}
+            style={({ pressed }) => [
+              styles.stepBtn,
+              !canDec && styles.stepBtnDisabled,
+              pressed && canDec && styles.stepBtnPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={he.orders.qtyStepperDecreaseA11y}
+          >
+            <Ionicons
+              name="remove"
+              size={18}
+              color={canDec ? theme.colors.primary : theme.colors.outline}
+            />
+          </Pressable>
+          <Text style={styles.stepValue}>{value}</Text>
+          <Pressable
+            onPress={() => {
+              if (canInc) onChange(value + 1);
+            }}
+            disabled={!canInc}
+            style={({ pressed }) => [
+              styles.stepBtn,
+              !canInc && styles.stepBtnDisabled,
+              pressed && canInc && styles.stepBtnPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={he.orders.qtyStepperIncreaseA11y}
+          >
+            <Ionicons
+              name="add"
+              size={18}
+              color={canInc ? theme.colors.primary : theme.colors.outline}
+            />
+          </Pressable>
+        </View>
+      </View>
       <Text style={styles.fieldLabel}>{he.orders.receiveCellsLabel}</Text>
       {line.cells.length === 0 ? (
         <Text style={styles.meta}>{he.orders.receiveNoCells}</Text>
@@ -273,13 +256,15 @@ function IntakeLineFields({
 }
 
 const styles = StyleSheet.create({
-  modalRoot: { flex: 1 },
-  backdrop: {
+  modalRoot: {
     flex: 1,
-    backgroundColor: "rgba(11, 28, 48, 0.45)",
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: theme.spacing.lg,
+  },
+  backdropFill: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(11, 28, 48, 0.45)",
   },
   modalCard: {
     width: "100%",
@@ -317,17 +302,41 @@ const styles = StyleSheet.create({
     ...theme.typography.labelMd,
     color: theme.colors.onSurfaceVariant,
     textAlign: "left",
+  },
+  stepperRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: theme.spacing.md,
     marginTop: theme.spacing.xs,
   },
-  input: {
-    ...theme.typography.bodyMd,
-    color: theme.colors.onSurface,
+  track: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: theme.colors.surfaceContainerLowest,
     borderWidth: 1,
     borderColor: theme.colors.outlineVariant,
-    borderRadius: theme.radius.md,
-    paddingHorizontal: theme.spacing.md,
-    paddingVertical: theme.spacing.sm,
+    borderRadius: theme.radius.full,
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+    gap: 2,
+  },
+  trackDisabled: { opacity: 0.55 },
+  stepBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: theme.radius.full,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  stepBtnDisabled: { opacity: 0.45 },
+  stepBtnPressed: { backgroundColor: theme.colors.surfaceContainerHigh },
+  stepValue: {
+    ...theme.typography.headlineSm,
+    color: theme.colors.primary,
+    minWidth: 36,
+    textAlign: "center",
+    paddingHorizontal: theme.spacing.xs,
   },
   cellLine: {
     ...theme.typography.bodyMd,

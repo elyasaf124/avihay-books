@@ -156,11 +156,15 @@ export interface UpdateShortageStatusPayload {
   quantity?: number;
 }
 
+export type ShortageStatusPatchResult = ShortageItem & {
+  warehouse_exhausted?: boolean;
+};
+
 export function useUpdateShortageStatus() {
   const client = useQueryClient();
-  return useMutation<ShortageItem, Error, UpdateShortageStatusPayload>({
+  return useMutation<ShortageStatusPatchResult, Error, UpdateShortageStatusPayload>({
     mutationFn: async ({ shortageId, status, quantity }) => {
-      const { data } = await api.patch<ShortageItem>(`/shortage/${shortageId}/status`, {
+      const { data } = await api.patch<ShortageStatusPatchResult>(`/shortage/${shortageId}/status`, {
         status,
         ...(status === "completed" && quantity != null ? { quantity } : {}),
       });
