@@ -13,6 +13,7 @@ import { findBookLocationsExpandedByBookIds } from "../repos/bookLocations.repo.
 import { restoreBookShortagesIfNoOpenOrders } from "../repos/shortageList.repo.js";
 import { getBookLocationPaths } from "../services/bookLocation.js";
 import { reconcileOrdersOnStockArrival } from "../services/orderReconciliation.js";
+import { reconcileLocationShortageDisplay } from "../services/shelfStock.js";
 import { maybePromoteEmptyCellShortagesToOrder } from "../services/shortage.js";
 import { invalidateStoreMapCache } from "../services/storeMapCache.js";
 import { logger } from "../utils/logger.js";
@@ -170,6 +171,11 @@ booksRouter.post(
           [locationId, nextLocationQty],
         );
         location = updatedLocation.rows[0];
+        await reconcileLocationShortageDisplay(client, locationId, {
+          book_id: currentLocation.book_id,
+          quantity_in_cell: nextLocationQty,
+          shelf_stock: Number(currentLocation.shelf_stock),
+        });
       } else {
         const totalResult = await client.query<{ total: number }>(
           `SELECT COALESCE(SUM(quantity_in_cell), 0)::int AS total
