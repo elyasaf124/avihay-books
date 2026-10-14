@@ -1,9 +1,14 @@
 import { HttpError } from "../middleware/errorHandler.js";
 import { pool } from "../db/pool.js";
 import { findBookById } from "../repos/books.repo.js";
-import { appendToPendingInventoryOrder } from "../repos/orders.repo.js";
 import {
+  appendToPendingInventoryOrder,
+  decrementPendingInventoryOrderForShelfUndo,
+} from "../repos/orders.repo.js";
+import {
+  deleteActiveShortageByLocationId,
   findShortageById,
+  restoreBookShortagesIfNoOpenOrders,
   updateShortagesWhereBookAndStatus,
 } from "../repos/shortageList.repo.js";
 import type { Book, OrderRow, OrderType, ShortageItem } from "@avihay-books/shared";
@@ -229,7 +234,7 @@ WITH before AS (
   SELECT * FROM books WHERE id = $1::uuid
 ),
 loc AS (
-  SELECT id, book_id FROM book_locations WHERE id = $2::uuid
+  SELECT id, book_id, quantity_in_cell FROM book_locations WHERE id = $2::uuid
 ),
 guard AS (
   SELECT
@@ -239,7 +244,8 @@ guard AS (
       WHEN NOT EXISTS (SELECT 1 FROM loc) THEN 'missing'
       WHEN (SELECT book_id FROM loc) <> $1::uuid THEN 'mismatch'
       ELSE 'ok'
-    END AS location_status
+    END AS location_status,
+    COALESCE((SELECT quantity_in_cell >= $3::int FROM loc), FALSE) AS location_had_copy
 ),
 upd AS (
   UPDATE books b
@@ -248,6 +254,7 @@ upd AS (
    WHERE b.id = $1::uuid
      AND g.book_ok
      AND g.location_status IN ('ok', 'skipped')
+     AND (g.location_status = 'skipped' OR g.location_had_copy)
   RETURNING b.*
 ),
 loc_upd AS (
@@ -258,6 +265,7 @@ loc_upd AS (
     FROM guard g
    WHERE bl.id = $2::uuid
      AND g.location_status = 'ok'
+     AND g.location_had_copy
      AND EXISTS (SELECT 1 FROM upd)
   RETURNING bl.id
 ),
@@ -280,6 +288,7 @@ ins AS (
 SELECT
   (SELECT g.book_ok FROM guard g)         AS book_ok,
   (SELECT g.location_status FROM guard g) AS location_status,
+  (SELECT g.location_had_copy FROM guard g) AS location_had_copy,
   (SELECT to_jsonb(b.*) FROM before b)    AS book_before,
   (SELECT to_jsonb(u.*) FROM upd u)       AS book_after,
   (SELECT to_jsonb(i.*) FROM ins i)       AS shortage
@@ -288,6 +297,7 @@ SELECT
 interface ShelfShortageRow {
   book_ok: boolean;
   location_status: "ok" | "missing" | "mismatch" | "skipped";
+  location_had_copy: boolean;
   book_before: Book | null;
   book_after: Book | null;
   shortage: ShortageItem | null;
@@ -320,10 +330,29 @@ export async function createShortageAfterShelfSale(
   if (!row.book_ok) throw new HttpError(404, "book_not_found");
   if (row.location_status === "missing") throw new HttpError(404, "location_not_found");
   if (row.location_status === "mismatch") throw new HttpError(400, "location_book_mismatch");
-  if (!row.book_after) throw new HttpError(500, "book_update_failed");
-  if (!row.shortage) throw new HttpError(500, "shortage_insert_failed");
+    if (row.location_status === "ok" && !row.location_had_copy) {
+      /** לחיצה כפולה / מכירה על תא שכבר ריק — no-op בלי לפגוע במלאי. */
+      throw new HttpError(409, "location_no_copies", { location_id: input.locationId });
+    }
+    if (!row.book_after) throw new HttpError(500, "book_update_failed");
+    if (!row.shortage) throw new HttpError(500, "shortage_insert_failed");
 
   return row.shortage;
+}
+
+/** «חזרה למדף» מהארון — מוחק חוסר, מחזיר עותק, ומסנכרן הזמנה אם הועבר אוטומטית. */
+export async function cancelShelfShortageForLocation(locationId: string): Promise<{
+  stillPending: boolean;
+  quantityInCell: number;
+} | null> {
+  const result = await deleteActiveShortageByLocationId(locationId);
+  if (!result) return null;
+  await decrementPendingInventoryOrderForShelfUndo(result.bookId);
+  await restoreBookShortagesIfNoOpenOrders(result.bookId);
+  return {
+    stillPending: result.stillPending,
+    quantityInCell: result.quantityInCell,
+  };
 }
 
 export interface EnsureShortageForEmptyCellInput {

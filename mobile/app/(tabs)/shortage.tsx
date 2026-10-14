@@ -37,7 +37,10 @@ import {
 import { ShortageRow } from "../../src/components/shortage/ShortageRow";
 import { MoveToOrderModal } from "../../src/components/shortage/MoveToOrderModal";
 import { ShortageQuantityModal } from "../../src/components/shortage/ShortageQuantityModal";
-import { bookWarehouseQty, maxShortageCompleteQty } from "../../src/utils/shortageWarehouse";
+import {
+  bookWarehouseQty,
+  shortageGroupMissingCopies,
+} from "../../src/utils/shortageWarehouse";
 import { sortByHebrewKeys } from "../../src/utils/hebrewSort";
 
 const BOOK_DROPDOWN_SUGGESTION_CAP = 50;
@@ -313,7 +316,7 @@ export default function ShortageScreen(): JSX.Element {
       Alert.alert(he.shortage.confirmResolveTitle, he.shortage.resolveNoStock);
       return;
     }
-    if ((picked.missing_count ?? 1) > 1) {
+    if (shortageGroupMissingCopies(picked) > 1) {
       setResolveError(null);
       setResolveQtyTarget(picked);
       return;
@@ -327,7 +330,7 @@ export default function ShortageScreen(): JSX.Element {
         Alert.alert(he.shortage.removeShortageOffline);
         return;
       }
-      if ((picked.missing_count ?? 1) > 1) {
+      if (shortageGroupMissingCopies(picked) > 1) {
         setRemoveError(null);
         setRemoveQtyTarget(picked);
         return;
@@ -466,11 +469,11 @@ export default function ShortageScreen(): JSX.Element {
   const isInitialLoading = shortageQuery.isLoading;
 
   const totalMissingCopies = useMemo(
-    () => items.reduce((sum, row) => sum + Math.max(row.missing_count, 1), 0),
+    () => items.reduce((sum, row) => sum + shortageGroupMissingCopies(row), 0),
     [items],
   );
   const filteredMissingCopies = useMemo(
-    () => filtered.reduce((sum, row) => sum + Math.max(row.missing_count, 1), 0),
+    () => filtered.reduce((sum, row) => sum + shortageGroupMissingCopies(row), 0),
     [filtered],
   );
 

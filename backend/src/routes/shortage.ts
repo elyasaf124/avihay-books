@@ -2,15 +2,16 @@ import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import {
-  deleteActiveShortageByLocationId,
   deleteShortagesInGroupById,
   findAllShortagesExpanded,
   updateShortageStatus,
   upsertShortage,
 } from "../repos/shortageList.repo.js";
 import {
+  cancelShelfShortageForLocation,
   completeShortage,
   createShortageAfterShelfSale,
+  maybePromoteEmptyCellShortagesToOrder,
   moveShortageToOrder,
 } from "../services/shortage.js";
 import { invalidateStoreMapCache, invalidateStoreMapCacheForLocation } from "../services/storeMapCache.js";
@@ -40,6 +41,7 @@ shortageRouter.post(
       soldQuantity: body.sold_quantity ?? 1,
       locationId: body.location_id,
     });
+    await maybePromoteEmptyCellShortagesToOrder(body.book_id).catch(() => {});
     if (body.location_id) {
       invalidateStoreMapCacheForLocation(body.location_id);
     } else {
@@ -54,9 +56,9 @@ shortageRouter.delete(
   "/by-location/:locationId",
   asyncHandler(async (req, res) => {
     const { locationId } = locationIdParamSchema.parse(req.params);
-    const result = await deleteActiveShortageByLocationId(locationId);
+    const result = await cancelShelfShortageForLocation(locationId);
     if (!result) throw new HttpError(404, "shortage_not_found");
-    invalidateStoreMapCacheForLocation(locationId);
+    invalidateStoreMapCache();
     res.json({
       still_pending: result.stillPending,
       quantity_in_cell: result.quantityInCell,

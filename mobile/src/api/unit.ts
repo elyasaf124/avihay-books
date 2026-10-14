@@ -13,6 +13,7 @@ import {
   adjustStoreMapLocationShortage,
   softInvalidateStoreMap,
 } from "./storeMap";
+import { SHORTAGE_LIST_QUERY_KEY } from "./shortage";
 import { mockSuppliers } from "../mocks/homeDashboard";
 import { useSuppliers } from "./suppliers";
 
@@ -67,31 +68,48 @@ export function useAddShortage() {
           client,
           vars.locationId,
           -(vars.soldQuantity ?? 1),
-          true,
         );
       }
     },
-    onError: (_err, vars) => {
+    onError: (err, vars) => {
       if (vars.locationId) {
+        const status =
+          typeof err === "object" && err !== null && "response" in err
+            ? (err as { response?: { status?: number } }).response?.status
+            : undefined;
+        /**
+         * 409 = השרת דחה את המכירה (תא כבר ריק / לחיצה כפולה) — אין מה לשחזר,
+         * ה־optimistic update הוריד עותק שלא קיים. refetch מלא מיישר את ה־cache.
+         */
+        if (status === 409) {
+          void client.invalidateQueries({
+            queryKey: ["store-map", "unit"],
+            refetchType: "active",
+          });
+          softInvalidateStoreMap(client);
+          return;
+        }
         adjustStoreMapLocationShortage(
           client,
           vars.locationId,
           vars.soldQuantity ?? 1,
-          false,
         );
       }
     },
-    onSuccess: (_data, vars) => {
+    onSuccess: async (data, vars) => {
       if (vars.locationId) {
         /** סנכרון מול השרת — מונע drift בין qty ל־ghost אחרי לחיצות מהירות. */
         void client.invalidateQueries({
           queryKey: ["store-map", "unit"],
           refetchType: "active",
         });
-      } else {
-        softInvalidateStoreMap(client);
       }
-      void client.invalidateQueries({ queryKey: ["shortage"] });
+      /** המפה המלאה (בית/סיכום) חייבת להתרענן גם אחרי מכירה ממיקום ספציפי. */
+      softInvalidateStoreMap(client);
+      void client.invalidateQueries({ queryKey: SHORTAGE_LIST_QUERY_KEY });
+      if (data.status === "shortage") {
+        await client.refetchQueries({ queryKey: SHORTAGE_LIST_QUERY_KEY });
+      }
       void client.invalidateQueries({ queryKey: ["books", "inventory"] });
       void client.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
       void client.invalidateQueries({

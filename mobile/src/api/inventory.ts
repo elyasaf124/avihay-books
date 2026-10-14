@@ -163,13 +163,13 @@ export function useAdjustInventoryStock() {
         applyOptimisticStockDeltaToList(prev, vars.bookId, vars.delta, vars.locationId),
       );
       if (vars.locationId) {
-        adjustStoreMapLocationShortage(client, vars.locationId, vars.delta, false);
+              adjustStoreMapLocationShortage(client, vars.locationId, vars.delta);
       }
       return { listKey, previousList };
     },
     onError: (_e, vars, ctx) => {
       if (vars.locationId) {
-        adjustStoreMapLocationShortage(client, vars.locationId, -vars.delta, false);
+              adjustStoreMapLocationShortage(client, vars.locationId, -vars.delta);
       }
       if (ctx?.listKey == null) return;
       const { listKey, previousList } = ctx;

@@ -53,11 +53,13 @@ export async function deleteActiveShortageByLocationId(locationId: string): Prom
   deleted: boolean;
   stillPending: boolean;
   quantityInCell: number;
+  bookId: string;
 } | null> {
   const { rows } = await pool.query<{
     location_id: string;
     quantity_in_cell: number;
     still_pending: boolean;
+    book_id: string;
   }>(
     `WITH del AS (
        DELETE FROM shortage_list
@@ -65,7 +67,7 @@ export async function deleteActiveShortageByLocationId(locationId: string): Prom
           SELECT id
             FROM shortage_list
            WHERE location_id = $1::uuid
-             AND status = 'shortage'
+             AND status IN ('shortage', 'order_pending')
            ORDER BY added_at DESC
            LIMIT 1
         )
@@ -73,7 +75,16 @@ export async function deleteActiveShortageByLocationId(locationId: string): Prom
      ),
      restored_loc AS (
        UPDATE book_locations bl
-          SET quantity_in_cell = bl.quantity_in_cell + 1
+          SET quantity_in_cell = bl.quantity_in_cell + 1,
+              shelf_stock = CASE
+                WHEN NOT EXISTS (
+                  SELECT 1
+                    FROM shortage_list sl
+                   WHERE sl.location_id = bl.id
+                     AND sl.status <> 'completed'
+                ) THEN bl.quantity_in_cell + 1
+                ELSE bl.shelf_stock
+              END
          WHERE bl.id = $1::uuid
            AND EXISTS (SELECT 1 FROM del)
        RETURNING bl.id, bl.quantity_in_cell
@@ -93,7 +104,8 @@ export async function deleteActiveShortageByLocationId(locationId: string): Prom
            FROM shortage_list sl
           WHERE sl.location_id = $1::uuid
             AND sl.status <> 'completed'
-       ) AS still_pending
+       ) AS still_pending,
+       (SELECT d.book_id FROM del d LIMIT 1) AS book_id
        FROM restored_loc rl`,
     [locationId],
   );
@@ -103,6 +115,7 @@ export async function deleteActiveShortageByLocationId(locationId: string): Prom
     deleted: true,
     stillPending: Boolean(row.still_pending),
     quantityInCell: row.quantity_in_cell,
+    bookId: row.book_id,
   };
 }
 

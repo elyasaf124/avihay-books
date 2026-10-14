@@ -194,19 +194,29 @@ function shortageCountOf(book: StoreMapBook): number {
 function patchUnitLocationShortage(
   unit: StoreMapUnit,
   locationId: string,
-  isPendingShortage: boolean,
+  stillPending: boolean,
   quantityInCell?: number,
 ): StoreMapUnit {
   const mapper = (book: StoreMapBook): StoreMapBook => {
     if (book.location_id !== locationId) return book;
+    const qty =
+      quantityInCell !== undefined ? quantityInCell : book.quantity_in_cell;
     const prevCount = shortageCountOf(book);
     /** ביטול עותק אחד מהמדף: מורידים 1; אם עדיין יש חוסר — לפחות 1. */
-    const nextCount = isPendingShortage ? Math.max(1, prevCount - 1) : 0;
+    const nextCount = stillPending ? Math.max(1, prevCount - 1) : 0;
+    /**
+     * אחרי ביטול מלא — `shelf_stock` חייב להתיישר עם הפיזי, אחרת נשארות שדרות
+     * מטושטשות בלי רשומת חוסר (404 בלחיצה חוזרת).
+     */
+    const nextShelf = stillPending
+      ? Math.max(Number(book.shelf_stock) || 0, qty + nextCount)
+      : qty;
     return {
       ...book,
+      quantity_in_cell: qty,
+      shelf_stock: nextShelf,
       is_pending_shortage: nextCount > 0,
       pending_shortage_count: nextCount,
-      ...(quantityInCell !== undefined ? { quantity_in_cell: quantityInCell } : {}),
     };
   };
   return {
@@ -226,19 +236,19 @@ function patchUnitLocationShortage(
 export function patchStoreMapLocationShortage(
   client: QueryClient,
   locationId: string,
-  isPendingShortage: boolean,
+  stillPending: boolean,
   quantityInCell?: number,
 ): void {
   client.setQueriesData<StoreMapUnit>({ queryKey: ["store-map", "unit"] }, (old) => {
     if (!old) return old;
-    return patchUnitLocationShortage(old, locationId, isPendingShortage, quantityInCell);
+    return patchUnitLocationShortage(old, locationId, stillPending, quantityInCell);
   });
   client.setQueryData<StoreMap>(STORE_MAP_KEY, (old) => {
     if (!old) return old;
     return {
       ...old,
       units: old.units.map((u) =>
-        patchUnitLocationShortage(u, locationId, isPendingShortage, quantityInCell),
+        patchUnitLocationShortage(u, locationId, stillPending, quantityInCell),
       ),
     };
   });
@@ -253,23 +263,26 @@ export function adjustStoreMapLocationShortage(
   client: QueryClient,
   locationId: string,
   quantityDelta: number,
-  _isPendingShortage: boolean,
 ): void {
   const apply = (unit: StoreMapUnit): StoreMapUnit => {
     const mapper = (book: StoreMapBook): StoreMapBook => {
       if (book.location_id !== locationId) return book;
       const nextQty = Math.max(0, book.quantity_in_cell + quantityDelta);
-      const { total: prevTotal } = spineDisplayCounts(book);
-      const nextShelf = Math.max(Number(book.shelf_stock) || 0, prevTotal, nextQty);
-      const nextCount = Math.max(0, nextShelf - nextQty);
-      return {
-        ...book,
-        quantity_in_cell: nextQty,
-        shelf_stock: nextShelf,
-        pending_shortage_count: nextCount,
-        is_pending_shortage: nextCount > 0,
+        /**
+         * `shelf_stock` הוא היעד הקבוע של השדרות — הוא לא אמור לגדול במכירה.
+         * הגרסה הקודמת הוסיפה `prevTotal` (פיזיים + חוסרים) ל־`Math.max`, מה שגרם
+         * לראצ'ט חד־כיווני: כל סחף קטן הגדיל את היעד והנציח את עצמו.
+         */
+        const nextShelf = Math.max(Number(book.shelf_stock) || 0, nextQty);
+        const nextCount = Math.max(0, nextShelf - nextQty);
+        return {
+          ...book,
+          quantity_in_cell: nextQty,
+          shelf_stock: nextShelf,
+          pending_shortage_count: nextCount,
+          is_pending_shortage: nextCount > 0,
+        };
       };
-    };
     return {
       ...unit,
       shelves: mapUnitShelves(unit.shelves, mapper),

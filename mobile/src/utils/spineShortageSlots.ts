@@ -96,9 +96,15 @@ export function removePreferredGhostSlot(
 export function reconcilePreferredGhostSlots(
   prev: ReadonlyMap<string, readonly number[]>,
   locationShortageCounts: ReadonlyMap<string, number>,
+  pendingLocationIds?: ReadonlySet<string>,
 ): Map<string, number[]> {
   const next = new Map<string, number[]>();
   for (const [locationId, slots] of prev) {
+    /** מיקום עם בקשת add/undo בדרך — לא נוגעים, ה־refetch עלול להיות ביניים. */
+    if (pendingLocationIds?.has(locationId)) {
+      next.set(locationId, [...slots]);
+      continue;
+    }
     const count = locationShortageCounts.get(locationId) ?? 0;
     if (count <= 0) continue;
     next.set(locationId, slots.slice(0, count));

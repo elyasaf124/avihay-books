@@ -263,6 +263,8 @@ export const he = {
     filterSuppliersSelectedMany: "{{count}} ספקים",
     bookTitle: "שם הספר",
     stockShort: "מלאי",
+    warehouseLastCopyHint: "במחסן נשאר עותק אחרון",
+    warehouseEmptyHint: "המלאי במחסן נגמר",
     stockInCell: "בתא",
     restock: "חידוש מלאי",
     stockIncreaseA11y: "הגדלת מלאי",
