@@ -147,6 +147,15 @@ export async function setLocationShelfStock(
   }
 }
 
+/** ממלא/מוחק רשומות חוסר לתא כך ש־`quantity_in_cell + pending === shelf_stock` (באותה טרנזקציה). */
+export async function reconcileLocationShortageDisplay(
+  client: PoolClient,
+  locationId: string,
+  loc: { book_id: string; quantity_in_cell: number; shelf_stock: number },
+): Promise<void> {
+  await syncDisplayOnClient(client, locationId, loc);
+}
+
 async function syncDisplayOnClient(
   client: PoolClient,
   locationId: string,
