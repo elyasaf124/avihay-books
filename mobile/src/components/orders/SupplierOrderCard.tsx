@@ -57,6 +57,7 @@ export function SupplierOrderCard({
   const canExport = group.supplier_id != null;
   const groupKey = supplierGroupKey(group.supplier_id);
   const isOrdered = isSupplierGroupFullyOrdered(group.orders);
+  const hasSentLine = group.orders.some((o) => o.status === "sent");
   const hasOpenOrders = supplierGroupHasOpenOrders(group.orders);
   const isTogglingSupplier = togglingSupplierKey === groupKey;
 
@@ -105,7 +106,7 @@ export function SupplierOrderCard({
                   </Pressable>
                 )
               ) : null}
-              {isInventory && isOrdered && onReceiveSupplier ? (
+              {isInventory && hasSentLine && onReceiveSupplier ? (
                 <Pressable
                   onPress={() => onReceiveSupplier(group)}
                   style={({ pressed }) => [

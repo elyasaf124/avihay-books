@@ -37,6 +37,7 @@ import {
 import { ShortageRow } from "../../src/components/shortage/ShortageRow";
 import { MoveToOrderModal } from "../../src/components/shortage/MoveToOrderModal";
 import { ShortageQuantityModal } from "../../src/components/shortage/ShortageQuantityModal";
+import { bookWarehouseQty, maxShortageCompleteQty } from "../../src/utils/shortageWarehouse";
 import { sortByHebrewKeys } from "../../src/utils/hebrewSort";
 
 const BOOK_DROPDOWN_SUGGESTION_CAP = 50;
@@ -268,7 +269,8 @@ export default function ShortageScreen(): JSX.Element {
   const runResolveShortage = useCallback(
     async (item: ShortageListItem, quantity: number, mode: "qty" | "confirm") => {
       if (resolveMutation.isPending) return;
-      if (item.book_stock_quantity <= 0) {
+      const warehouseQty = bookWarehouseQty(item);
+      if (warehouseQty < quantity) {
         if (mode === "qty") setResolveError(he.shortage.resolveNoStock);
         else {
           Alert.alert(he.shortage.confirmResolveTitle, he.shortage.resolveNoStock);
@@ -277,18 +279,15 @@ export default function ShortageScreen(): JSX.Element {
         return;
       }
       setResolveError(null);
-      // Older production APIs don't include book_unplaced_quantity yet.
-      const availableWarehouseStock = item.book_unplaced_quantity ?? item.book_stock_quantity;
-      const exhaustsWarehouseStock = quantity >= availableWarehouseStock;
       try {
-        await resolveMutation.mutateAsync({
+        const result = await resolveMutation.mutateAsync({
           shortageId: item.id,
           status: "completed",
           quantity,
         });
         setResolveQtyTarget(null);
         setResolveConfirmTarget(null);
-        if (exhaustsWarehouseStock) {
+        if (result.warehouse_exhausted) {
           // Let the confirmation/quantity Modal finish dismissing before opening the follow-up dialog.
           setTimeout(() => {
             setLastStockOrderTarget(item);
@@ -310,7 +309,7 @@ export default function ShortageScreen(): JSX.Element {
   );
 
   const requestResolveShortage = useCallback((picked: ShortageListItem) => {
-    if (picked.book_stock_quantity <= 0) {
+    if (bookWarehouseQty(picked) < 1) {
       Alert.alert(he.shortage.confirmResolveTitle, he.shortage.resolveNoStock);
       return;
     }
@@ -404,9 +403,18 @@ export default function ShortageScreen(): JSX.Element {
         return;
       }
       queryClient.setQueryData<ShortageListItem[]>(["shortage", "list"], (old) =>
-        old?.map((row) => row.book_id === item.book_id
-          ? { ...row, book_stock_quantity: optimisticQty }
-          : row),
+        old?.map((row) => {
+          if (row.book_id !== item.book_id) return row;
+          const nextUnplaced =
+            typeof row.book_unplaced_quantity === "number"
+              ? Math.max(0, row.book_unplaced_quantity + delta)
+              : row.book_unplaced_quantity;
+          return {
+            ...row,
+            book_stock_quantity: optimisticQty,
+            book_unplaced_quantity: nextUnplaced,
+          };
+        }),
       );
       queuedStockUpdatesRef.current.set(item.book_id, optimisticQty);
 
@@ -683,7 +691,7 @@ export default function ShortageScreen(): JSX.Element {
       <ShortageQuantityModal
         key={
           resolveQtyTarget
-            ? `resolve-${resolveQtyTarget.id}-${resolveQtyTarget.missing_count}`
+            ? `resolve-${resolveQtyTarget.id}-${resolveQtyTarget.missing_count}-${resolveQtyTarget.book_unplaced_quantity ?? 0}`
             : "resolve-none"
         }
         visible={resolveQtyTarget !== null}

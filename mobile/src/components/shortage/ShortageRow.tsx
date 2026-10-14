@@ -11,6 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import type { ShortageListItem, ShortageStatus } from "@avihay-books/shared";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
+import { bookWarehouseQty } from "../../utils/shortageWarehouse";
 
 interface Props {
   item: ShortageListItem;
@@ -49,7 +50,8 @@ export function ShortageRow({
   const pendingOrder = item.status === "order_pending";
   const blocked = !!(busyMoving || busyCompleting || busyRemoving || busyPrice);
   const stockQty = item.book_stock_quantity;
-  const noStock = stockQty <= 0;
+  const warehouseQty = bookWarehouseQty(item);
+  const noStock = warehouseQty < 1;
   const canDecStock = !blocked && stockQty > 0;
   const canIncStock = !blocked && stockQty < 999;
 
@@ -158,12 +160,6 @@ export function ShortageRow({
             </View>
           </View>
           <View style={styles.statsDivider} />
-          <Stat
-            label={he.shortage.restock}
-            value={String(Math.max(item.book_reorder_threshold, 1))}
-            accent
-          />
-          <View style={styles.statsDivider} />
           <CellStockStat item={item} />
         </View>
 
@@ -258,23 +254,6 @@ export function ShortageRow({
           </Pressable>
         </View>
       </View>
-    </View>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  accent,
-}: {
-  label: string;
-  value: string;
-  accent?: boolean;
-}): JSX.Element {
-  return (
-    <View style={styles.stat}>
-      <Text style={styles.statLabel}>{label}</Text>
-      <Text style={[styles.statValue, accent && styles.statValueAccent]}>{value}</Text>
     </View>
   );
 }
@@ -489,7 +468,6 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurface,
     textAlign: "left",
   },
-  statValueAccent: { color: theme.colors.primary },
   badge: {
     paddingHorizontal: 10,
     paddingVertical: 4,

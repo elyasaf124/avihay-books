@@ -99,10 +99,10 @@ shortageRouter.patch(
   asyncHandler(async (req, res) => {
     const { status, quantity } = statusPatchSchema.parse(req.body);
     if (status === "completed") {
-      const row = await completeShortage(req.params.id!, quantity ?? 1);
+      const result = await completeShortage(req.params.id!, quantity ?? 1);
       /** קבוצה יכולה לכלול כמה `location_id` באותו תא — מרעננים את כל המפה. */
       invalidateStoreMapCache();
-      res.json(row);
+      res.json({ ...result.shortage, warehouse_exhausted: result.warehouse_exhausted });
       return;
     }
     const row = await updateShortageStatus(req.params.id!, status);

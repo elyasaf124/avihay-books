@@ -62,10 +62,16 @@ export async function moveShortageToOrder(input: MoveToOrderInput): Promise<Move
  * 3. מעלה `quantity_in_cell` לפי `location_id` של כל רשומה (בלי לשנות מלאי כולל).
  * 4. מסמן את הרשומות כ־`completed`.
  */
+export interface CompleteShortageResult {
+  shortage: ShortageItem;
+  /** נשארו 0 עותקים במחסן אחרי שהועברו `quantity` עותקים למדף. */
+  warehouse_exhausted: boolean;
+}
+
 export async function completeShortage(
   shortageId: string,
   quantity = 1,
-): Promise<ShortageItem> {
+): Promise<CompleteShortageResult> {
   if (!Number.isFinite(quantity) || quantity < 1 || !Number.isInteger(quantity)) {
     throw new HttpError(400, "invalid_quantity");
   }
@@ -177,14 +183,25 @@ export async function completeShortage(
   if (row.target_count === 0) {
     const existing = await findShortageById(shortageId);
     if (!existing) throw new HttpError(404, "shortage_not_found");
-    if (existing.status === "completed") return existing;
+    if (existing.status === "completed") {
+      return { shortage: existing, warehouse_exhausted: false };
+    }
     throw new HttpError(404, "shortage_not_found");
   }
   if (row.target_count < quantity) throw new HttpError(400, "invalid_quantity");
   if (row.location_missing) throw new HttpError(404, "location_not_found");
-  if (row.unplaced < quantity) throw new HttpError(400, "no_stock");
+  if (row.unplaced < quantity) {
+    throw new HttpError(400, "no_stock", {
+      unplaced: Number(row.unplaced),
+      quantity,
+    });
+  }
   if (!row.shortage) throw new HttpError(500, "shortage_update_failed");
-  return row.shortage;
+  const unplaced = Number(row.unplaced);
+  return {
+    shortage: row.shortage,
+    warehouse_exhausted: unplaced <= quantity,
+  };
 }
 
 export interface CreateShortageAfterShelfSaleInput {
