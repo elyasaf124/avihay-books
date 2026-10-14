@@ -164,15 +164,7 @@ export function ShortageRow({
             accent
           />
           <View style={styles.statsDivider} />
-          <Stat
-            label={he.shortage.stockInCell}
-            value={
-              item.quantity_in_cell == null || item.shelf_stock_in_cell == null
-                ? "—"
-                : `${item.shelf_stock_in_cell}/${item.quantity_in_cell}`
-            }
-            valueWritingDirection="ltr"
-          />
+          <CellStockStat item={item} />
         </View>
 
         <View style={styles.priceBlock}>
@@ -274,25 +266,33 @@ function Stat({
   label,
   value,
   accent,
-  valueWritingDirection,
 }: {
   label: string;
   value: string;
   accent?: boolean;
-  valueWritingDirection?: "ltr" | "rtl";
 }): JSX.Element {
   return (
     <View style={styles.stat}>
       <Text style={styles.statLabel}>{label}</Text>
-      <Text
-        style={[
-          styles.statValue,
-          accent && styles.statValueAccent,
-          valueWritingDirection ? { writingDirection: valueWritingDirection } : null,
-        ]}
-      >
-        {value}
-      </Text>
+      <Text style={[styles.statValue, accent && styles.statValueAccent]}>{value}</Text>
+    </View>
+  );
+}
+
+function CellStockStat({ item }: { item: ShortageListItem }): JSX.Element {
+  const missing = item.quantity_in_cell == null || item.shelf_stock_in_cell == null;
+  return (
+    <View style={styles.stat}>
+      <Text style={styles.statLabel}>{he.shortage.stockInCell}</Text>
+      {missing ? (
+        <Text style={styles.statValue}>—</Text>
+      ) : (
+        <View style={styles.cellRatio}>
+          <Text style={styles.statValue}>{item.shelf_stock_in_cell}</Text>
+          <Text style={styles.statValue}>/</Text>
+          <Text style={styles.statValue}>{item.quantity_in_cell}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -366,6 +366,12 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
   },
   stat: { gap: 2 },
+  cellRatio: {
+    flexDirection: "row",
+    direction: "ltr",
+    alignItems: "baseline",
+    alignSelf: "flex-start",
+  },
   stockStepper: {
     flexDirection: "row",
     alignItems: "center",

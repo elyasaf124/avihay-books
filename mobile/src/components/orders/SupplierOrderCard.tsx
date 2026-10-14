@@ -24,6 +24,7 @@ interface Props {
   qtyMinForLine?: (order: OrderListItem) => number;
   onToggleSupplierOrdered?: (group: OrdersBySupplierGroup) => void;
   onToggleLineOrdered?: (order: OrderListItem) => void;
+  onReceiveSupplier?: (group: OrdersBySupplierGroup) => void;
   removingOrderLineKey: string | null;
   togglingSupplierKey?: string | null;
   togglingLineKey?: string | null;
@@ -46,6 +47,7 @@ export function SupplierOrderCard({
   qtyMinForLine,
   onToggleSupplierOrdered,
   onToggleLineOrdered,
+  onReceiveSupplier,
   removingOrderLineKey,
   togglingSupplierKey,
   togglingLineKey,
@@ -102,6 +104,20 @@ export function SupplierOrderCard({
                     <Text style={styles.markOrderedText}>{he.orders.markOrderedButton}</Text>
                   </Pressable>
                 )
+              ) : null}
+              {isInventory && isOrdered && onReceiveSupplier ? (
+                <Pressable
+                  onPress={() => onReceiveSupplier(group)}
+                  style={({ pressed }) => [
+                    styles.receiveBtn,
+                    pressed && styles.lineActionPressed,
+                  ]}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={he.orders.receiveOrderA11y}
+                >
+                  <Text style={styles.receiveBtnText}>{he.orders.receiveOrderButton}</Text>
+                </Pressable>
               ) : null}
             </View>
             <Text style={styles.subline} numberOfLines={1}>
@@ -340,6 +356,17 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     fontSize: 12,
   },
+  receiveBtn: {
+    paddingHorizontal: theme.spacing.sm,
+    paddingVertical: 4,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.colors.primary,
+  },
+  receiveBtnText: {
+    ...theme.typography.labelMd,
+    color: theme.colors.onPrimary,
+    fontSize: 12,
+  },
   subline: {
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
@@ -380,7 +407,14 @@ const styles = StyleSheet.create({
     color: theme.colors.onSurfaceVariant,
     textAlign: "left",
   },
-  lineRight: { alignItems: "flex-start", gap: 2 },
+  lineRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    justifyContent: "flex-end",
+    gap: theme.spacing.xs,
+    flexShrink: 1,
+  },
   qty: {
     ...theme.typography.headlineSm,
     color: theme.colors.primary,

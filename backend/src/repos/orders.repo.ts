@@ -79,7 +79,7 @@ export async function findOrderExpandedById(id: string): Promise<OrderListItem |
   const { rows } = await pool.query<OrderListItem>(
     `SELECT o.id, o.book_id, o.supplier_id, o.order_type, o.quantity,
             o.customer_name, o.customer_phone, o.manual_book_title, o.manual_book_author,
-            o.status, o.created_at,
+            o.status, o.created_at, o.supplier_received_at,
             o.fulfillment_type, o.delivery_method, o.delivery_fee::text AS delivery_fee,
             o.address, o.notes, o.order_group_id,
             COALESCE(b.title, o.manual_book_title, '') AS book_title,
@@ -391,7 +391,7 @@ export async function findAllOrdersExpanded(
   const { rows } = await pool.query<OrderListItem>(
     `SELECT o.id, o.book_id, o.supplier_id, o.order_type, o.quantity,
             o.customer_name, o.customer_phone, o.manual_book_title, o.manual_book_author,
-            o.status, o.created_at,
+            o.status, o.created_at, o.supplier_received_at,
             o.fulfillment_type, o.delivery_method, o.delivery_fee::text AS delivery_fee,
             o.address, o.notes, o.order_group_id,
             COALESCE(b.title, o.manual_book_title, '') AS book_title,

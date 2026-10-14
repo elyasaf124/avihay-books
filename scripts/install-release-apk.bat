@@ -3,7 +3,9 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 call "%~dp0resolve-android-env.bat"
 
-set "APK=%~dp0..\mobile\android\app\build\outputs\apk\release\app-release.apk"
+set "APK=%~dp0..\mobile\android\app\build-alt\outputs\apk\release\app-release.apk"
+if not exist "%APK%" set "APK=%~dp0..\mobile\apk-dist\app-release.apk"
+if not exist "%APK%" set "APK=%~dp0..\mobile\android\app\build\outputs\apk\release\app-release.apk"
 set "PKG=com.avihay.books"
 set "REQUESTED=%~1"
 set "SERIAL="

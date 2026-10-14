@@ -29,8 +29,8 @@ echo === push (FCM) check ===
 call node scripts\check-google-services.cjs --strict
 if errorlevel 1 exit /b 1
 
-REM Kill any Metro process on port 8081
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8081 ^| findstr LISTENING') do taskkill /F /PID %%a 2>nul
+call node scripts\prepare-apk-release.cjs
+if errorlevel 1 exit /b 1
 
 set "NODE_ENV=production"
 set "EXPO_ENV_MODE=production"
@@ -42,7 +42,19 @@ echo Mobile: %MOBILE_DIR%
 call npx dotenv -e .env.production -- npx expo run:android --variant release --no-install
 
 echo === Done ===
-if exist "android\app\build\outputs\apk\release\app-release.apk" (
+if exist "android\app\build-alt\outputs\apk\release\app-release.apk" (
+    echo.
+    echo ========================================
+    echo APK ready: %MOBILE_DIR%android\app\build-alt\outputs\apk\release\app-release.apk
+    echo Install on phone: scripts\install-release-apk.bat
+    echo ========================================
+) else if exist "apk-dist\app-release.apk" (
+    echo.
+    echo ========================================
+    echo APK ready: %MOBILE_DIR%apk-dist\app-release.apk
+    echo Install on phone: scripts\install-release-apk.bat
+    echo ========================================
+) else if exist "android\app\build\outputs\apk\release\app-release.apk" (
     echo.
     echo ========================================
     echo APK ready: %MOBILE_DIR%android\app\build\outputs\apk\release\app-release.apk
