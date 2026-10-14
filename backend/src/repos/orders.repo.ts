@@ -460,3 +460,28 @@ export async function updateOrderQuantityAndResetPending(
 export async function deleteOrderById(id: string, client: Queryable = pool): Promise<void> {
   await client.query(`DELETE FROM orders WHERE id = $1`, [id]);
 }
+
+/**
+ * ביטול «חזרה למדף» אחרי שהחוסר הועבר להזמנה — מוריד עותק אחד מהזמנת מלאי פתוחה
+ * (או מוחק את השורה אם נשאר 0).
+ */
+export async function decrementPendingInventoryOrderForShelfUndo(bookId: string): Promise<void> {
+  const { rows } = await pool.query<OrderRow>(
+    `SELECT * FROM orders
+      WHERE book_id = $1::uuid
+        AND order_type = 'inventory'
+        AND customer_name IS NULL
+        AND customer_phone IS NULL
+        AND status IN ('pending', 'sent')
+      ORDER BY created_at ASC
+      LIMIT 1`,
+    [bookId],
+  );
+  const order = rows[0];
+  if (!order) return;
+  if (order.quantity <= 1) {
+    await deleteOrderById(order.id);
+    return;
+  }
+  await updateOrderQuantityAndResetPending(order.id, order.quantity - 1);
+}

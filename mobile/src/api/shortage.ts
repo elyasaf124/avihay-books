@@ -13,7 +13,8 @@ import {
   softInvalidateStoreMap,
 } from "./storeMap";
 
-const SHORTAGE_KEY = ["shortage", "list"] as const;
+export const SHORTAGE_LIST_QUERY_KEY = ["shortage", "list"] as const;
+const SHORTAGE_KEY = SHORTAGE_LIST_QUERY_KEY;
 const ORDERS_KEY_PREFIX = ["orders"] as const;
 
 function invalidateShortageSideEffects(
@@ -145,6 +146,7 @@ export function useCancelShelfShortage() {
       void client.invalidateQueries({ queryKey: SHORTAGE_KEY });
       void client.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
       void client.invalidateQueries({ queryKey: ["books", "inventory"] });
+      void client.invalidateQueries({ queryKey: ["orders"] });
     },
   });
 }

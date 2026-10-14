@@ -59,10 +59,9 @@ import { startBookTapTiming } from "../../../src/utils/bookTapTiming";
 import { startJsBlockHeartbeat } from "../../../src/utils/renderPhaseProbe";
 
 function isLocationShortaged(book: StoreMapBook): boolean {
-  /** רק שדרת־החוסר (`quantity_in_cell === 0` + דגל מה־cache) — בלי Set אופטימי נפרד. */
-  const qty = Math.max(0, Math.floor(Number(book.quantity_in_cell)));
-  if (qty > 0) return false;
-  return Boolean(book.is_pending_shortage);
+  /** כמו בשרת: חוסר = אין עותק פיזי בתא אבל יש «שדרות רפאים» (`shelf_stock` > qty). */
+  const { physical, ghosts } = spineDisplayCounts(book);
+  return physical <= 0 && ghosts > 0;
 }
 
 /** זהות יציבה — מונע רינדור מחדש של ה־`FlatList` כשאין מדפים להציג. */
@@ -139,6 +138,8 @@ export default function UnitScreen(): JSX.Element {
 
   /** מיקומים שממתינים לביטול בזמן ש־add עדיין בדרך (מניעת race). */
   const pendingUndoLocationsRef = useRef<Set<string>>(new Set());
+    /** מיקומים עם בקשת `POST /shortage` בדרך — חוסם לחיצה כפולה על אותו עותק. */
+    const pendingAddLocationsRef = useRef<Set<string>>(new Set());
   const openTimingReadyLoggedRef = useRef(false);
   const openTimingPaintLoggedRef = useRef(false);
 
@@ -281,18 +282,26 @@ export default function UnitScreen(): JSX.Element {
     }
     setGhostSlotsByLocation((prev) => {
       if (prev.size === 0) return prev;
-      const next = reconcilePreferredGhostSlots(prev, counts);
-      if (next.size === prev.size) {
-        let same = true;
-        for (const [k, v] of next) {
-          const old = prev.get(k);
-          if (!old || old.length !== v.length || old.some((n, i) => n !== v[i])) {
-            same = false;
-            break;
+        /**
+         * מיקומים עם בקשת add/undo בדרך לא נגזמים — ה־refetch עלול לחזור עם
+         * מצב ביניים (לפני שהשרת התחייב), וניקוי ה־slot יגרום לטשטוש העותק הלא נכון.
+         */
+        const pending = new Set<string>([
+          ...pendingAddLocationsRef.current,
+          ...pendingUndoLocationsRef.current,
+        ]);
+        const next = reconcilePreferredGhostSlots(prev, counts, pending);
+        if (next.size === prev.size) {
+          let same = true;
+          for (const [k, v] of next) {
+            const old = prev.get(k);
+            if (!old || old.length !== v.length || old.some((n, i) => n !== v[i])) {
+              same = false;
+              break;
+            }
           }
+          if (same) return prev;
         }
-        if (same) return prev;
-      }
       return next;
     });
   }, [allCellBooksMap]);
@@ -366,59 +375,75 @@ export default function UnitScreen(): JSX.Element {
     pendingUndoLocationsRef.current.delete(locationId);
   }, []);
 
+    const clearPendingAdd = useCallback((locationId: string) => {
+      pendingAddLocationsRef.current.delete(locationId);
+    }, []);
+
   const runUndoShortage = useCallback(
     async (targets: StoreMapBook[]) => {
       if (targets.length === 0) return;
       const timer = startBookTapTiming("undo_shortage", targets[0]!.location_id);
       setUndoShortageTargets([]);
 
-      for (const book of targets) {
-        pendingUndoLocationsRef.current.add(book.location_id);
-        const slot = undoSpineSlotsRef.current.get(book.location_id);
-        setGhostSlotsByLocation((prev) =>
-          removePreferredGhostSlot(prev, book.location_id, slot),
-        );
-        undoSpineSlotsRef.current.delete(book.location_id);
-      }
-      timer.mark("optimistic_state_cleared", { targets: targets.length });
+        /** שדרות שהוסרו אופטימית — לשחזור אם הביטול נכשל. */
+        const removedSlots = new Map<string, number | undefined>();
+        for (const book of targets) {
+          pendingUndoLocationsRef.current.add(book.location_id);
+          const slot = undoSpineSlotsRef.current.get(book.location_id);
+          removedSlots.set(book.location_id, slot);
+          setGhostSlotsByLocation((prev) =>
+            removePreferredGhostSlot(prev, book.location_id, slot),
+          );
+          undoSpineSlotsRef.current.delete(book.location_id);
+        }
+        timer.mark("optimistic_state_cleared", { targets: targets.length });
 
-      let deletedCount = 0;
-      for (const book of targets) {
-        try {
-          await cancelShelfShortage.mutateAsync(book.location_id);
-          clearPendingUndo(book.location_id);
-          deletedCount += 1;
-        } catch (err: unknown) {
-          const status =
-            typeof err === "object" && err !== null && "response" in err
-              ? (err as { response?: { status?: number } }).response?.status
-              : undefined;
-          if (status === 404 && pendingUndoLocationsRef.current.has(book.location_id)) {
-            continue;
+        let deletedCount = 0;
+        for (const book of targets) {
+          try {
+            await cancelShelfShortage.mutateAsync(book.location_id);
+            clearPendingUndo(book.location_id);
+            deletedCount += 1;
+          } catch (err: unknown) {
+            const status =
+              typeof err === "object" && err !== null && "response" in err
+                ? (err as { response?: { status?: number } }).response?.status
+                : undefined;
+            if (status === 404) {
+              setGhostSlotsByLocation((prev) =>
+                addPreferredGhostSlot(prev, book.location_id, removedSlots.get(book.location_id) ?? 0),
+              );
+              clearPendingUndo(book.location_id);
+              continue;
+            }
+            /** ביטול נכשל — מחזירים את השדרה המטושטשת שהוסרה אופטימית. */
+            setGhostSlotsByLocation((prev) =>
+              addPreferredGhostSlot(prev, book.location_id, removedSlots.get(book.location_id) ?? 0),
+            );
+            clearPendingUndo(book.location_id);
+            const message =
+              status === 404
+                ? he.unit.undoShortageNotFound
+                : status === undefined
+                  ? he.unit.undoShortageOffline
+                  : he.unit.undoShortageFailed;
+            Alert.alert(he.generic.errorTitle, message);
+            void unitQuery.refetch();
+            return;
           }
-          const message =
-            status === 404
-              ? he.unit.undoShortageNotFound
-              : status === undefined
-                ? he.unit.undoShortageOffline
-                : he.unit.undoShortageFailed;
-          Alert.alert(he.generic.errorTitle, message);
-          void unitQuery.refetch();
-          return;
         }
-      }
 
-      timer.mark("server_ack", { deleted: deletedCount });
+        timer.mark("server_ack", { deleted: deletedCount });
 
-      if (deletedCount === 0) {
-        const awaitingAdd = targets.some((b) =>
-          pendingUndoLocationsRef.current.has(b.location_id),
-        );
-        if (!awaitingAdd) {
-          Alert.alert(he.generic.errorTitle, he.unit.undoShortageNotFound);
-          void unitQuery.refetch();
+        if (deletedCount === 0) {
+          const awaitingAdd = targets.some((b) =>
+            pendingUndoLocationsRef.current.has(b.location_id),
+          );
+          if (!awaitingAdd) {
+            Alert.alert(he.generic.errorTitle, he.unit.undoShortageNotFound);
+            void unitQuery.refetch();
+          }
         }
-      }
     },
     [cancelShelfShortage, clearPendingUndo, unitQuery],
   );
@@ -432,42 +457,50 @@ export default function UnitScreen(): JSX.Element {
         timer.mark("opened_undo_dialog");
         return;
       }
-      /**
-       * `onMutate` של `useAddShortage` מעדכן `quantity_in_cell` + `is_pending_shortage`
-       * יחד ב־cache; אחרי הצלחה יש refetch של היחידה כדי למנוע drift.
-       */
-      setGhostSlotsByLocation((prev) =>
-        addPreferredGhostSlot(prev, book.location_id, spineSlot),
-      );
-      timer.mark("optimistic_state_set");
-      try {
-        await addShortage.mutateAsync({
-          bookId: book.book_id,
-          soldQuantity: 1,
-          locationId: book.location_id,
-        });
-        timer.mark("server_ack");
-        if (pendingUndoLocationsRef.current.has(book.location_id)) {
-          try {
-            await cancelShelfShortage.mutateAsync(book.location_id);
-            setGhostSlotsByLocation((prev) =>
-              removePreferredGhostSlot(prev, book.location_id, spineSlot),
-            );
-          } catch {
-            Alert.alert(he.generic.errorTitle, he.unit.undoShortageFailed);
-          }
-          clearPendingUndo(book.location_id);
+        /** לחיצה כפולה על אותו עותק לפני שהבקשה הקודמת חזרה — מתעלמים. */
+        if (pendingAddLocationsRef.current.has(book.location_id)) {
+          timer.mark("ignored_duplicate_tap");
+          return;
         }
-      } catch {
+        pendingAddLocationsRef.current.add(book.location_id);
+        /**
+         * `onMutate` של `useAddShortage` מעדכן `quantity_in_cell` + `is_pending_shortage`
+         * יחד ב־cache; אחרי הצלחה יש refetch של היחידה כדי למנוע drift.
+         */
         setGhostSlotsByLocation((prev) =>
-          removePreferredGhostSlot(prev, book.location_id, spineSlot),
+          addPreferredGhostSlot(prev, book.location_id, spineSlot),
         );
-        clearPendingUndo(book.location_id);
-        timer.mark("failed");
-      }
-    },
-    [addShortage, cancelShelfShortage, clearPendingUndo],
-  );
+        timer.mark("optimistic_state_set");
+        try {
+          await addShortage.mutateAsync({
+            bookId: book.book_id,
+            soldQuantity: 1,
+            locationId: book.location_id,
+          });
+          timer.mark("server_ack");
+          if (pendingUndoLocationsRef.current.has(book.location_id)) {
+            try {
+              await cancelShelfShortage.mutateAsync(book.location_id);
+              setGhostSlotsByLocation((prev) =>
+                removePreferredGhostSlot(prev, book.location_id, spineSlot),
+              );
+            } catch {
+              Alert.alert(he.generic.errorTitle, he.unit.undoShortageFailed);
+            }
+            clearPendingUndo(book.location_id);
+          }
+        } catch {
+          setGhostSlotsByLocation((prev) =>
+            removePreferredGhostSlot(prev, book.location_id, spineSlot),
+          );
+          clearPendingUndo(book.location_id);
+          timer.mark("failed");
+        } finally {
+          clearPendingAdd(book.location_id);
+        }
+      },
+      [addShortage, cancelShelfShortage, clearPendingUndo, clearPendingAdd],
+    );
 
   /**
    * ארון גדול מרנדר מאות שדרות, ולכן הפרופס שיורדים אליהן חייבים להיות יציבים —

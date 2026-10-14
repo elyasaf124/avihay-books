@@ -11,7 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import type { ShortageListItem, ShortageStatus } from "@avihay-books/shared";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
-import { bookWarehouseQty } from "../../utils/shortageWarehouse";
+import { bookWarehouseQty, shortageGroupMissingCopies } from "../../utils/shortageWarehouse";
 
 interface Props {
   item: ShortageListItem;
@@ -54,6 +54,7 @@ export function ShortageRow({
   const noStock = warehouseQty < 1;
   const canDecStock = !blocked && stockQty > 0;
   const canIncStock = !blocked && stockQty < 999;
+  const missingCopies = shortageGroupMissingCopies(item);
 
   return (
     <View style={[styles.row, theme.shadow.inset]}>
@@ -102,9 +103,9 @@ export function ShortageRow({
             {he.unit.cellLabel} {item.cell_name}
           </Text>
         ) : null}
-        {item.missing_count > 1 ? (
+        {missingCopies > 1 ? (
           <Text style={styles.missingCount} numberOfLines={1}>
-            {he.shortage.missingCopies.replace("{{count}}", String(item.missing_count))}
+            {he.shortage.missingCopies.replace("{{count}}", String(missingCopies))}
           </Text>
         ) : null}
 
@@ -158,6 +159,11 @@ export function ShortageRow({
                 />
               </Pressable>
             </View>
+            {warehouseQty === 0 ? (
+              <Text style={styles.warehouseHint}>{he.shortage.warehouseEmptyHint}</Text>
+            ) : warehouseQty === 1 ? (
+              <Text style={styles.warehouseHint}>{he.shortage.warehouseLastCopyHint}</Text>
+            ) : null}
           </View>
           <View style={styles.statsDivider} />
           <CellStockStat item={item} />
@@ -462,6 +468,14 @@ const styles = StyleSheet.create({
     ...theme.typography.caption,
     color: theme.colors.onSurfaceVariant,
     textAlign: "left",
+  },
+  warehouseHint: {
+    ...theme.typography.caption,
+    fontSize: 11,
+    color: theme.colors.onSurfaceVariant,
+    textAlign: "left",
+    marginTop: 2,
+    maxWidth: 120,
   },
   statValue: {
     ...theme.typography.headlineSm,

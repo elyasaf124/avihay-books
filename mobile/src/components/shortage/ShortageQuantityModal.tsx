@@ -11,7 +11,7 @@ import { Ionicons } from "@expo/vector-icons";
 import type { ShortageListItem } from "@avihay-books/shared";
 import { theme } from "../../theme";
 import { he } from "../../i18n/he";
-import { maxShortageCompleteQty } from "../../utils/shortageWarehouse";
+import { maxShortageCompleteQty, shortageGroupMissingCopies } from "../../utils/shortageWarehouse";
 
 export type ShortageQuantityMode = "complete" | "remove";
 
@@ -38,7 +38,7 @@ export function ShortageQuantityModal({
   onCancel,
   onSubmit,
 }: Props): JSX.Element {
-  const missing = Math.max(item?.missing_count ?? 1, 1);
+  const missing = item ? shortageGroupMissingCopies(item) : 1;
   const max =
     mode === "complete" && item ? maxShortageCompleteQty(item) : missing;
   const [quantity, setQuantity] = useState<number>(Math.max(max, 1));
@@ -66,7 +66,7 @@ export function ShortageQuantityModal({
           ) : null}
           <Field
             label={he.shortage.qtyModal.missingLabel}
-            value={String(item.missing_count)}
+            value={String(missing)}
           />
 
           <Text style={styles.hint}>{copy.hint}</Text>
