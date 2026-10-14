@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../backend/src/config/loadEnv.js";
 import { pool } from "../backend/src/db/pool.js";
 import { seed as seedSuppliers } from "./seed_suppliers.js";
 import { seed as seedBooks } from "./seed_books.js";

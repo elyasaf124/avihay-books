@@ -133,20 +133,12 @@ export function ShortageRow({
                   color={canDecStock ? theme.colors.primary : theme.colors.outline}
                 />
               </Pressable>
-              {busyStock ? (
-                <ActivityIndicator
-                  color={theme.colors.primary}
-                  size="small"
-                  style={styles.stockValueBusy}
-                />
-              ) : (
-                <Text
-                  style={styles.stockValue}
-                  accessibilityLabel={`${he.shortage.stockShort}: ${stockQty}`}
-                >
-                  {stockQty}
-                </Text>
-              )}
+              <Text
+                style={styles.stockValue}
+                accessibilityLabel={`${he.shortage.stockShort}: ${stockQty}`}
+              >
+                {stockQty}
+              </Text>
               <Pressable
                 onPress={() => onStockChange(item, stockQty + 1)}
                 disabled={!canIncStock}
@@ -172,6 +164,15 @@ export function ShortageRow({
             label={he.shortage.restock}
             value={String(Math.max(item.book_reorder_threshold, 1))}
             accent
+          />
+          <View style={styles.statsDivider} />
+          <Stat
+            label={he.shortage.stockInCell}
+            value={
+              item.quantity_in_cell == null || item.shelf_stock_in_cell == null
+                ? "—"
+                : `${item.quantity_in_cell}/${item.shelf_stock_in_cell}`
+            }
           />
         </View>
 
@@ -384,10 +385,6 @@ const styles = StyleSheet.create({
     minWidth: 28,
     textAlign: "center",
     paddingHorizontal: theme.spacing.xs,
-  },
-  stockValueBusy: {
-    minWidth: 28,
-    marginHorizontal: theme.spacing.xs,
   },
   statsDivider: {
     width: 1,

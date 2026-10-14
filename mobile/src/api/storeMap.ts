@@ -452,6 +452,7 @@ export function useSearchBooks(query: string, options?: UseSearchBooksOptions) {
     },
     enabled: extraEnabled && trimmed.length > 0,
     staleTime: 10_000,
+    gcTime: 60_000,
     retry: 0,
   });
 }

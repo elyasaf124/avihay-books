@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <title>תעריפי וואטסאפ עסקי — נועם הספר</title>
+  <style>
+    @font-face {
+      font-family: "Gisha";
+      src: url("file:///C:/Windows/Fonts/gisha.ttf") format("truetype");
+      font-weight: 400;
+    }
+    @font-face {
+      font-family: "Gisha";
+      src: url("file:///C:/Windows/Fonts/gishabd.ttf") format("truetype");
+      font-weight: 700;
+    }
+    @font-face {
+      font-family: "David";
+      src: url("file:///C:/Windows/Fonts/david.ttf") format("truetype");
+      font-weight: 400;
+    }
+    @font-face {
+      font-family: "David";
+      src: url("file:///C:/Windows/Fonts/davidbd.ttf") format("truetype");
+      font-weight: 700;
+    }
+
+    @page {
+      size: A4;
+      margin: 10mm 11mm 11mm 11mm;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #fffadf;
+      color: #1e1c00;
+      font-family: Gisha, "Segoe UI", Arial, sans-serif;
+      font-size: 11pt;
+      line-height: 1.4;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .page {
+      width: 186mm;
+      margin: 0 auto;
+    }
+
+    header {
+      background: #442a22;
+      color: #fffadf;
+      padding: 14px 18px 12px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+    }
+
+    header .kicker {
+      font-size: 9.5pt;
+      letter-spacing: 0.04em;
+      opacity: 0.82;
+      margin: 0 0 4px;
+    }
+
+    header h1 {
+      font-family: David, serif;
+      font-size: 20pt;
+      font-weight: 700;
+      margin: 0 0 4px;
+      line-height: 1.2;
+    }
+
+    header p {
+      margin: 0;
+      font-size: 11pt;
+      opacity: 0.92;
+    }
+
+    h2 {
+      font-family: David, serif;
+      font-size: 13.5pt;
+      color: #442a22;
+      margin: 11px 0 5px;
+      border-bottom: 2px solid #fed65b;
+      padding-bottom: 2px;
+    }
+
+    h3 {
+      font-size: 11.5pt;
+      color: #5d4037;
+      margin: 12px 0 6px;
+    }
+
+    p { margin: 0 0 8px; }
+
+    .lead {
+      background: #f6f0bb;
+      border-right: 4px solid #735c00;
+      padding: 10px 14px;
+      margin: 0 0 14px;
+    }
+
+    .lead strong { color: #442a22; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 8.9pt;
+      margin: 6px 0 10px;
+      background: #fff;
+      page-break-inside: avoid;
+    }
+
+    th, td {
+      border: 1px solid #d4c3be;
+      padding: 5px 6px;
+      text-align: right;
+      vertical-align: top;
+    }
+
+    th {
+      background: #442a22;
+      color: #fffadf;
+      font-weight: 700;
+    }
+
+    tr:nth-child(even) td { background: #fffadf; }
+
+    .yes {
+      background: #e8f5e4 !important;
+      color: #1b5e20;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .no {
+      background: #f4efe8 !important;
+      color: #6d5c58;
+      white-space: nowrap;
+    }
+
+    .muted { color: #504441; font-size: 9.5pt; }
+
+    .scenarios {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin: 8px 0 10px;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid #d4c3be;
+      border-radius: 6px;
+      padding: 8px 10px;
+      break-inside: avoid;
+    }
+
+    .card h3 {
+      margin: 0 0 3px;
+      font-family: David, serif;
+      font-size: 12pt;
+      color: #442a22;
+    }
+
+    .card .total {
+      margin-top: 6px;
+      background: #fed65b;
+      color: #241a00;
+      font-weight: 700;
+      text-align: center;
+      padding: 5px;
+      border-radius: 4px;
+      font-size: 12pt;
+    }
+
+    .card ul {
+      margin: 4px 0;
+      padding: 0 16px 0 0;
+    }
+
+    .card li { margin: 1px 0; font-size: 9.2pt; }
+
+    .note {
+      font-size: 9.3pt;
+      color: #504441;
+      background: #f0eab6;
+      padding: 8px 12px;
+      margin: 8px 0 12px;
+    }
+
+    .warn {
+      background: #fff3e0;
+      border: 1px solid #e0a060;
+      padding: 8px 11px;
+      font-size: 10pt;
+      margin: 8px 0 10px;
+      page-break-inside: avoid;
+    }
+
+    footer {
+      margin-top: 8px;
+      font-size: 8.3pt;
+      color: #827470;
+      border-top: 1px solid #d4c3be;
+      padding-top: 6px;
+      page-break-inside: avoid;
+    }
+
+    .two {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .pill {
+      display: inline-block;
+      background: #5d4037;
+      color: #ffdbd0;
+      font-size: 8.5pt;
+      padding: 1px 7px;
+      border-radius: 10px;
+      margin-right: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header>
+      <p class="kicker">נועם הספר · בוט וואטסאפ עסקי</p>
+      <h1>תעריפי הודעות וואטסאפ</h1>
+      <p>תוקף השינוי: 1 באוקטובר 2026 · תעריפי ישראל לפי מטא · מסמך ללקוח</p>
+    </header>
+
+    <div class="lead">
+      <strong>במילה אחת:</strong>
+      הבוט ממשיך לעבוד כמו היום. מה שמשתנה הוא שמטא מתחילה לגבות על תשובות הבוט.
+      1,000 ההודעות הראשונות בכל חודש נשארות חינם. אחריהן כל הודעת בוט עולה כ־₪0.016
+      (חצי סנט דולר). מענה אנושי שנשלח מהטלפון האישי לא מחויב.
+    </div>
+
+    <h2>1. מה משתנה ב־1 באוקטובר</h2>
+    <p>
+      עד 30 בספטמבר 2026 מטא לא גובה על תשובות חופשיות של הבוט בתוך חלון 24 השעות
+      (מאז שהלקוח כתב). מ־1 באוקטובר תשובות אלה הופכות לתשלום, לפי הודעה שנמסרה.
+    </p>
+    <ul>
+      <li>1,000 הודעות בוט חינם לכל מספר עסקי, בכל חודש. העודף לא עובר לחודש הבא.</li>
+      <li>אחרי המכסה: <strong>$0.0053 ≈ ₪0.016</strong> להודעה (שער ~₪3.03 לדולר, ספטמבר 2026).</li>
+      <li>הודעה נכנסת מלקוח — תמיד חינם.</li>
+      <li>מטא גובה בדולר. הסכום בשקלים זז עם שער החליפין.</li>
+    </ul>
+
+    <div class="warn">
+      <strong>פעולה נדרשת עד 30.9.2026:</strong>
+      יש לוודא שאמצעי תשלום מעודכן ב־Meta Billing Hub.
+      בלי אמצעי תשלום מטא עלולה להפסיק למסור את הודעות הבוט ב־1 באוקטובר —
+      גם אם בפועל הייתם נשארים בתוך 1,000 החינמיות.
+    </div>
+
+    <h2>2. סוגי הודעות ותעריף לישראל</h2>
+    <p class="muted">
+      המחיר הוא להודעה יוצאת שנמסרה ללקוח בישראל (+972). הודעות שנכשלו לא מחויבות.
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>סוג</th>
+          <th>מה זה אצלכם</th>
+          <th>עד 30.9.2026</th>
+          <th>מ־1.10.2026</th>
+          <th>בשקלים</th>
+          <th>רלוונטי?</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>הודעה נכנסת</td>
+          <td>לקוח כותב לחנות</td>
+          <td>חינם</td>
+          <td>חינם</td>
+          <td>₪0</td>
+          <td class="yes">כן</td>
+        </tr>
+        <tr>
+          <td>Service — בוט</td>
+          <td>תפריט, מלאי, הזמנה, שעות, תשלום, קטלוג, כפתורים</td>
+          <td>חינם</td>
+          <td>1,000 חינם בחודש, אחר כך $0.0053</td>
+          <td>₪0 / ₪0.016</td>
+          <td class="yes">כן — עיקר התנועה</td>
+        </tr>
+        <tr>
+          <td>Service — התראה למנהל</td>
+          <td>סיכום שיחה + קישור שנשלחים למספר המנהל</td>
+          <td>חינם</td>
+          <td>נספרת במכסת ה־1,000, אחר כך $0.0053</td>
+          <td>₪0 / ₪0.016</td>
+          <td class="yes">כן — נפח קטן</td>
+        </tr>
+        <tr>
+          <td>Utility</td>
+          <td>תבנית «הספר מוכן לאיסוף» (שליחה יזומה מהאפליקציה)</td>
+          <td>חינם אם הלקוח כתב ב־24 שעות; אחרת $0.0053</td>
+          <td>תמיד $0.0053, בלי מכסה חינם</td>
+          <td>₪0.016 תמיד</td>
+          <td class="yes">כן</td>
+        </tr>
+        <tr>
+          <td>מענה אנושי בטלפון</td>
+          <td>נציג עונה ללקוח ממספר אישי (קישור וואטסאפ)</td>
+          <td>חינם</td>
+          <td>חינם — מחוץ לפלטפורמה העסקית</td>
+          <td>₪0</td>
+          <td class="yes">כן — לא מחויב</td>
+        </tr>
+        <tr>
+          <td>Marketing</td>
+          <td>תבנית פרסום / מבצע / דיוור</td>
+          <td>$0.0353</td>
+          <td>$0.0353</td>
+          <td>₪0.107</td>
+          <td class="no">לא בשימוש</td>
+        </tr>
+        <tr>
+          <td>Authentication</td>
+          <td>קוד אימות / OTP</td>
+          <td>$0.0053</td>
+          <td>$0.0053</td>
+          <td>₪0.016</td>
+          <td class="no">לא בשימוש</td>
+        </tr>
+        <tr>
+          <td>סוכן ה־AI של מטא</td>
+          <td>Meta Business Agent</td>
+          <td>חיוב לפי טוקנים</td>
+          <td>כ־$0.04–0.05 לאינטראקציה</td>
+          <td>₪0.12–0.15</td>
+          <td class="no">לא בשימוש</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>3. איך סופרים הודעות בוט</h2>
+    <p>
+      המכסה היא 1,000 <strong>הודעות</strong> בחודש, לא 1,000 לקוחות.
+      בבוט שלכם כמעט כל שלב שולח שתי הודעות (תוכן + כפתורי ניווט), לכן שיחה אחת צורכת כמה הודעות:
+    </p>
+    <table>
+      <thead>
+        <tr>
+          <th>סוג שיחה</th>
+          <th>הודעות יוצאות בערך</th>
+          <th>עלות אחרי המכסה החינמית</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>שאלה קצרה (שעות פתיחה, תשלום)</td>
+          <td>4</td>
+          <td>₪0.06</td>
+        </tr>
+        <tr>
+          <td>בדיקת מלאי</td>
+          <td>8</td>
+          <td>₪0.13</td>
+        </tr>
+        <tr>
+          <td>הזמנת איסוף / משלוח מלאה</td>
+          <td>30</td>
+          <td>₪0.48</td>
+        </tr>
+        <tr>
+          <td>התראת סיכום למנהל</td>
+          <td>1</td>
+          <td>₪0.016</td>
+        </tr>
+        <tr>
+          <td>תבנית «הספר מוכן לאיסוף»</td>
+          <td>1 (utility, לא במכסה)</td>
+          <td>₪0.016 תמיד</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <p class="note">
+      נוסחה פשוטה לחודש:
+      <strong>עלות ≈ (הודעות בוט − 1,000) × ₪0.016 + מספר עדכוני «מוכן לאיסוף» × ₪0.016</strong>.
+      אם הודעות הבוט לא עברו 1,000 — משלמים רק על תבניות «מוכן לאיסוף».
+    </p>
+
+    <h2>4. דוגמאות לחודש אצל חנות ספרים</h2>
+    <p class="muted">
+      אלה סימולציות לפי נפח סביר לחנות מקומית. המספרים עגולים, כדי שיהיה קל להסביר ללקוח.
+    </p>
+
+    <div class="scenarios">
+      <div class="card">
+        <h3>א · חודש רגוע</h3>
+        <span class="pill">מתחת למכסה</span>
+        <ul>
+          <li>20 שאלות קצרות × 4 = 80</li>
+          <li>15 בדיקות מלאי × 8 = 120</li>
+          <li>10 הזמנות × 30 = 300</li>
+          <li>8 התראות למנהל = 8</li>
+          <li>סה״כ בוט: <strong>508</strong> (הכול בתוך 1,000)</li>
+          <li>10 עדכוני «מוכן לאיסוף»: ₪0.16</li>
+        </ul>
+        <div class="total">עלות משוערת: ≈ ₪0</div>
+      </div>
+
+      <div class="card">
+        <h3>ב · חודש רגיל</h3>
+        <span class="pill">חריגה קלה</span>
+        <ul>
+          <li>60 שאלות קצרות × 4 = 240</li>
+          <li>50 בדיקות מלאי × 8 = 400</li>
+          <li>40 הזמנות × 30 = 1,200</li>
+          <li>25 התראות למנהל = 25</li>
+          <li>סה״כ בוט: <strong>1,865</strong> → 865 בתשלום = ₪14</li>
+          <li>40 עדכוני «מוכן לאיסוף»: ₪0.64</li>
+        </ul>
+        <div class="total">עלות משוערת: ≈ ₪15</div>
+      </div>
+
+      <div class="card">
+        <h3>ג · חודש עמוס</h3>
+        <span class="pill">תחילת שנה / מבצע</span>
+        <ul>
+          <li>100 שאלות קצרות × 4 = 400</li>
+          <li>80 בדיקות מלאי × 8 = 640</li>
+          <li>70 הזמנות × 30 = 2,100</li>
+          <li>40 התראות למנהל = 40</li>
+          <li>סה״כ בוט: <strong>3,180</strong> → 2,180 בתשלום = ₪35</li>
+          <li>70 עדכוני «מוכן לאיסוף»: ₪1.12</li>
+        </ul>
+        <div class="total">עלות משוערת: ≈ ₪36</div>
+      </div>
+
+      <div class="card">
+        <h3>ד · חודש שיא</h3>
+        <span class="pill">ספטמבר / ביקוש גבוה</span>
+        <ul>
+          <li>150 שאלות קצרות × 4 = 600</li>
+          <li>120 בדיקות מלאי × 8 = 960</li>
+          <li>120 הזמנות × 30 = 3,600</li>
+          <li>60 התראות למנהל = 60</li>
+          <li>סה״כ בוט: <strong>5,220</strong> → 4,220 בתשלום = ₪68</li>
+          <li>120 עדכוני «מוכן לאיסוף»: ₪1.92</li>
+        </ul>
+        <div class="total">עלות משוערת: ≈ ₪70</div>
+      </div>
+    </div>
+
+    <h2>5. מה לא נכלל בחשבונית מטא</h2>
+    <div class="two">
+      <div class="card">
+        <h3>לא משלמים עליו</h3>
+        <ul>
+          <li>הודעות שהלקוח שולח לחנות</li>
+          <li>מענה אנושי מהטלפון האישי</li>
+          <li>שידור שיווקי — אין כזה בבוט</li>
+          <li>קודי אימות — אין כזה בבוט</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>כן משלמים עליו (אחרי אוקטובר)</h3>
+        <ul>
+          <li>תשובות הבוט אחרי 1,000 בחודש</li>
+          <li>התראת הסיכום למספר המנהל (אחרי המכסה)</li>
+          <li>תבנית «הספר מוכן לאיסוף» — מההודעה הראשונה</li>
+        </ul>
+      </div>
+    </div>
+
+    <h2>6. הערות לשקיפות</h2>
+    <ul>
+      <li>התעריפים הם של מטא לישראל. ישראל לא נכללה בעדכון גובה התעריף לאוקטובר 2026 — מה שמשתנה הוא <em>מה</em> מחויב, לא המחיר ליחידה.</li>
+      <li>מטא רשאית לעדכן תעריפים עד ארבע פעמים בשנה, עם הודעה מראש. החיוב לפי מספר היעד (+972 = תעריף ישראל).</li>
+      <li>הדוגמאות החודשיות הן הערכה לפי מבנה השיחה הנוכחי. הנפח האמיתי תלוי בכמה לקוחות כותבים ובאיזה מסלול הם בוחרים.</li>
+    </ul>
+
+    <footer>
+      מקור תעריפים: Meta WhatsApp Business Platform Pricing, כולל עדכון service מ־1.10.2026.
+      שער המרה לדוגמה: 1 דולר ≈ ₪3.03 (ספטמבר 2026). המסמך נועד להסבר ללקוח ואינו חשבונית של מטא.
+      נועם הספר · ספטמבר 2026
+    </footer>
+  </div>
+</body>
+</html>

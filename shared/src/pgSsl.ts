@@ -26,8 +26,14 @@ export function normalizePostgresConnectionString(databaseUrl: string): string {
 export function postgresSslForUrl(databaseUrl: string): false | { rejectUnauthorized: false } {
   if (process.env.DATABASE_SSL === "false") return false;
 
-  const m = /@([^/?:]+)/.exec(databaseUrl);
-  const host = m?.[1] ?? "";
+  // Parse the URL instead of splitting at `@`: a password may legally contain
+  // an encoded `@` (or even a raw one in existing local env files).
+  let host = "";
+  try {
+    host = new URL(databaseUrl).hostname.toLowerCase();
+  } catch {
+    // Unknown/malformed URLs default to TLS below.
+  }
 
   const isLocalHost =
     host === "localhost" || host === "127.0.0.1" || host === "::1" || host.endsWith(".local");

@@ -1,0 +1,23 @@
+
+> avihay-books@0.1.0 backend:dev
+> npm --workspace backend run dev
+
+
+> @avihay-books/backend@0.1.0 dev
+> cross-env NODE_ENV=development tsx watch src/index.ts
+
+[16:59:21.479] [32mINFO[39m: [36mavihay-books API listening on http://localhost:4000/api/v1[39m
+[16:59:21.480] [32mINFO[39m: [36m[db] connection target[39m
+    host: "localhost:5432"
+    pooled: false
+    poolMax: 10
+[16:59:21.491] [32mINFO[39m: [36mnotification retention cron scheduled[39m
+    expression: "0 3 * * *"
+    retention: "14 days"
+[16:59:21.491] [32mINFO[39m: [36mnotifications cron scheduled[39m
+    expression: "0 8,13,18 * * *"
+[16:59:21.492] [32mINFO[39m: [36morders without supplier notification cron scheduled[39m
+    expression: "0 8 * * *"
+[16:59:21.492] [32mINFO[39m: [36mchat message retention cron scheduled[39m
+    expression: "0 3 * * *"
+    retention: "1 month"

@@ -285,6 +285,12 @@ export interface ShortageListItem {
   book_title: string;
   book_author: string | null;
   book_stock_quantity: number;
+  /** עותקים זמינים במחסן, אחרי הפחתת כל העותקים שבתאים. */
+  book_unplaced_quantity: number;
+  /** מספר העותקים של הספר שנמצאים כרגע בתא של החוסר. */
+  quantity_in_cell: number;
+  /** סך העותקים המתוכננים על המדף לאותו ספר בתא. */
+  shelf_stock_in_cell: number;
   book_reorder_threshold: number;
   book_price: string | null;
   supplier_id: UUID;

@@ -216,6 +216,26 @@ export async function setLocationQuantityInCell(
   try {
     await client.query("BEGIN");
 
+    const ownerRes = await client.query<{ book_id: string }>(
+      "SELECT book_id FROM book_locations WHERE id = $1::uuid",
+      [locationId],
+    );
+    const owner = ownerRes.rows[0];
+    if (!owner) {
+      await client.query("ROLLBACK");
+      throw new HttpError(404, "location_not_found");
+    }
+
+    const bookRes = await client.query<{ stock_quantity: number }>(
+      "SELECT stock_quantity FROM books WHERE id = $1::uuid FOR UPDATE",
+      [owner.book_id],
+    );
+    const book = bookRes.rows[0];
+    if (!book) {
+      await client.query("ROLLBACK");
+      throw new HttpError(404, "book_not_found");
+    }
+
     const locRes = await client.query<{
       book_id: string;
       quantity_in_cell: number;
@@ -232,12 +252,34 @@ export async function setLocationQuantityInCell(
       await client.query("ROLLBACK");
       throw new HttpError(404, "location_not_found");
     }
+    if (loc.book_id !== owner.book_id) {
+      await client.query("ROLLBACK");
+      throw new HttpError(409, "book_location_changed_retry");
+    }
 
     if (newQty > loc.shelf_stock) {
       await client.query("ROLLBACK");
       throw new HttpError(400, "quantity_above_shelf_stock", {
         shelf_stock: loc.shelf_stock,
         quantity_in_cell: loc.quantity_in_cell,
+      });
+    }
+
+    const totalRes = await client.query<{ total: number }>(
+      `SELECT COALESCE(SUM(quantity_in_cell), 0)::int AS total
+         FROM book_locations
+        WHERE book_id = $1::uuid AND id <> $2::uuid`,
+      [loc.book_id, locationId],
+    );
+    const otherLocationsTotal = Number(totalRes.rows[0]?.total ?? 0);
+    const currentTotal = otherLocationsTotal + Number(loc.quantity_in_cell);
+    const projectedTotal = otherLocationsTotal + newQty;
+    const currentExcess = Math.max(0, currentTotal - Number(book.stock_quantity));
+    if (projectedTotal - Number(book.stock_quantity) > currentExcess) {
+      await client.query("ROLLBACK");
+      throw new HttpError(400, "stock_below_locations", {
+        stock_quantity: Number(book.stock_quantity),
+        locations_quantity: projectedTotal,
       });
     }
 
