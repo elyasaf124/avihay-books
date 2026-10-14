@@ -155,6 +155,9 @@ export async function findAllShortagesExpanded(): Promise<ShortageListItem[]> {
             b.title          AS book_title,
             b.author         AS book_author,
             b.stock_quantity AS book_stock_quantity,
+            GREATEST(b.stock_quantity - COALESCE(all_stock.quantity_in_cells, 0), 0)::int AS book_unplaced_quantity,
+            CASE WHEN r.cell_id IS NOT NULL THEN COALESCE(cell_stock.quantity_in_cell, 0)::int ELSE NULL END AS quantity_in_cell,
+            CASE WHEN r.cell_id IS NOT NULL THEN COALESCE(cell_stock.shelf_stock_in_cell, 0)::int ELSE NULL END AS shelf_stock_in_cell,
             b.reorder_threshold AS book_reorder_threshold,
             b.price::text    AS book_price,
             s.id             AS supplier_id,
@@ -163,7 +166,20 @@ export async function findAllShortagesExpanded(): Promise<ShortageListItem[]> {
             s.email          AS supplier_email
        FROM ranked r
        JOIN books     b ON b.id = r.book_id
+       LEFT JOIN LATERAL (
+         SELECT SUM(bl2.quantity_in_cell)::int AS quantity_in_cell,
+                SUM(bl2.shelf_stock)::int AS shelf_stock_in_cell
+           FROM book_locations bl2
+          WHERE r.cell_id IS NOT NULL
+            AND bl2.book_id = r.book_id
+            AND bl2.cell_id = r.cell_id
+       ) cell_stock ON true
        JOIN suppliers s ON s.id = b.supplier_id
+       LEFT JOIN LATERAL (
+         SELECT SUM(bl3.quantity_in_cell)::int AS quantity_in_cells
+           FROM book_locations bl3
+          WHERE bl3.book_id = r.book_id
+       ) all_stock ON true
       WHERE r.rn = 1
       ORDER BY r.added_at DESC`,
   );
