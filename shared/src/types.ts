@@ -115,6 +115,8 @@ export interface OrderRow {
   manual_book_author: string | null;
   status: OrderStatus;
   created_at: ISOTimestamp;
+  /** ביקוש לקוח/וואטסאפ שכבר נספר במשלוח שנקלט — לא חוזר לכמות הספק. */
+  supplier_received_at?: ISOTimestamp | null;
   /** שדות זרימת בוט הוואטסאפ (אופציונליים — קיימים בהזמנות `whatsapp`). */
   fulfillment_type?: FulfillmentType | null;
   delivery_method?: DeliveryMethod | null;
@@ -314,6 +316,8 @@ export interface OrderListItem {
   manual_book_author: string | null;
   status: OrderStatus;
   created_at: ISOTimestamp;
+  /** ביקוש לקוח/וואטסאפ שכבר נספר במשלוח שנקלט — לא חוזר לכמות הספק. */
+  supplier_received_at?: ISOTimestamp | null;
   book_title: string;
   book_author: string | null;
   book_price: string | null;

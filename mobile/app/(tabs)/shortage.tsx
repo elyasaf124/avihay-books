@@ -25,6 +25,7 @@ import {
   useUpdateShortageStatus,
 } from "../../src/api/shortage";
 import { usePatchBook } from "../../src/api/inventory";
+import { useCreateInventoryOrder } from "../../src/api/orders";
 import { useSuppliersWithFallback } from "../../src/api/unit";
 import { useQueryClient } from "@tanstack/react-query";
 import { mockShortageList } from "../../src/mocks/shortageOrders";
@@ -94,6 +95,7 @@ export default function ShortageScreen(): JSX.Element {
   const resolveMutation = useUpdateShortageStatus();
   const deleteShortageMutation = useDeleteShortage();
   const patchBook = usePatchBook();
+  const createInventoryOrder = useCreateInventoryOrder();
   const suppliers = useSuppliersWithFallback();
 
   const isOffline = shortageQuery.isError;
@@ -124,6 +126,7 @@ export default function ShortageScreen(): JSX.Element {
   const [resolveConfirmTarget, setResolveConfirmTarget] = useState<ShortageListItem | null>(
     null,
   );
+  const [lastStockOrderTarget, setLastStockOrderTarget] = useState<ShortageListItem | null>(null);
   const [removeQtyTarget, setRemoveQtyTarget] = useState<ShortageListItem | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [removeConfirmTarget, setRemoveConfirmTarget] = useState<ShortageListItem | null>(
@@ -132,7 +135,9 @@ export default function ShortageScreen(): JSX.Element {
   /** טיוטת מחיר לפי `book_id` — כמה שורות חוסר יכולות לשתף אותו ספר. */
   const [priceDraft, setPriceDraft] = useState<Record<string, string>>({});
   const [busyPriceBookId, setBusyPriceBookId] = useState<string | null>(null);
-  const [busyStockBookId, setBusyStockBookId] = useState<string | null>(null);
+  const stockUpdateTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const queuedStockUpdatesRef = useRef(new Map<string, number>());
+  const activeStockUpdatesRef = useRef(new Set<string>());
 
   const bookTitleFilterTrimmed = bookTitleFilter.trim();
 
@@ -272,6 +277,9 @@ export default function ShortageScreen(): JSX.Element {
         return;
       }
       setResolveError(null);
+      // Older production APIs don't include book_unplaced_quantity yet.
+      const availableWarehouseStock = item.book_unplaced_quantity ?? item.book_stock_quantity;
+      const exhaustsWarehouseStock = quantity >= availableWarehouseStock;
       try {
         await resolveMutation.mutateAsync({
           shortageId: item.id,
@@ -280,6 +288,12 @@ export default function ShortageScreen(): JSX.Element {
         });
         setResolveQtyTarget(null);
         setResolveConfirmTarget(null);
+        if (exhaustsWarehouseStock) {
+          // Let the confirmation/quantity Modal finish dismissing before opening the follow-up dialog.
+          setTimeout(() => {
+            setLastStockOrderTarget(item);
+          }, 350);
+        }
       } catch (err) {
         const msg = isNoStockError(err)
           ? he.shortage.resolveNoStock
@@ -292,7 +306,7 @@ export default function ShortageScreen(): JSX.Element {
         }
       }
     },
-    [resolveMutation, isOffline],
+    [resolveMutation, isOffline, createInventoryOrder],
   );
 
   const requestResolveShortage = useCallback((picked: ShortageListItem) => {
@@ -379,28 +393,65 @@ export default function ShortageScreen(): JSX.Element {
   );
 
   const applyStock = useCallback(
-    async (item: ShortageListItem, nextQty: number) => {
-      if (busyStockBookId) return;
-      if (!Number.isInteger(nextQty) || nextQty < 0 || nextQty > 999) return;
-      if (nextQty === item.book_stock_quantity) return;
+    (item: ShortageListItem, nextQty: number) => {
+      const delta = nextQty - item.book_stock_quantity;
+      const currentQty = queuedStockUpdatesRef.current.get(item.book_id) ?? item.book_stock_quantity;
+      const optimisticQty = currentQty + delta;
+      if (!Number.isInteger(optimisticQty) || optimisticQty < 0 || optimisticQty > 999) return;
+      if (delta === 0) return;
       if (isOffline) {
         Alert.alert(he.generic.errorTitle, he.shortage.stockAdjustOffline);
         return;
       }
-      try {
-        setBusyStockBookId(item.book_id);
-        await patchBook.mutateAsync({
-          id: item.book_id,
-          patch: { stock_quantity: nextQty },
-        });
-        void queryClient.invalidateQueries({ queryKey: ["shortage"] });
-      } catch {
-        Alert.alert(he.generic.errorTitle, he.shortage.stockAdjustFailed);
-      } finally {
-        setBusyStockBookId(null);
-      }
+      queryClient.setQueryData<ShortageListItem[]>(["shortage", "list"], (old) =>
+        old?.map((row) => row.book_id === item.book_id
+          ? { ...row, book_stock_quantity: optimisticQty }
+          : row),
+      );
+      queuedStockUpdatesRef.current.set(item.book_id, optimisticQty);
+
+      const flushUpdates = async (): Promise<void> => {
+        if (activeStockUpdatesRef.current.has(item.book_id)) return;
+        activeStockUpdatesRef.current.add(item.book_id);
+        try {
+          while (queuedStockUpdatesRef.current.has(item.book_id)) {
+            const quantity = queuedStockUpdatesRef.current.get(item.book_id)!;
+            queuedStockUpdatesRef.current.delete(item.book_id);
+            await patchBook.mutateAsync({
+              id: item.book_id,
+              patch: { stock_quantity: quantity },
+            });
+          }
+          void queryClient.invalidateQueries({ queryKey: ["shortage"] });
+        } catch (error) {
+          queuedStockUpdatesRef.current.delete(item.book_id);
+          void queryClient.invalidateQueries({ queryKey: ["shortage"] });
+          const response = axios.isAxiosError(error)
+            ? error.response?.data as
+                | { error?: string; details?: { locations_quantity?: number } }
+                | undefined
+            : undefined;
+          const message =
+            response?.error === "stock_below_locations"
+              ? interpolate(he.shortage.stockBelowLocations, {
+                  qty: String(response.details?.locations_quantity ?? "?"),
+                })
+              : he.shortage.stockAdjustFailed;
+          Alert.alert(he.generic.errorTitle, message);
+        } finally {
+          activeStockUpdatesRef.current.delete(item.book_id);
+          if (queuedStockUpdatesRef.current.has(item.book_id)) void flushUpdates();
+        }
+      };
+
+      const existingTimer = stockUpdateTimersRef.current.get(item.book_id);
+      if (existingTimer) clearTimeout(existingTimer);
+      stockUpdateTimersRef.current.set(item.book_id, setTimeout(() => {
+        stockUpdateTimersRef.current.delete(item.book_id);
+        void flushUpdates();
+      }, 180));
     },
-    [busyStockBookId, isOffline, patchBook, queryClient],
+    [isOffline, patchBook, queryClient],
   );
 
   const refreshing = shortageQuery.isFetching && !shortageQuery.isLoading;
@@ -602,7 +653,6 @@ export default function ShortageScreen(): JSX.Element {
                   (removeQtyTarget?.id === item.id || removeConfirmTarget?.id === item.id)
                 }
                 busyPrice={busyPriceBookId === item.book_id}
-                busyStock={busyStockBookId === item.book_id}
                 priceDraft={
                   priceDraft[item.book_id] !== undefined
                     ? priceDraft[item.book_id]
@@ -663,6 +713,31 @@ export default function ShortageScreen(): JSX.Element {
         onCancel={() => setResolveConfirmTarget(null)}
         onConfirm={() => {
           if (resolveConfirmTarget) void runResolveShortage(resolveConfirmTarget, 1, "confirm");
+        }}
+      />
+
+      <ConfirmDialog
+        visible={lastStockOrderTarget !== null}
+        title={he.shortage.lastResolvedTitle}
+        message={
+          lastStockOrderTarget
+            ? he.shortage.lastResolvedMessage.replace("{{title}}", lastStockOrderTarget.book_title)
+            : undefined
+        }
+        confirmLabel={he.shortage.lastResolvedOrder}
+        cancelLabel={he.shortage.lastResolvedSkip}
+        onCancel={() => setLastStockOrderTarget(null)}
+        onConfirm={() => {
+          const item = lastStockOrderTarget;
+          setLastStockOrderTarget(null);
+          if (!item) return;
+          void createInventoryOrder.mutateAsync({
+            book_id: item.book_id,
+            supplier_id: item.supplier_id,
+            quantity: Math.max(item.book_reorder_threshold, 1),
+          }).catch(() => {
+            Alert.alert(he.generic.errorTitle, he.shortage.lastResolvedOrderFailed);
+          });
         }}
       />
 

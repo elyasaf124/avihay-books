@@ -22,6 +22,7 @@ function invalidateShortageSideEffects(
 ): void {
   void client.invalidateQueries({ queryKey: SHORTAGE_KEY });
   void client.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
+  void client.invalidateQueries({ queryKey: ["books", "inventory"] });
   softInvalidateStoreMap(client);
   if (opts?.orders) {
     void client.invalidateQueries({ queryKey: ORDERS_KEY_PREFIX });
@@ -143,6 +144,7 @@ export function useCancelShelfShortage() {
       refetchActiveStoreMapUnits(client);
       void client.invalidateQueries({ queryKey: SHORTAGE_KEY });
       void client.invalidateQueries({ queryKey: DASHBOARD_STATS_KEY });
+      void client.invalidateQueries({ queryKey: ["books", "inventory"] });
     },
   });
 }

@@ -19,6 +19,8 @@ import {
 import { ORDER_TYPES, type OrderType } from "@avihay-books/shared";
 import { getWhatsappConfig, isWhatsappConfigured } from "../services/whatsapp/config.js";
 import { sendTemplate } from "../services/whatsapp/client.js";
+import { previewOrderIntake, receiveOrderIntake } from "../services/orderIntake.js";
+import { invalidateStoreMapCache } from "../services/storeMapCache.js";
 
 export const ordersRouter = Router();
 
@@ -221,6 +223,61 @@ ordersRouter.post(
 const notifyCustomerBodySchema = z.object({
   template: z.enum(["order_ready"]).default("order_ready"),
 });
+
+const intakeScopeSchema = z.object({
+  supplier_id: z.string().uuid().nullable(),
+  line_only: z.boolean().optional(),
+  book_id: z.string().uuid().nullable().optional(),
+  manual_book_title: z.string().max(500).nullable().optional(),
+});
+
+function intakeScopeFromBody(body: z.infer<typeof intakeScopeSchema>) {
+  return {
+    supplierId: body.supplier_id,
+    lineOnly: body.line_only === true,
+    bookId: body.book_id ?? null,
+    manualTitle: body.manual_book_title?.trim() ? body.manual_book_title.trim() : null,
+  };
+}
+
+ordersRouter.post(
+  "/intake-preview",
+  asyncHandler(async (req, res) => {
+    const body = intakeScopeSchema.parse(req.body ?? {});
+    res.json(await previewOrderIntake(intakeScopeFromBody(body)));
+  }),
+);
+
+const intakeBodySchema = intakeScopeSchema.and(
+  z.object({
+    lines: z
+      .array(
+        z.object({
+          book_id: z.string().uuid().nullable(),
+          manual_book_title: z.string().max(500).nullable().optional(),
+          received_qty: z.number().int().min(0),
+        }),
+      )
+      .min(1),
+  }),
+);
+
+ordersRouter.post(
+  "/intake",
+  asyncHandler(async (req, res) => {
+    const body = intakeBodySchema.parse(req.body ?? {});
+    await receiveOrderIntake(
+      intakeScopeFromBody(body),
+      body.lines.map((line) => ({
+        book_id: line.book_id,
+        manual_book_title: line.manual_book_title?.trim() ? line.manual_book_title.trim() : null,
+        received_qty: line.received_qty,
+      })),
+    );
+    invalidateStoreMapCache();
+    res.json({ ok: true });
+  }),
+);
 
 ordersRouter.post(
   "/:id/notify-customer",

@@ -12,7 +12,7 @@
     "db:seed": "tsx ../seed/runSeed.ts",
     "db:reset": "tsx ../database/runReset.ts && tsx ../database/runMigrations.ts && tsx ../seed/runSeed.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test src/services/whatsapp/engine.integration.test.ts src/services/whatsapp/handoverPush.test.ts src/services/whatsapp/onboarding.test.ts src/routes/orders.notify.integration.test.ts src/routes/chat.integration.test.ts src/services/chatRetention.integration.test.ts src/services/notificationRetention.integration.test.ts",
+    "test": "tsx --test src/services/orderIntakePlan.test.ts src/services/whatsapp/engine.integration.test.ts src/services/whatsapp/handoverPush.test.ts src/services/whatsapp/onboarding.test.ts src/routes/orders.notify.integration.test.ts src/routes/chat.integration.test.ts src/services/chatRetention.integration.test.ts src/services/notificationRetention.integration.test.ts",
     "test:whatsapp": "tsx --test src/services/whatsapp/engine.integration.test.ts src/services/whatsapp/handoverPush.test.ts src/services/whatsapp/onboarding.test.ts src/routes/orders.notify.integration.test.ts src/routes/chat.integration.test.ts src/services/chatRetention.integration.test.ts src/services/notificationRetention.integration.test.ts"
   },
   "dependencies": {

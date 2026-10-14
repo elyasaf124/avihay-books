@@ -114,6 +114,14 @@ npm run apk:release:gradle --workspace=@avihay-books/mobile
 
 ## פלט
 
+ברירת מחדל אחרי `npm run mobile:apk:release` (הסקריפט מפנה Gradle ל־`build-alt` כדי לעקוף נעילת `app-release.apk` ישן ב־Windows):
+
+```text
+mobile\android\app\build-alt\outputs\apk\release\app-release.apk
+```
+
+אם בנית ידנית בלי הסקריפט, ייתכן גם:
+
 ```text
 mobile\android\app\build\outputs\apk\release\app-release.apk
 ```
@@ -148,6 +156,7 @@ adb install -r mobile\android\app\build\outputs\apk\release\app-release.apk
 | `ReanimatedNativeHierarchyManagerBase` | מחק `node_modules`, `npm install` מחדש מהשורש |
 | build נכשל אחרי העתקה | אל תעתיק `node_modules` — רק קוד + `npm install` |
 | אין `android/` | `scripts\setup-android-local.bat` או `npm run prebuild:android --workspace=@avihay-books/mobile` |
+| `Unable to delete ... app-release.apk` | סגור Explorer/אנטי־וירוס על הקובץ; הרץ שוב `npm run mobile:apk:release` (משתמש ב־`build-alt`) |
 | מכשיר לא מזוהה | `adb devices`, הפעל USB debugging |
 
 ## שלוש דרכי build (סיכום)

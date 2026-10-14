@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { z } from "zod";
 import { asyncHandler, HttpError } from "../middleware/errorHandler.js";
 import { pool } from "../db/pool.js";
 import {
@@ -15,9 +16,14 @@ import { reconcileOrdersOnStockArrival } from "../services/orderReconciliation.j
 import { maybePromoteEmptyCellShortagesToOrder } from "../services/shortage.js";
 import { invalidateStoreMapCache } from "../services/storeMapCache.js";
 import { logger } from "../utils/logger.js";
-import type { BookWithLocations } from "@avihay-books/shared";
+import type { Book, BookLocation, BookWithLocations } from "@avihay-books/shared";
 
 export const booksRouter = Router();
+
+const adjustStockSchema = z.object({
+  delta: z.number().int().min(-9999).max(9999).refine((value) => value !== 0),
+  location_id: z.string().uuid().nullable(),
+});
 
 booksRouter.get(
   "/",
@@ -89,19 +95,164 @@ booksRouter.post(
   }),
 );
 
+/**
+ * עדכון מלאי כולל ומיקום באותה טרנזקציה. `location_id: null` משנה מחסן בלבד;
+ * כשנבחר תא, אותה דלתא מתווספת/נגרעת גם מהמלאי הכולל וגם מהתא.
+ */
+booksRouter.post(
+  "/:id/adjust-stock",
+  asyncHandler(async (req, res) => {
+    const { delta, location_id: locationId } = adjustStockSchema.parse(req.body);
+    const client = await pool.connect();
+    let book!: Book;
+    let location: BookLocation | undefined;
+
+    try {
+      await client.query("BEGIN");
+      const bookResult = await client.query<Book>(
+        "SELECT * FROM books WHERE id = $1 FOR UPDATE",
+        [req.params.id],
+      );
+      const currentBook = bookResult.rows[0];
+      if (!currentBook) throw new HttpError(404, "book_not_found");
+
+      const nextStock = Number(currentBook.stock_quantity) + delta;
+      if (nextStock < 0) {
+        throw new HttpError(400, "insufficient_stock", {
+          stock_quantity: currentBook.stock_quantity,
+        });
+      }
+
+      let shelfTotal = 0;
+      if (locationId) {
+        const locationResult = await client.query<BookLocation>(
+          "SELECT * FROM book_locations WHERE id = $1 AND book_id = $2 FOR UPDATE",
+          [locationId, req.params.id],
+        );
+        const currentLocation = locationResult.rows[0];
+        if (!currentLocation) throw new HttpError(404, "location_not_found");
+
+        const nextLocationQty = Number(currentLocation.quantity_in_cell) + delta;
+        if (nextLocationQty < 0) {
+          throw new HttpError(400, "insufficient_location_stock", {
+            quantity_in_cell: currentLocation.quantity_in_cell,
+          });
+        }
+        if (nextLocationQty > Number(currentLocation.shelf_stock)) {
+          throw new HttpError(400, "quantity_above_shelf_stock", {
+            shelf_stock: currentLocation.shelf_stock,
+            quantity_in_cell: currentLocation.quantity_in_cell,
+          });
+        }
+
+        const totalResult = await client.query<{ total: number }>(
+          `SELECT COALESCE(SUM(quantity_in_cell), 0)::int AS total
+             FROM book_locations
+            WHERE book_id = $1`,
+          [req.params.id],
+        );
+        const previousShelfTotal = Number(totalResult.rows[0]?.total ?? 0);
+        shelfTotal = previousShelfTotal + delta;
+        const previousExcess = Math.max(
+          0,
+          previousShelfTotal - Number(currentBook.stock_quantity),
+        );
+        if (shelfTotal - nextStock > previousExcess) {
+          throw new HttpError(400, "stock_below_locations", {
+            stock_quantity: nextStock,
+            locations_quantity: shelfTotal,
+          });
+        }
+
+        const updatedLocation = await client.query<BookLocation>(
+          `UPDATE book_locations SET quantity_in_cell = $2
+            WHERE id = $1 RETURNING *`,
+          [locationId, nextLocationQty],
+        );
+        location = updatedLocation.rows[0];
+      } else {
+        const totalResult = await client.query<{ total: number }>(
+          `SELECT COALESCE(SUM(quantity_in_cell), 0)::int AS total
+             FROM book_locations
+            WHERE book_id = $1`,
+          [req.params.id],
+        );
+        shelfTotal = Number(totalResult.rows[0]?.total ?? 0);
+        const previousExcess = Math.max(
+          0,
+          shelfTotal - Number(currentBook.stock_quantity),
+        );
+        if (shelfTotal - nextStock > previousExcess) {
+          throw new HttpError(400, "stock_below_locations", {
+            stock_quantity: nextStock,
+            locations_quantity: shelfTotal,
+          });
+        }
+      }
+
+      const updatedBook = await client.query<Book>(
+        "UPDATE books SET stock_quantity = $2 WHERE id = $1 RETURNING *",
+        [req.params.id, nextStock],
+      );
+      book = updatedBook.rows[0];
+      if (delta > 0) {
+        await reconcileOrdersOnStockArrival(req.params.id!, delta, client);
+      }
+      await client.query("COMMIT");
+    } catch (e) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw e;
+    } finally {
+      client.release();
+    }
+
+    invalidateStoreMapCache();
+    if (delta > 0) {
+      await restoreBookShortagesIfNoOpenOrders(req.params.id!).catch(() => {});
+    } else {
+      await maybePromoteEmptyCellShortagesToOrder(req.params.id!).catch((err: unknown) => {
+        logger.error({ err, bookId: req.params.id }, "maybePromoteEmptyCellShortagesToOrder failed");
+      });
+    }
+    res.json({ book, ...(location ? { location } : {}) });
+  }),
+);
+
 booksRouter.patch(
   "/:id",
   asyncHandler(async (req, res) => {
-    const existing = await findBookById(req.params.id!);
-    if (!existing) throw new HttpError(404, "book_not_found");
-    const merged = { ...existing, ...req.body, id: req.params.id };
-    const oldStock = Number(existing.stock_quantity);
-
     // מלאי + ריקונסיליאציית הזמנות באותה טרנזקציה — מונע מצב שבו המלאי עלה וההזמנה נשארה
     const client = await pool.connect();
-    let row;
+    let row!: Book;
+    let oldStock = 0;
     try {
       await client.query("BEGIN");
+      const existingResult = await client.query<Book>(
+        "SELECT * FROM books WHERE id = $1 FOR UPDATE",
+        [req.params.id],
+      );
+      const existing = existingResult.rows[0];
+      if (!existing) throw new HttpError(404, "book_not_found");
+      oldStock = Number(existing.stock_quantity);
+      const merged = { ...existing, ...req.body, id: req.params.id };
+
+      if (req.body?.stock_quantity != null) {
+        const requestedStock = Number(req.body.stock_quantity);
+        const locationsResult = await client.query<{ total: number }>(
+          `SELECT COALESCE(SUM(quantity_in_cell), 0)::int AS total
+             FROM book_locations
+            WHERE book_id = $1`,
+          [req.params.id],
+        );
+        const locationsTotal = Number(locationsResult.rows[0]?.total ?? 0);
+        if (Number.isInteger(requestedStock) && requestedStock < locationsTotal) {
+          throw new HttpError(400, "stock_below_locations", {
+            stock_quantity: requestedStock,
+            locations_quantity: locationsTotal,
+          });
+        }
+      }
+
       row = await upsertBook(merged, client);
       const arrived = Number(row.stock_quantity) - oldStock;
       if (arrived > 0) {

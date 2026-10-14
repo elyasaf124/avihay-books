@@ -61,6 +61,7 @@ const NO_BOOKS: BookWithLocations[] = [];
 const NO_TOPICS: string[] = [];
 
 const GLOBAL_BOOK_DROPDOWN_CAP = 50;
+const GLOBAL_BOOK_SEARCH_DEBOUNCE_MS = 250;
 const GLOBAL_BOOK_FILTER_BLUR_MS = Platform.OS === "ios" ? 140 : 230;
 
 function interpolate(template: string, vars: Record<string, string>): string {
@@ -143,8 +144,24 @@ export default function AddRemoveScreen(): JSX.Element {
   const booksData = booksQuery.data;
   const books = booksData ?? NO_BOOKS;
   const globalBookSearchTrimmed = globalBookSearch.trim();
-  const globalBookSearchQuery = useSearchBooks(globalBookSearchTrimmed);
-  const globalSearchBooks = globalBookSearchQuery.data ?? [];
+  const [debouncedGlobalBookSearch, setDebouncedGlobalBookSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(
+      () => setDebouncedGlobalBookSearch(globalBookSearchTrimmed),
+      GLOBAL_BOOK_SEARCH_DEBOUNCE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [globalBookSearchTrimmed]);
+  const showGlobalBookDropdown =
+    (globalBookSuggestionsPinned || globalBookSearchFocused) &&
+    globalBookSearchTrimmed.length > 0;
+  const globalBookSearchQuery = useSearchBooks(debouncedGlobalBookSearch, {
+    enabled: showGlobalBookDropdown && debouncedGlobalBookSearch.length > 0,
+  });
+  const globalSearchBooks =
+    debouncedGlobalBookSearch === globalBookSearchTrimmed
+      ? (globalBookSearchQuery.data ?? [])
+      : [];
   const globalSearchSuggestions = useMemo(
     () => globalSearchBooks.slice(0, GLOBAL_BOOK_DROPDOWN_CAP),
     [globalSearchBooks],
@@ -157,9 +174,6 @@ export default function AddRemoveScreen(): JSX.Element {
   }, [suppliers]);
   const hasActiveGlobalBookSearch =
     selectedBookId !== null || globalBookSearchTrimmed.length > 0;
-  const showGlobalBookDropdown =
-    (globalBookSuggestionsPinned || globalBookSearchFocused) &&
-    globalBookSearchTrimmed.length > 0;
   const filteredBooks = useMemo(() => {
     if (!selectedBookId) return books;
     return books.filter((b) => b.id === selectedBookId);

@@ -235,7 +235,9 @@ upd AS (
 ),
 loc_upd AS (
   UPDATE book_locations bl
-     SET quantity_in_cell = GREATEST(bl.quantity_in_cell - $3::int, 0)
+     SET quantity_in_cell = GREATEST(bl.quantity_in_cell - $3::int, 0),
+         -- יעד השדרות לא יורד במכירה; אם נשאר מאחורי הכמות הפיזית — מיישרים לישן.
+         shelf_stock = GREATEST(bl.shelf_stock, bl.quantity_in_cell)
     FROM guard g
    WHERE bl.id = $2::uuid
      AND g.location_status = 'ok'
@@ -279,7 +281,8 @@ interface ShelfShortageRow {
  * מפחיתים `stock_quantity` ואת `quantity_in_cell` במיקום (עותק אחד פחות על המדף),
  * ויוצרים רשומת חוסר עם `location_id` (רשומה לכל מכירה — כדי ש«חזרה למדף» תשחזר עותק בודד).
  * אם לספר כבר יש הזמנה פתוחה — הסטטוס נשמר כ־`order_pending` (לא מופיע ברשימת חוסרים).
- * הטשטוש במפה: שדרת־חוסר אחת כל עוד יש חוסר פתוח למיקום; עותקים שנותרו נשארים רגילים.
+ * הטשטוש במפה: `shelf_stock` נשאר (או מיושר לכמות שלפני המכירה), כך שכל עותק
+ * שירד מהתא נשאר כשדרה מטושטשת ליד העותקים שנותרו.
  */
 export async function createShortageAfterShelfSale(
   input: CreateShortageAfterShelfSaleInput,

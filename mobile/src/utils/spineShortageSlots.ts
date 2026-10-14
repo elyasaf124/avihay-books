@@ -10,16 +10,25 @@ export function spineDisplayCounts(book: {
   is_pending_shortage?: boolean;
 }): { physical: number; ghosts: number; total: number } {
   const physical = Math.max(0, Math.floor(Number(book.quantity_in_cell)));
+  const pendingRaw = book.pending_shortage_count;
+  const pending =
+    pendingRaw != null && Number.isFinite(Number(pendingRaw))
+      ? Math.max(0, Math.floor(Number(pendingRaw)))
+      : book.is_pending_shortage
+        ? 1
+        : 0;
   const shelfRaw = book.shelf_stock;
-  if (shelfRaw != null && Number.isFinite(Number(shelfRaw))) {
-    const total = Math.max(physical, Math.floor(Number(shelfRaw)));
-    return { physical, total, ghosts: total - physical };
-  }
-  const ghosts = Math.max(
-    0,
-    Math.floor(Number(book.pending_shortage_count ?? (book.is_pending_shortage ? 1 : 0))),
-  );
-  return { physical, ghosts, total: physical + ghosts };
+  const shelf =
+    shelfRaw != null && Number.isFinite(Number(shelfRaw))
+      ? Math.max(0, Math.floor(Number(shelfRaw)))
+      : null;
+  /**
+   * יעד השדרות = המקסימום בין מלאי-מדף, פיזיים, ופיזיים+חוסרים.
+   * אם `shelf_stock` נשאר מאחורי `quantity_in_cell` (מיזוג עותקים בלי עדכון יעד),
+   * סימון חוסר עדיין חייב להשאיר שדרה מטושטשת ולא להעלים עותק.
+   */
+  const total = Math.max(physical, shelf ?? 0, physical + pending);
+  return { physical, total, ghosts: total - physical };
 }
 
 /**

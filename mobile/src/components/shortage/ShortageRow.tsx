@@ -18,7 +18,6 @@ interface Props {
   busyCompleting?: boolean;
   busyRemoving?: boolean;
   busyPrice?: boolean;
-  busyStock?: boolean;
   priceDraft: string;
   onPriceDraftChange: (bookId: string, value: string) => void;
   onApplyPrice: (item: ShortageListItem) => void;
@@ -39,7 +38,6 @@ export function ShortageRow({
   busyCompleting,
   busyRemoving,
   busyPrice,
-  busyStock,
   priceDraft,
   onPriceDraftChange,
   onApplyPrice,
@@ -49,7 +47,7 @@ export function ShortageRow({
   onRemove,
 }: Props): JSX.Element {
   const pendingOrder = item.status === "order_pending";
-  const blocked = !!(busyMoving || busyCompleting || busyRemoving || busyPrice || busyStock);
+  const blocked = !!(busyMoving || busyCompleting || busyRemoving || busyPrice);
   const stockQty = item.book_stock_quantity;
   const noStock = stockQty <= 0;
   const canDecStock = !blocked && stockQty > 0;
@@ -133,20 +131,12 @@ export function ShortageRow({
                   color={canDecStock ? theme.colors.primary : theme.colors.outline}
                 />
               </Pressable>
-              {busyStock ? (
-                <ActivityIndicator
-                  color={theme.colors.primary}
-                  size="small"
-                  style={styles.stockValueBusy}
-                />
-              ) : (
-                <Text
-                  style={styles.stockValue}
-                  accessibilityLabel={`${he.shortage.stockShort}: ${stockQty}`}
-                >
-                  {stockQty}
-                </Text>
-              )}
+              <Text
+                style={styles.stockValue}
+                accessibilityLabel={`${he.shortage.stockShort}: ${stockQty}`}
+              >
+                {stockQty}
+              </Text>
               <Pressable
                 onPress={() => onStockChange(item, stockQty + 1)}
                 disabled={!canIncStock}
@@ -173,6 +163,8 @@ export function ShortageRow({
             value={String(Math.max(item.book_reorder_threshold, 1))}
             accent
           />
+          <View style={styles.statsDivider} />
+          <CellStockStat item={item} />
         </View>
 
         <View style={styles.priceBlock}>
@@ -287,6 +279,24 @@ function Stat({
   );
 }
 
+function CellStockStat({ item }: { item: ShortageListItem }): JSX.Element {
+  const missing = item.quantity_in_cell == null || item.shelf_stock_in_cell == null;
+  return (
+    <View style={styles.stat}>
+      <Text style={styles.statLabel}>{he.shortage.stockInCell}</Text>
+      {missing ? (
+        <Text style={styles.statValue}>—</Text>
+      ) : (
+        <View style={styles.cellRatio}>
+          <Text style={styles.statValue}>{item.shelf_stock_in_cell}</Text>
+          <Text style={styles.statValue}>/</Text>
+          <Text style={styles.statValue}>{item.quantity_in_cell}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
 function StatusBadge({ status }: { status: ShortageStatus }): JSX.Element {
   const palette =
     status === "order_pending"
@@ -356,6 +366,12 @@ const styles = StyleSheet.create({
     paddingVertical: theme.spacing.sm,
   },
   stat: { gap: 2 },
+  cellRatio: {
+    flexDirection: "row",
+    direction: "ltr",
+    alignItems: "baseline",
+    alignSelf: "flex-start",
+  },
   stockStepper: {
     flexDirection: "row",
     alignItems: "center",
@@ -384,10 +400,6 @@ const styles = StyleSheet.create({
     minWidth: 28,
     textAlign: "center",
     paddingHorizontal: theme.spacing.xs,
-  },
-  stockValueBusy: {
-    minWidth: 28,
-    marginHorizontal: theme.spacing.xs,
   },
   statsDivider: {
     width: 1,

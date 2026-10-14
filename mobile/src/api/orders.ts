@@ -180,6 +180,7 @@ export function summedInventoryBaseQtyBySupplierBook(
   const m = new Map<string, number>();
   for (const o of inventoryOrders) {
     if (o.order_type !== "inventory") continue;
+    if (!isOpenOrder(o)) continue;
     const k = inventorySupplierBookKey(o);
     m.set(k, (m.get(k) ?? 0) + o.quantity);
   }
@@ -363,6 +364,7 @@ export function summedCustomerAndWhatsappQtyByBookSupplier(orders: OrderListItem
   for (const o of orders) {
     if (o.order_type !== "customer" && o.order_type !== "whatsapp") continue;
     if (!isOpenOrder(o)) continue;
+    if (o.supplier_received_at) continue;
     const k = supplierBookKey(o.supplier_id, orderBookLineKey(o));
     m.set(k, (m.get(k) ?? 0) + o.quantity);
   }
@@ -1292,6 +1294,69 @@ export async function createInventoryOrder(input: CreateInventoryOrderInput): Pr
     status: "pending",
   });
   return data;
+}
+
+export type IntakeCellPreview = {
+  cell_id: string;
+  cell_name: string;
+  missing_count: number;
+};
+
+export type IntakePreviewLine = {
+  book_id: string | null;
+  manual_book_title: string | null;
+  book_title: string;
+  book_author: string | null;
+  ordered_qty: number;
+  cells: IntakeCellPreview[];
+};
+
+export type IntakePreview = { lines: IntakePreviewLine[] };
+
+export type IntakeScope = {
+  supplier_id: string | null;
+  line_only?: boolean;
+  book_id?: string | null;
+  manual_book_title?: string | null;
+};
+
+export type IntakeSubmitLine = {
+  book_id: string | null;
+  manual_book_title: string | null;
+  received_qty: number;
+};
+
+export function intakeLineKey(line: {
+  book_id: string | null;
+  manual_book_title: string | null;
+}): string {
+  if (line.book_id) return `b:${line.book_id}`;
+  return `m:${(line.manual_book_title ?? "").trim()}`;
+}
+
+export async function fetchIntakePreview(scope: IntakeScope): Promise<IntakePreview> {
+  const { data } = await api.post<IntakePreview>("/orders/intake-preview", scope);
+  return data;
+}
+
+export async function submitOrderIntake(
+  scope: IntakeScope,
+  lines: IntakeSubmitLine[],
+): Promise<void> {
+  await api.post("/orders/intake", { ...scope, lines });
+}
+
+export function useSubmitOrderIntake() {
+  const client = useQueryClient();
+  return useMutation<void, Error, { scope: IntakeScope; lines: IntakeSubmitLine[] }>({
+    mutationFn: ({ scope, lines }) => submitOrderIntake(scope, lines),
+    onSuccess: () => {
+      invalidateOrderLists(client, ORDER_LIST_TYPES, { dashboard: true });
+      void client.invalidateQueries({ queryKey: ["shortage"] });
+      void client.invalidateQueries({ queryKey: ["store-map"] });
+      void client.invalidateQueries({ queryKey: ["books", "inventory"] });
+    },
+  });
 }
 
 export function useCreateInventoryOrder() {

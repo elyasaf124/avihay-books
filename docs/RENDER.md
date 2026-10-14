@@ -11,7 +11,7 @@
 |--------|------|
 | חשבון ב־`Render` | [dashboard.render.com](https://dashboard.render.com) |
 | הריפו ב־`GitHub` | `Render` מתחבר לריפו ומושך קוד אוטומטית |
-| `DATABASE_URL` מ־Neon | כבר הופעל אצלך מקומית עם `db:migrate` / `db:seed` — **אותה מחרוזת** תועתק ל־`Render` |
+| `DATABASE_URL` מ־Neon | מסד הייצור של Neon. בפיתוח מקומי משתמשים ב־Postgres המקומי של Docker; אין להעתיק את כתובת הפיתוח ל־Render. |
 | קובץ [`render.yaml`](../render.yaml) | בשורש הריפו — חייב לכלול `plan: free` לשירות חינמי (ברירת מחדל בלי זה: `starter` בתשלום) |
 
 ### למה Render ביקש כרטיס אשראי?
@@ -50,7 +50,7 @@ git push origin main
 
 | משתנה | ערך |
 |--------|-----|
-| `DATABASE_URL` | הדבק את **מחרוזת החיבור המלאה** מ־Neon (כמו ב־`backend/.env` המקומי). |
+| `DATABASE_URL` | הדבק את **מחרוזת החיבור המלאה למסד הייצור** של Neon. שמור את מסד הפיתוח המקומי נפרד. |
 | `APP_API_KEY` | **נוצר אוטומטית** בפריסה מ־[`render.yaml`](../render.yaml) (`generateValue: true`). אחרי ה־Deploy: **Environment** → העתק את הערך של `APP_API_KEY` לאפליקציה — **`EXPO_PUBLIC_API_KEY` חייב להיות זהה** (כותרת `x-api-key`). |
 
 ### מפתח לפיתוח מקומי

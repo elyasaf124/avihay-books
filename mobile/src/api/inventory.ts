@@ -148,37 +148,11 @@ export function useAdjustInventoryStock() {
   >({
     mutationFn: async (vars): Promise<{ book: Book; location?: BookLocation }> =>
       enqueueBookStockMutation(vars.bookId, async () => {
-        const { data: currentBook } = await api.get<Book>(`/books/${vars.bookId}`);
-        const { data: locations } = await api.get<BookLocation[]>(
-          `/book-locations/book/${vars.bookId}`,
+        const { data } = await api.post<{ book: Book; location?: BookLocation }>(
+          `/books/${vars.bookId}/adjust-stock`,
+          { delta: vars.delta, location_id: vars.locationId },
         );
-
-        let location: BookLocation | undefined;
-        let onShelfSum = locations.reduce((sum, l) => sum + l.quantity_in_cell, 0);
-
-        if (vars.locationId) {
-          const loc = locations.find((l) => l.id === vars.locationId);
-          if (loc) {
-            const newQtyCell = Math.max(0, loc.quantity_in_cell + vars.delta);
-            const { data } = await api.patch<BookLocation>(`/book-locations/${loc.id}`, {
-              book_id: loc.book_id,
-              cell_id: loc.cell_id,
-              position_in_cell: loc.position_in_cell,
-              quantity_in_cell: newQtyCell,
-            });
-            location = data;
-            onShelfSum = onShelfSum - loc.quantity_in_cell + newQtyCell;
-          }
-        }
-
-        // מחסן (`locationId` null): לא לרדת מתחת לסכום העותקים בתאים; תא: רצפה 0
-        const stockFloor = vars.locationId == null ? onShelfSum : 0;
-        const newStock = Math.max(stockFloor, currentBook.stock_quantity + vars.delta);
-
-        const { data: book } = await api.patch<Book>(`/books/${vars.bookId}`, {
-          stock_quantity: newStock,
-        });
-        return { book, location };
+        return data;
       }),
     onMutate: async (vars) => {
       trackPendingStockMutation(vars.bookId);

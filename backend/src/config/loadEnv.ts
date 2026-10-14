@@ -54,12 +54,49 @@ export function loadBackendEnv(): void {
   const root = findBackendRoot();
   const mode =
     process.env.NODE_ENV === "production" ? "production" : "development";
+  const inheritedDatabaseUrl = process.env.DATABASE_URL;
 
   const chain = [".env", `.env.${mode}`, ".env.local", `.env.${mode}.local`];
   for (const name of chain) {
     const pathStr = join(root, name);
     if (existsSync(pathStr)) {
       dotenv.config({ path: pathStr, override: true });
+    }
+  }
+
+  if (mode === "production") {
+    // A generic .env is often used for local development. Never let its DB URL
+    // silently become the production database when no production URL is set.
+    const productionDatabaseUrl = [".env.production", ".env.production.local"]
+      .map((name) => {
+        const pathStr = join(root, name);
+        return existsSync(pathStr)
+          ? dotenv.parse(readFileSync(pathStr, "utf8")).DATABASE_URL
+          : undefined;
+      })
+      .filter((value): value is string => Boolean(value))
+      .at(-1);
+
+    const databaseUrl = inheritedDatabaseUrl ?? productionDatabaseUrl;
+    if (databaseUrl) {
+      process.env.DATABASE_URL = databaseUrl;
+    } else {
+      delete process.env.DATABASE_URL;
+    }
+  } else {
+    // Development must use its own explicitly configured database. In
+    // particular, never fall through to the production URL from `.env`.
+    const developmentDatabaseUrl = process.env.DEV_DATABASE_URL?.trim();
+    if (developmentDatabaseUrl) {
+      process.env.DATABASE_URL = developmentDatabaseUrl;
+    } else if (process.env.NODE_ENV === "development" || !process.env.NODE_ENV) {
+      delete process.env.DATABASE_URL;
+      throw new Error(
+        "[loadEnv] DEV_DATABASE_URL is required for development; configure it in backend/.env.development.local.",
+      );
+    } else if (inheritedDatabaseUrl) {
+      // Keep explicit externally supplied URLs usable in test/other modes.
+      process.env.DATABASE_URL = inheritedDatabaseUrl;
     }
   }
 }

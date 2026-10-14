@@ -40,6 +40,7 @@ import {
   useNotifyCustomer,
   useOrdersList,
   useRemoveOrderLine,
+  useSubmitOrderIntake,
   useToggleInventoryLineOrderedStatus,
   useToggleInventorySupplierOrderedStatus,
   useUpdateDemandOrderQuantity,
@@ -54,6 +55,10 @@ import { InventoryOrderQtyModal } from "../../src/components/orders/InventoryOrd
 import { mockOrderList } from "../../src/mocks/shortageOrders";
 import { OrderTabs } from "../../src/components/orders/OrderTabs";
 import { SupplierOrderCard } from "../../src/components/orders/SupplierOrderCard";
+import {
+  ReceiveOrderModal,
+  type ReceiveOrderTarget,
+} from "../../src/components/orders/ReceiveOrderModal";
 import {
   SearchablePickerField,
   type PickerListItem,
@@ -259,6 +264,7 @@ export default function OrdersScreen(): JSX.Element {
     items: OrderListItem[];
   } | null>(null);
   const [editInventoryTarget, setEditInventoryTarget] = useState<OrderListItem | null>(null);
+  const [receiveTarget, setReceiveTarget] = useState<ReceiveOrderTarget | null>(null);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -284,6 +290,7 @@ export default function OrdersScreen(): JSX.Element {
   const removeLineMutation = useRemoveOrderLine();
   const archiveLineMutation = useArchiveOrderLine();
   const toggleSupplierMutation = useToggleInventorySupplierOrderedStatus();
+  const receiveMutation = useSubmitOrderIntake();
   const toggleLineMutation = useToggleInventoryLineOrderedStatus();
   const updateInventoryQtyMutation = useUpdateInventoryOrderQuantity();
   const updateDemandQtyMutation = useUpdateDemandOrderQuantity();
@@ -309,7 +316,9 @@ export default function OrdersScreen(): JSX.Element {
     return items ?? [];
   };
 
-  const inventoryItems = dataForType("inventory", inventoryQuery.data);
+  const inventoryItems = dataForType("inventory", inventoryQuery.data).filter((o) =>
+    isOpenOrder(o),
+  );
   const customerItems = dataForType("customer", customerQuery.data);
   const whatsappItems = dataForType("whatsapp", whatsappQuery.data);
   const rawInventoryItems = inventoryQuery.data ?? [];
@@ -471,6 +480,19 @@ export default function OrdersScreen(): JSX.Element {
     } finally {
       setToggleSupplierTarget(null);
     }
+  };
+
+  const openReceiveSupplier = (group: OrdersBySupplierGroup) => {
+    if (isOffline) {
+      Alert.alert(he.orders.receiveBlockedOffline);
+      return;
+    }
+    setReceiveTarget({
+      supplierId: group.supplier_id,
+      lineOnly: false,
+      bookId: null,
+      manualTitle: null,
+    });
   };
 
   const toggleLineOrderedStatus = async (order: OrderListItem) => {
@@ -744,6 +766,7 @@ export default function OrdersScreen(): JSX.Element {
               qtyMinForLine={inventoryQtyMinForLine}
               onToggleSupplierOrdered={isOffline ? undefined : toggleSupplierOrderedStatus}
               onToggleLineOrdered={isOffline ? undefined : toggleLineOrderedStatus}
+              onReceiveSupplier={openReceiveSupplier}
               removingOrderLineKey={removingLineKey}
               togglingSupplierKey={togglingSupplierKey}
               togglingLineKey={togglingLineKey}
@@ -862,6 +885,20 @@ export default function OrdersScreen(): JSX.Element {
         demandOrderType={editDemandBundle?.orderType ?? "customer"}
         initialBundle={editDemandBundle?.items}
         onUpdated={() => setActiveTab(editDemandBundle?.orderType ?? "customer")}
+      />
+      <ReceiveOrderModal
+        target={receiveTarget}
+        submitting={receiveMutation.isPending}
+        onClose={() => setReceiveTarget(null)}
+        onSubmit={(scope, lines) => {
+          receiveMutation.mutate(
+            { scope, lines },
+            {
+              onSuccess: () => setReceiveTarget(null),
+              onError: () => Alert.alert(he.generic.errorTitle, he.orders.receiveFailed),
+            },
+          );
+        }}
       />
       <InventoryOrderQtyModal
         key={

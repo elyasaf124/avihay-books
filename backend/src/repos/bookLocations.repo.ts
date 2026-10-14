@@ -32,8 +32,8 @@ function shelfStockForInsert(v: BookLocationInput): number {
 
 /**
  * הוספת שורת מיקום לתא `{ cell_id, position_in_cell }`: אם המשבצת פנויה — INSERT;
- * אם אותו ספר כבר שם — מיזוג כמות (`quantity_in_cell`); אחרת משבצת תפוסה.
- * במיזוג לא דורסים `shelf_stock`.
+ * אם אותו ספר כבר שם — מיזוג כמות (`quantity_in_cell` + `shelf_stock`);
+ * אחרת משבצת תפוסה. יעד המדף עולה יחד עם העותקים הפיזיים שנוספו.
  */
 async function insertOrMergeBookLocationAtSlot(v: BookLocationInput): Promise<BookLocation> {
   const client = await pool.connect();
@@ -62,7 +62,8 @@ async function insertOrMergeBookLocationAtSlot(v: BookLocationInput): Promise<Bo
 
       const { rows } = await client.query<BookLocation>(
         `UPDATE book_locations
-         SET quantity_in_cell = quantity_in_cell + $1
+         SET quantity_in_cell = quantity_in_cell + $1,
+             shelf_stock = GREATEST(shelf_stock, quantity_in_cell) + $1
          WHERE id = $2
          RETURNING *`,
         [v.quantity_in_cell, occupying.id],
@@ -133,7 +134,8 @@ async function moveExistingBookLocation(
       await assertValidBookCellPlacement(v.book_id, v.cell_id);
       const { rows } = await client.query<BookLocation>(
         `UPDATE book_locations
-         SET book_id = $1, quantity_in_cell = $2
+         SET book_id = $1, quantity_in_cell = $2,
+             shelf_stock = GREATEST(shelf_stock, $2)
          WHERE id = $3
          RETURNING *`,
         [v.book_id, v.quantity_in_cell, v.id],
@@ -161,7 +163,11 @@ async function moveExistingBookLocation(
            cell_id = CASE id WHEN $1::uuid THEN $3::uuid WHEN $2::uuid THEN $5::uuid END,
            position_in_cell = CASE id WHEN $1::uuid THEN $4::int WHEN $2::uuid THEN $6::int END,
            book_id = CASE WHEN id = $1::uuid THEN $7::uuid ELSE book_id END,
-           quantity_in_cell = CASE WHEN id = $1::uuid THEN $8::int ELSE quantity_in_cell END
+           quantity_in_cell = CASE WHEN id = $1::uuid THEN $8::int ELSE quantity_in_cell END,
+           shelf_stock = CASE
+             WHEN id = $1::uuid THEN GREATEST(shelf_stock, $8::int)
+             ELSE shelf_stock
+           END
          WHERE id IN ($1::uuid, $2::uuid)
          RETURNING *`,
         [
@@ -183,7 +189,8 @@ async function moveExistingBookLocation(
 
     const { rows: movedRows } = await client.query<BookLocation>(
       `UPDATE book_locations
-       SET book_id = $1, cell_id = $2, position_in_cell = $3, quantity_in_cell = $4
+       SET book_id = $1, cell_id = $2, position_in_cell = $3, quantity_in_cell = $4,
+           shelf_stock = GREATEST(shelf_stock, $4)
        WHERE id = $5
        RETURNING *`,
       [v.book_id, v.cell_id, v.position_in_cell, v.quantity_in_cell, v.id],

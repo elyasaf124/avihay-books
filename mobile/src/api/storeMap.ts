@@ -259,11 +259,13 @@ export function adjustStoreMapLocationShortage(
     const mapper = (book: StoreMapBook): StoreMapBook => {
       if (book.location_id !== locationId) return book;
       const nextQty = Math.max(0, book.quantity_in_cell + quantityDelta);
-      const { total: shelfTarget } = spineDisplayCounts(book);
-      const nextCount = Math.max(0, shelfTarget - nextQty);
+      const { total: prevTotal } = spineDisplayCounts(book);
+      const nextShelf = Math.max(Number(book.shelf_stock) || 0, prevTotal, nextQty);
+      const nextCount = Math.max(0, nextShelf - nextQty);
       return {
         ...book,
         quantity_in_cell: nextQty,
+        shelf_stock: nextShelf,
         pending_shortage_count: nextCount,
         is_pending_shortage: nextCount > 0,
       };
@@ -452,6 +454,7 @@ export function useSearchBooks(query: string, options?: UseSearchBooksOptions) {
     },
     enabled: extraEnabled && trimmed.length > 0,
     staleTime: 10_000,
+    gcTime: 60_000,
     retry: 0,
   });
 }
