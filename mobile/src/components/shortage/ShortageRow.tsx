@@ -18,7 +18,6 @@ interface Props {
   busyCompleting?: boolean;
   busyRemoving?: boolean;
   busyPrice?: boolean;
-  busyStock?: boolean;
   priceDraft: string;
   onPriceDraftChange: (bookId: string, value: string) => void;
   onApplyPrice: (item: ShortageListItem) => void;
@@ -39,7 +38,6 @@ export function ShortageRow({
   busyCompleting,
   busyRemoving,
   busyPrice,
-  busyStock,
   priceDraft,
   onPriceDraftChange,
   onApplyPrice,
@@ -49,7 +47,7 @@ export function ShortageRow({
   onRemove,
 }: Props): JSX.Element {
   const pendingOrder = item.status === "order_pending";
-  const blocked = !!(busyMoving || busyCompleting || busyRemoving || busyPrice || busyStock);
+  const blocked = !!(busyMoving || busyCompleting || busyRemoving || busyPrice);
   const stockQty = item.book_stock_quantity;
   const noStock = stockQty <= 0;
   const canDecStock = !blocked && stockQty > 0;
@@ -171,8 +169,9 @@ export function ShortageRow({
             value={
               item.quantity_in_cell == null || item.shelf_stock_in_cell == null
                 ? "—"
-                : `${item.quantity_in_cell}/${item.shelf_stock_in_cell}`
+                : `${item.shelf_stock_in_cell}/${item.quantity_in_cell}`
             }
+            valueWritingDirection="ltr"
           />
         </View>
 
@@ -275,15 +274,25 @@ function Stat({
   label,
   value,
   accent,
+  valueWritingDirection,
 }: {
   label: string;
   value: string;
   accent?: boolean;
+  valueWritingDirection?: "ltr" | "rtl";
 }): JSX.Element {
   return (
     <View style={styles.stat}>
       <Text style={styles.statLabel}>{label}</Text>
-      <Text style={[styles.statValue, accent && styles.statValueAccent]}>{value}</Text>
+      <Text
+        style={[
+          styles.statValue,
+          accent && styles.statValueAccent,
+          valueWritingDirection ? { writingDirection: valueWritingDirection } : null,
+        ]}
+      >
+        {value}
+      </Text>
     </View>
   );
 }
